@@ -692,12 +692,15 @@ func (m mcModel) renderGroundDetail(indent string, width int) string {
 	return b.String()
 }
 
+// nowFunc is the clock used by relativeTime. Tests override it to get stable output.
+var nowFunc = time.Now
+
 func relativeTime(iso string) string {
 	t, err := time.Parse(time.RFC3339, iso)
 	if err != nil {
 		return iso
 	}
-	d := time.Since(t)
+	d := nowFunc().Sub(t)
 	switch {
 	case d < time.Minute:
 		return "just now"

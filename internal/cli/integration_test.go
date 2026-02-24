@@ -750,6 +750,200 @@ func TestJump_AliasResolution(t *testing.T) {
 
 // --- Debrief --days test ---
 
+// --- After-create hook integration tests ---
+
+func TestLift_RunsAfterCreateHook(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a", AfterCreate: "echo hook-ran > hook-proof.txt"}},
+	})
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	proof := filepath.Join(w.Root, "repos", "repo-a", "my-feature", "hook-proof.txt")
+	data, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatalf("hook did not create proof file: %v\nstderr: %s", err, result.Stderr)
+	}
+	if got := strings.TrimSpace(string(data)); got != "hook-ran" {
+		t.Errorf("proof file content = %q, want %q", got, "hook-ran")
+	}
+}
+
+func TestDock_RunsAfterCreateHook(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a", AfterCreate: "echo docked > hook-proof.txt", Branches: []string{"feature-x"}}},
+	})
+
+	result := testutil.RunCommand(t, w.Root, nil, "dock", "repo-a", "feature-x")
+	if result.Err != nil {
+		t.Fatalf("dock failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	proof := filepath.Join(w.Root, "repos", "repo-a", "feature-x", "hook-proof.txt")
+	data, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatalf("hook did not create proof file: %v\nstderr: %s", err, result.Stderr)
+	}
+	if got := strings.TrimSpace(string(data)); got != "docked" {
+		t.Errorf("proof file content = %q, want %q", got, "docked")
+	}
+}
+
+func TestLift_AfterCreateHookFailure_NonFatal(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a", AfterCreate: "exit 1"}},
+	})
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift should succeed even with hook failure: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	// Worktree should still be created
+	wtDir := filepath.Join(w.Root, "repos", "repo-a", "my-feature")
+	if _, err := os.Stat(wtDir); err != nil {
+		t.Errorf("worktree dir not created despite hook failure: %v", err)
+	}
+
+	// Warning should be printed
+	if !strings.Contains(result.Stderr, "after_create hook failed") {
+		t.Errorf("expected hook failure warning in stderr, got:\n%s", result.Stderr)
+	}
+}
+
+func TestLift_RepoTomlAfterCreateHook(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	// Write ws.repo.toml into the ground worktree
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+	repoToml := `[capsule]
+after_create = "echo repo-toml-hook > hook-proof.txt"
+`
+	os.WriteFile(filepath.Join(groundDir, "ws.repo.toml"), []byte(repoToml), 0644)
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	proof := filepath.Join(w.Root, "repos", "repo-a", "my-feature", "hook-proof.txt")
+	data, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatalf("ws.repo.toml hook did not create proof file: %v\nstderr: %s", err, result.Stderr)
+	}
+	if got := strings.TrimSpace(string(data)); got != "repo-toml-hook" {
+		t.Errorf("proof file content = %q, want %q", got, "repo-toml-hook")
+	}
+}
+
+func TestLift_WsTomlHookTakesPriorityOverRepoToml(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a", AfterCreate: "echo ws-toml > hook-proof.txt"}},
+	})
+
+	// Also write ws.repo.toml with a different hook
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+	repoToml := `[capsule]
+after_create = "echo repo-toml > hook-proof.txt"
+`
+	os.WriteFile(filepath.Join(groundDir, "ws.repo.toml"), []byte(repoToml), 0644)
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	proof := filepath.Join(w.Root, "repos", "repo-a", "my-feature", "hook-proof.txt")
+	data, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatalf("hook did not create proof file: %v\nstderr: %s", err, result.Stderr)
+	}
+	// ws.toml hook should win
+	if got := strings.TrimSpace(string(data)); got != "ws-toml" {
+		t.Errorf("proof file content = %q, want %q (ws.toml should take priority)", got, "ws-toml")
+	}
+}
+
+func TestLift_CopyFromGround(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+
+	// Create a file in ground that should be copied
+	os.WriteFile(filepath.Join(groundDir, ".env"), []byte("SECRET=abc"), 0644)
+
+	// Write ws.repo.toml with copy_from_ground
+	repoToml := `[capsule]
+copy_from_ground = [".env"]
+`
+	os.WriteFile(filepath.Join(groundDir, "ws.repo.toml"), []byte(repoToml), 0644)
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	copied := filepath.Join(w.Root, "repos", "repo-a", "my-feature", ".env")
+	data, err := os.ReadFile(copied)
+	if err != nil {
+		t.Fatalf("copy_from_ground did not copy .env: %v\nstderr: %s", err, result.Stderr)
+	}
+	if string(data) != "SECRET=abc" {
+		t.Errorf(".env content = %q, want %q", string(data), "SECRET=abc")
+	}
+}
+
+func TestLift_CopyFromGround_MissingFileSkipped(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+	repoToml := `[capsule]
+copy_from_ground = [".env", "missing-file.txt"]
+`
+	os.WriteFile(filepath.Join(groundDir, "ws.repo.toml"), []byte(repoToml), 0644)
+	// Only create .env, not missing-file.txt
+	os.WriteFile(filepath.Join(groundDir, ".env"), []byte("SECRET=abc"), 0644)
+
+	result := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "my-feature")
+	if result.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	// .env should still be copied
+	copied := filepath.Join(w.Root, "repos", "repo-a", "my-feature", ".env")
+	if _, err := os.Stat(copied); err != nil {
+		t.Errorf(".env not copied despite being present: %v", err)
+	}
+
+	// Warning about missing file
+	if !strings.Contains(result.Stderr, "missing-file.txt") {
+		t.Errorf("expected warning about missing-file.txt in stderr, got:\n%s", result.Stderr)
+	}
+}
+
 func TestDebrief_DaysZero_RemovesInactiveCapsule(t *testing.T) {
 	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
 		Org:           "test-org",

@@ -2,12 +2,23 @@ package cli
 
 import (
 	"testing"
+	"time"
 
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/x/exp/golden"
 )
+
+// goldenTime is a fixed reference time so relative-time rendering is stable.
+var goldenTime = time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC)
+
+func pinClock(t *testing.T) {
+	t.Helper()
+	orig := nowFunc
+	nowFunc = func() time.Time { return goldenTime }
+	t.Cleanup(func() { nowFunc = orig })
+}
 
 // goldenMCModel builds a rich mcModel with two repos and several worktrees
 // in various states. No filesystem or network access is needed.
@@ -56,11 +67,13 @@ func goldenMCModel() mcModel {
 }
 
 func TestGolden_MC_BasicTwoRepo(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	golden.RequireEqual(t, m.View())
 }
 
 func TestGolden_MC_WithPR(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.rows[2].pr = &github.PR{
 		Number:         42,
@@ -76,6 +89,7 @@ func TestGolden_MC_WithPR(t *testing.T) {
 }
 
 func TestGolden_MC_GhostPRRow(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	// Insert a ghost PR row after the last frontend worktree
 	ghost := mcRow{
@@ -98,6 +112,7 @@ func TestGolden_MC_GhostPRRow(t *testing.T) {
 }
 
 func TestGolden_MC_FilterActive(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.activeFilters = filterLocal | filterDirty
 	m.ensureCursorOnVisible()
@@ -105,18 +120,21 @@ func TestGolden_MC_FilterActive(t *testing.T) {
 }
 
 func TestGolden_MC_ConfirmDialog(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.confirmIdx = 2 // feat-auth row
 	golden.RequireEqual(t, m.View())
 }
 
 func TestGolden_MC_HelpOverlay(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.showHelp = true
 	golden.RequireEqual(t, m.View())
 }
 
 func TestGolden_MC_DetailLoaded(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.detailFor = 2 // matches cursor
 	m.detail = detailData{
@@ -133,6 +151,7 @@ func TestGolden_MC_DetailLoaded(t *testing.T) {
 }
 
 func TestGolden_MC_DetailWithPRAndChecks(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.rows[2].pr = &github.PR{
 		Number:         42,
@@ -165,6 +184,7 @@ func TestGolden_MC_DetailWithPRAndChecks(t *testing.T) {
 }
 
 func TestGolden_MC_GroundDetail(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.cursor = 1 // .ground row for frontend
 	m.detailFor = 1
@@ -185,6 +205,7 @@ func TestGolden_MC_GroundDetail(t *testing.T) {
 }
 
 func TestGolden_MC_MergedRow(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.rows[3].merged = true // fix-styles is merged
 	m.cursor = 3
@@ -192,6 +213,7 @@ func TestGolden_MC_MergedRow(t *testing.T) {
 }
 
 func TestGolden_MC_BoardedRow(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	// feat-auth is already boarded; move cursor there to see detail
 	m.cursor = 2
@@ -199,6 +221,7 @@ func TestGolden_MC_BoardedRow(t *testing.T) {
 }
 
 func TestGolden_MC_PaletteOpen(t *testing.T) {
+	pinClock(t)
 	m := goldenMCModel()
 	m.paletteActive = true
 	m.paletteInput.Focus()
