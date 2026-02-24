@@ -22,7 +22,7 @@ type RepoOpts struct {
 	Branches    []string // extra remote branches (each gets a commit)
 	Aliases     []string
 	DisplayName string
-	PostCreate  string
+	AfterCreate string
 }
 
 // Workspace holds paths to the created test workspace.
@@ -94,8 +94,8 @@ func writeWSToml(t *testing.T, root string, opts WorkspaceOpts) {
 		if len(repo.Aliases) > 0 {
 			fmt.Fprintf(&b, "aliases = [%s]\n", quotedList(repo.Aliases))
 		}
-		if repo.PostCreate != "" {
-			fmt.Fprintf(&b, "post_create = %q\n", repo.PostCreate)
+		if repo.AfterCreate != "" {
+			fmt.Fprintf(&b, "after_create = %q\n", repo.AfterCreate)
 		}
 		b.WriteString("\n")
 	}

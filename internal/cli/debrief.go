@@ -61,7 +61,14 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 	}
 
 	// Batch-fetch open PRs per repo for "still in orbit" annotations
-	prsByBranch := fetchPRsByBranch(ctx, capsules)
+	prsByBranch, mergedBranches := fetchPRsByBranch(ctx, capsules)
+
+	// Cross-reference: mark capsules as merged if they have a merged PR
+	for i := range capsules {
+		if !capsules[i].Merged && mergedBranches[capsules[i].Branch] {
+			capsules[i].Merged = true
+		}
+	}
 
 	var debriefed, skipped, inOrbit int
 	boardChanged := false
@@ -181,26 +188,32 @@ func orbitExtra(c workspace.CapsuleInfo, prsByBranch map[string]*github.PR) stri
 	return result.String()
 }
 
-func fetchPRsByBranch(ctx *Context, capsules []workspace.CapsuleInfo) map[string]*github.PR {
+func fetchPRsByBranch(ctx *Context, capsules []workspace.CapsuleInfo) (map[string]*github.PR, map[string]bool) {
 	result := make(map[string]*github.PR)
+	mergedBranches := make(map[string]bool)
 
-	// Collect unique repos that have in-orbit capsules
-	repoSet := make(map[string]bool)
+	// Collect unique repos that have any capsules
+	allRepos := make(map[string]bool)
 	for _, c := range capsules {
-		if !c.Merged && !c.Inactive {
-			repoSet[c.Repo] = true
-		}
+		allRepos[c.Repo] = true
 	}
 
-	for repo := range repoSet {
+	for repo := range allRepos {
 		prs, err := ctx.GitHub.PRsForRepo(ctx.WS.Org, repo)
-		if err != nil {
-			continue // gracefully degrade
+		if err == nil {
+			for i := range prs {
+				result[prs[i].HeadRefName] = &prs[i]
+			}
 		}
-		for i := range prs {
-			result[prs[i].HeadRefName] = &prs[i]
+
+		// Also check for merged PRs to detect squash/rebase merges
+		merged, err := ctx.GitHub.MergedPRsForRepo(ctx.WS.Org, repo)
+		if err == nil {
+			for _, pr := range merged {
+				mergedBranches[pr.HeadRefName] = true
+			}
 		}
 	}
 
-	return result
+	return result, mergedBranches
 }

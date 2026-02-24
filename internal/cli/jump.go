@@ -72,8 +72,9 @@ Usage:
 // resolveJumpPath determines the target directory for a jump command.
 // It handles the ~ shortcut, alias resolution, and interactive pickers.
 func resolveJumpPath(ctx *Context, repoArg, worktreeArg string) (string, error) {
-	// ~ -> workspace root
-	if repoArg == "~" {
+	// ~ -> workspace root (also match home dir, since shell expands ~ before we see it)
+	home, _ := os.UserHomeDir()
+	if repoArg == "~" || repoArg == home {
 		return ctx.WS.Root, nil
 	}
 

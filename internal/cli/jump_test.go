@@ -48,6 +48,27 @@ func TestResolveJumpPath_TildeReturnsRoot(t *testing.T) {
 	}
 }
 
+func TestResolveJumpPath_HomeDirReturnsRoot(t *testing.T) {
+	root := setupJumpWorkspace(t)
+	ctx, err := LoadContextFromDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+
+	got, err := resolveJumpPath(ctx, home, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != root {
+		t.Errorf("got %q, want %q", got, root)
+	}
+}
+
 func TestResolveJumpPath_RepoAndWorktree(t *testing.T) {
 	root := setupJumpWorkspace(t)
 	ctx, err := LoadContextFromDir(root)

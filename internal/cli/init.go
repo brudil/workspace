@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
@@ -78,7 +77,7 @@ func newInitCmd() *cobra.Command {
 			}
 
 			workspace.DisableWorkspaceGit(ctx.WS.Root)
-			runPostCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
+			runAfterCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
 
 			fmt.Fprintf(os.Stderr, "\nWorkspace ready. %d repos cloned.\n", len(clonedRepos))
 
@@ -93,24 +92,9 @@ func newInitCmd() *cobra.Command {
 }
 
 func writeLocalGitConfig(root, gitProtocol string) error {
-	path := filepath.Join(root, "ws.local.toml")
-
-	// Read existing local config if the config repo ships one
-	var local config.LocalConfig
-	if _, err := os.Stat(path); err == nil {
-		if _, err := toml.DecodeFile(path, &local); err != nil {
-			return fmt.Errorf("parsing existing %s: %w", config.LocalFileName, err)
-		}
-	}
-
-	local.Git = gitProtocol
-
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(local)
+	return config.UpdateLocal(root, func(local *config.LocalConfig) {
+		local.Git = gitProtocol
+	})
 }
 
 // dirNameFromURL derives a directory name from a git remote URL.

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/brudil/workspace/internal/github"
+	tmuxpkg "github.com/brudil/workspace/internal/tmux"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,9 @@ func (m mcModel) Init() tea.Cmd {
 	cmds = append(cmds, m.scheduleDetailFetch())
 	cmds = append(cmds, fetchGhUser())
 	cmds = append(cmds, tea.SetWindowTitle("Mission Control"))
+	if tmuxpkg.InTmux() {
+		cmds = append(cmds, queryTmuxWindows())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -43,8 +47,9 @@ func (m mcModel) queryWorktree(repo, wt string) tea.Cmd {
 
 func (m mcModel) queryRepoPRs(repoName string) tea.Cmd {
 	org := m.ws.Org
+	gh := m.gh
 	return func() tea.Msg {
-		prs, err := github.PRsForRepo(org, repoName)
+		prs, err := gh.PRsForRepo(org, repoName)
 		if err == nil {
 			github.WritePRCache(github.CacheDir(), org, repoName, prs)
 		}
@@ -128,8 +133,19 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 				m.rows[i].behind = msg.wt.Behind
 				m.rows[i].loaded = true
 				m.wtDone++
+				m.matchWorktreePR(i)
 				break
 			}
+		}
+		// Update branch cache so next launch can match PRs immediately.
+		branches := make(map[string]string)
+		for _, row := range m.rows {
+			if row.kind == rowWorktree && row.repo == msg.repo && row.branch != "" {
+				branches[row.wt] = row.branch
+			}
+		}
+		if len(branches) > 0 {
+			github.WriteBranchCache(github.CacheDir(), m.ws.Org, msg.repo, branches)
 		}
 		if m.activeFilters != 0 {
 			m.ensureCursorOnVisible()
@@ -181,6 +197,16 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 		m.ghUser = msg.login
 		if m.activeFilters&filterMine != 0 {
 			m.ensureCursorOnVisible()
+		}
+		return m, nil
+
+	case mcTmuxWindowsMsg:
+		for i := range m.rows {
+			if m.rows[i].kind == rowRepoHeader {
+				continue
+			}
+			name := tmuxpkg.WindowName(m.ws.DisplayNameFor(m.rows[i].repo), m.rows[i].wt)
+			m.rows[i].live = msg.windows[name] != ""
 		}
 		return m, nil
 
@@ -241,6 +267,22 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 		return m.rebuildModel()
 
 	case tea.MouseMsg:
+		listWidth := m.width * 2 / 5
+		if msg.X < listWidth {
+			// Left click on a row moves the cursor
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+				headerLines := 2 // header + border
+				contentLine := msg.Y - headerLines + m.listVP.YOffset
+				if rowIdx := m.lineToRowIndex(contentLine); rowIdx >= 0 {
+					m.cursor = rowIdx
+					return m, nil
+				}
+			}
+			m.syncListContent()
+			var cmd tea.Cmd
+			m.listVP, cmd = m.listVP.Update(msg)
+			return m, cmd
+		}
 		m.syncDetailContent()
 		var cmd tea.Cmd
 		m.detailVP, cmd = m.detailVP.Update(msg)
@@ -359,6 +401,40 @@ func (m *mcModel) processPRs(repoName string, prs []github.PR) {
 	}
 }
 
+// matchWorktreePR links a worktree row to a PR once its branch is known,
+// removing any ghost row that represented the same PR.
+func (m *mcModel) matchWorktreePR(rowIdx int) {
+	row := &m.rows[rowIdx]
+	if row.pr != nil || row.branch == "" {
+		return
+	}
+	var repoIdx int
+	for i := range m.repos {
+		if m.repos[i].name == row.repo {
+			repoIdx = i
+			break
+		}
+	}
+	pr, ok := m.repos[repoIdx].prs[row.branch]
+	if !ok {
+		return
+	}
+	row.pr = pr
+
+	// Remove the ghost row for this PR, if one exists.
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		if m.rows[i].kind == rowGhostPR && m.rows[i].repo == row.repo && m.rows[i].branch == row.branch {
+			m.rows = append(m.rows[:i], m.rows[i+1:]...)
+			if m.cursor > i {
+				m.cursor--
+			} else if m.cursor == i && m.cursor >= len(m.rows) {
+				m.cursor = len(m.rows) - 1
+			}
+			break
+		}
+	}
+}
+
 func (m *mcModel) insertGhostRows(repo string, ghosts []mcRow) {
 	insertAt := -1
 	for i := len(m.rows) - 1; i >= 0; i-- {
@@ -382,6 +458,12 @@ func (m *mcModel) insertGhostRows(repo string, ghosts []mcRow) {
 	}
 }
 
+func queryTmuxWindows() tea.Cmd {
+	return func() tea.Msg {
+		return mcTmuxWindowsMsg{windows: tmuxpkg.ListWindows()}
+	}
+}
+
 // --- detail fetching with debounce ---
 
 func (m mcModel) scheduleDetailFetch() tea.Cmd {
@@ -394,16 +476,29 @@ func (m mcModel) scheduleDetailFetch() tea.Cmd {
 func (m mcModel) fetchDetail(rowIdx int) tea.Cmd {
 	row := m.rows[rowIdx]
 	ws := m.ws
+	gh := m.gh
 	return func() tea.Msg {
 		var d detailData
-		if row.kind == rowWorktree {
+		if row.kind == rowWorktree && row.wt == workspace.GroundDir {
+			prs, err := gh.MergedPRsForRepo(ws.Org, row.repo)
+			if err == nil {
+				if len(prs) > 8 {
+					prs = prs[:8]
+				}
+				d.landings = prs
+			}
+			runs, err := gh.WorkflowRuns(ws.Org, row.repo, ws.DefaultBranch, 8)
+			if err == nil {
+				d.actions = runs
+			}
+		} else if row.kind == rowWorktree {
 			wtPath := filepath.Join(ws.RepoDir(row.repo), row.wt)
 			d.commits = workspace.GitRecentCommits(wtPath, 4, ws.DefaultBranch)
 			d.diffStat = workspace.GitDiffStat(wtPath)
 			d.stashCount = workspace.GitStashCount(wtPath)
 		}
 		if row.pr != nil {
-			pr, err := github.PRDetail(ws.Org, row.repo, row.pr.Number)
+			pr, err := gh.PRDetail(ws.Org, row.repo, row.pr.Number)
 			if err == nil {
 				d.prTitle = pr.Title
 				d.prBody = pr.Body

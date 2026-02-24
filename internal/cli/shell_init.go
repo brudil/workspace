@@ -9,7 +9,7 @@ import (
 )
 
 // shellQuote returns a shell-safe single-quoted string.
-// Single quotes within the value are escaped as '\'' (end quote, escaped quote, start quote).
+// Single quotes within the value are escaped as '\” (end quote, escaped quote, start quote).
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

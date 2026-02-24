@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 
@@ -207,11 +206,6 @@ func fprintResults(w io.Writer, results []repoEntry) {
 	}
 }
 
-// printResults prints sync results using the same formatting as the bubbletea view.
-func printResults(results []repoEntry) {
-	fprintResults(os.Stderr, results)
-}
-
 // cloneRepos runs SetupRepo for each repo with interactive or sync progress display.
 // Returns the list of repos that were newly cloned.
 func cloneRepos(ws *workspace.Workspace, repoNames []string, output io.Writer) ([]string, error) {
@@ -242,13 +236,13 @@ func cloneRepos(ws *workspace.Workspace, repoNames []string, output io.Writer) (
 	return clonedRepos, nil
 }
 
-// runPostCreateHooks runs post_create hooks for the given repos.
-func runPostCreateHooks(ws *workspace.Workspace, repos []string, stdout, stderr io.Writer) {
+// runAfterCreateHooks runs after_create hooks for the given repos.
+func runAfterCreateHooks(ws *workspace.Workspace, repos []string, stdout, stderr io.Writer) {
 	for _, repo := range repos {
-		if hook, ok := ws.PostCreateHooks[repo]; ok {
-			fmt.Fprintf(stderr, "\n  Running post_create hook for %s...\n", ws.FormatRepoName(repo))
+		if hook, ok := ws.AfterCreateHooks[repo]; ok {
+			fmt.Fprintf(stderr, "\n  Running after_create hook for %s...\n", ws.FormatRepoName(repo))
 			if err := workspace.RunHook(ws.MainWorktree(repo), hook, stdout, stderr); err != nil {
-				fmt.Fprintf(stderr, "  %s post_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
+				fmt.Fprintf(stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
 			}
 		}
 	}

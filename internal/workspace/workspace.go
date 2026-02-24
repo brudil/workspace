@@ -11,17 +11,17 @@ import (
 // Workspace represents a resolved workspace with config-derived state.
 // This is the core type — all business logic operates on this.
 type Workspace struct {
-	Root            string
-	Org             string
-	DefaultBranch   string
-	GitProtocol     string              // "ssh" or "" (defaults to https)
-	Name            string              // optional display name for the workspace
-	RepoNames       []string            // sorted canonical names
-	AliasMap        map[string]string   // alias → canonical name
-	DisplayNames    map[string]string   // canonical name → display name
-	RepoColors      map[string]string   // canonical name → custom color (256-color or hex)
-	PostCreateHooks map[string]string   // canonical name → shell command
-	Boarded         map[string][]string // repo → boarded capsule names (from ws.local.toml)
+	Root             string
+	Org              string
+	DefaultBranch    string
+	GitProtocol      string              // "ssh" or "" (defaults to https)
+	Name             string              // optional display name for the workspace
+	RepoNames        []string            // sorted canonical names
+	AliasMap         map[string]string   // alias → canonical name
+	DisplayNames     map[string]string   // canonical name → display name
+	RepoColors       map[string]string   // canonical name → custom color (256-color or hex)
+	AfterCreateHooks map[string]string   // canonical name → shell command
+	Boarded          map[string][]string // repo → boarded capsule names (from ws.local.toml)
 }
 
 func (w *Workspace) ReposDir() string {
@@ -74,6 +74,28 @@ func FuzzyMatch(pattern, target string) bool {
 		}
 	}
 	return false
+}
+
+// FuzzyMatchPositions returns the indices in target where each pattern character
+// matched (case-insensitive). Returns nil if no match.
+func FuzzyMatchPositions(pattern, target string) []int {
+	if pattern == "" {
+		return nil
+	}
+	patternLower := []rune(strings.ToLower(pattern))
+	targetLower := []rune(strings.ToLower(target))
+	positions := make([]int, 0, len(patternLower))
+	pi := 0
+	for i, r := range targetLower {
+		if r == patternLower[pi] {
+			positions = append(positions, i)
+			pi++
+			if pi == len(patternLower) {
+				return positions
+			}
+		}
+	}
+	return nil
 }
 
 // FuzzyMatchRepos returns canonical repo names that fuzzy-match the input.

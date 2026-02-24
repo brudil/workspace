@@ -6,6 +6,7 @@ import (
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
+	tmuxpkg "github.com/brudil/workspace/internal/tmux"
 	"github.com/brudil/workspace/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -49,7 +50,14 @@ func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
 			repo := row.repo
 			branch := row.wt
 			ws := m.ws
+			windowName := tmuxpkg.WindowName(m.ws.DisplayNameFor(repo), branch)
 			return m, func() tea.Msg {
+				if tmuxpkg.InTmux() {
+					windows := tmuxpkg.ListWindows()
+					if id, ok := windows[windowName]; ok {
+						_ = tmuxpkg.KillWindow(id)
+					}
+				}
 				err := ws.RemoveWorktree(repo, branch)
 				return mcWorktreeDeletedMsg{rowIdx: idx, repo: repo, branch: branch, err: err}
 			}
@@ -107,23 +115,21 @@ func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
 		m.syncDetailContent()
 		m.detailVP.LineUp(3)
 
-	case "g":
-		row := m.rows[m.cursor]
-		if row.pr != nil {
-			return m.doOpenPR()
+	case "left", "h":
+		if m.isOnGround() {
+			m.ensureCursorOnVisible()
+			m.ensureCursorVisible()
 		}
+
+	case "right", "l":
+		return m.doSelectGround()
+
+	case "enter":
 		return m.doGo()
 	case "o":
 		return m.doOpen()
 	case "b":
-		row := m.rows[m.cursor]
-		if row.kind != rowWorktree {
-			return m, nil
-		}
-		if row.isBoarded {
-			return m.doUnboard()
-		}
-		return m.doBoard()
+		return m.doBoardToggle()
 	case "d":
 		row := m.rows[m.cursor]
 		if row.kind == rowGhostPR {
@@ -141,18 +147,46 @@ func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
 
 // --- shared action helpers ---
 
+func (m mcModel) doSelectGround() (mcModel, tea.Cmd) {
+	row := m.rows[m.cursor]
+	repo := row.repo
+	if repo == "" {
+		return m, nil
+	}
+	for i, r := range m.rows {
+		if r.kind == rowWorktree && r.repo == repo && r.wt == workspace.GroundDir {
+			m.cursor = i
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
 func (m mcModel) doGo() (mcModel, tea.Cmd) {
 	path := m.selectedWorktreePath()
 	if path == "" {
 		return m, nil
 	}
-	if os.Getenv("TMUX") != "" {
-		_ = exec.Command("tmux", "new-window", "-c", path).Start()
-	} else {
-		m.jumpPath = path
-		return m, tea.Quit
+	if tmuxpkg.InTmux() {
+		row := m.rows[m.cursor]
+		name := tmuxpkg.WindowName(m.ws.DisplayNameFor(row.repo), row.wt)
+		windows := tmuxpkg.ListWindows()
+		if id, ok := windows[name]; ok {
+			panes := tmuxpkg.ListPanes(id)
+			if paneID, idle := tmuxpkg.FindIdlePane(panes); idle {
+				_ = tmuxpkg.SelectWindow(id)
+				_ = tmuxpkg.SelectPane(paneID)
+			} else {
+				_ = tmuxpkg.SelectWindow(id)
+				_ = tmuxpkg.SplitWindow(id, path)
+			}
+		} else {
+			_ = tmuxpkg.NewWindow(name, path)
+		}
+		return m, queryTmuxWindows()
 	}
-	return m, nil
+	m.jumpPath = path
+	return m, tea.Quit
 }
 
 func (m mcModel) doOpen() (mcModel, tea.Cmd) {
@@ -163,6 +197,18 @@ func (m mcModel) doOpen() (mcModel, tea.Cmd) {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vim"
+	}
+	if tmuxpkg.InTmux() {
+		row := m.rows[m.cursor]
+		name := tmuxpkg.WindowName(m.ws.DisplayNameFor(row.repo), row.wt)
+		windows := tmuxpkg.ListWindows()
+		if id, ok := windows[name]; ok {
+			_ = tmuxpkg.SelectWindow(id)
+			_ = exec.Command("tmux", "split-window", "-t", id, "-c", path, editor, path).Start()
+		} else {
+			_ = exec.Command("tmux", "new-window", "-n", name, "-c", path, editor, path).Start()
+		}
+		return m, queryTmuxWindows()
 	}
 	c := exec.Command(editor, path)
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
@@ -178,28 +224,25 @@ func (m mcModel) doOpenPR() (mcModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m mcModel) doBoard() (mcModel, tea.Cmd) {
+func (m mcModel) doBoardToggle() (mcModel, tea.Cmd) {
 	row := m.rows[m.cursor]
 	if row.kind != rowWorktree {
 		return m, nil
 	}
-	_ = m.ws.Board(row.repo, row.wt)
-	config.SaveBoarded(m.ws.Root, m.ws.Boarded)
-	ide.Regenerate(m.ws.Root, m.ws.Boarded, m.ws.DisplayNames, m.ws.Org)
-	for i := range m.rows {
-		if m.rows[i].kind == rowWorktree && m.rows[i].repo == row.repo {
-			m.rows[i].isBoarded = m.ws.IsBoarded(m.rows[i].repo, m.rows[i].wt)
-		}
+	if row.wt == m.ws.DefaultBranch || row.wt == workspace.GroundDir {
+		return m, nil
 	}
-	return m, nil
-}
 
-func (m mcModel) doUnboard() (mcModel, tea.Cmd) {
-	row := m.rows[m.cursor]
-	if row.kind != rowWorktree {
+	var err error
+	if row.isBoarded {
+		err = m.ws.Unboard(row.repo, row.wt)
+	} else {
+		err = m.ws.Board(row.repo, row.wt)
+	}
+	if err != nil {
 		return m, nil
 	}
-	_ = m.ws.Unboard(row.repo, row.wt)
+
 	config.SaveBoarded(m.ws.Root, m.ws.Boarded)
 	ide.Regenerate(m.ws.Root, m.ws.Boarded, m.ws.DisplayNames, m.ws.Org)
 	for i := range m.rows {
@@ -237,6 +280,19 @@ func (m mcModel) doCreateWorktree() (mcModel, tea.Cmd) {
 
 func (m mcModel) doRefresh() (mcModel, tea.Cmd) {
 	capsules := m.ws.FindAllCapsules(14, "")
+
+	if tmuxpkg.InTmux() {
+		windows := tmuxpkg.ListWindows()
+		for _, c := range capsules {
+			if (c.Merged || c.Inactive) && !c.Dirty {
+				name := tmuxpkg.WindowName(m.ws.DisplayNameFor(c.Repo), c.Name)
+				if id, ok := windows[name]; ok {
+					_ = tmuxpkg.KillWindow(id)
+				}
+			}
+		}
+	}
+
 	boardChanged := false
 	for _, c := range capsules {
 		if (c.Merged || c.Inactive) && !c.Dirty {
@@ -255,7 +311,7 @@ func (m mcModel) doRefresh() (mcModel, tea.Cmd) {
 }
 
 func (m mcModel) rebuildModel() (mcModel, tea.Cmd) {
-	m2 := newMCModel(m.ws, m.cwd)
+	m2 := newMCModel(m.ws, m.gh, m.cwd)
 	m2.width = m.width
 	m2.height = m.height
 	m2.listVP = m.listVP

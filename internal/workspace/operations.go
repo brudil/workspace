@@ -86,11 +86,12 @@ func (w *Workspace) FetchAll() []FetchResult {
 	return results
 }
 
-// LiftWorktree creates a new branch from base and sets up a worktree for it.
+// CreateLiftWorktree creates a new branch from base and sets up a worktree.
+// Does not fetch — caller is responsible for fetching first.
 // Returns the capsule directory name used for the worktree.
-func (w *Workspace) LiftWorktree(repo, branch, base string) (string, error) {
+func (w *Workspace) CreateLiftWorktree(repo, branch, base string) (string, error) {
 	bareDir := w.BareDir(repo)
-	GitFetch(bareDir) // best-effort fetch
+	runGit(bareDir, "config", "push.autoSetupRemote", "true") // idempotent
 
 	capsule := UniqueCapsuleName(w.RepoDir(repo), branch)
 	wtPath := filepath.Join(w.RepoDir(repo), capsule)
@@ -100,18 +101,30 @@ func (w *Workspace) LiftWorktree(repo, branch, base string) (string, error) {
 	return capsule, nil
 }
 
-// DockWorktree checks out an existing remote branch into a new worktree.
+// CreateDockWorktree checks out an existing branch into a new worktree.
+// Does not fetch — caller is responsible for fetching first.
 // Returns the capsule directory name used for the worktree.
-func (w *Workspace) DockWorktree(repo, branch string) (string, error) {
-	bareDir := w.BareDir(repo)
-	GitFetch(bareDir) // best-effort fetch
-
+func (w *Workspace) CreateDockWorktree(repo, branch string) (string, error) {
 	capsule := UniqueCapsuleName(w.RepoDir(repo), branch)
 	wtPath := filepath.Join(w.RepoDir(repo), capsule)
-	if err := GitWorktreeAddBranch(bareDir, wtPath, branch); err != nil {
+	if err := GitWorktreeAddBranch(w.BareDir(repo), wtPath, branch); err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
 	return capsule, nil
+}
+
+// LiftWorktree fetches and creates a new branch worktree.
+// Returns the capsule directory name used for the worktree.
+func (w *Workspace) LiftWorktree(repo, branch, base string) (string, error) {
+	GitFetch(w.BareDir(repo)) // best-effort fetch
+	return w.CreateLiftWorktree(repo, branch, base)
+}
+
+// DockWorktree fetches and checks out an existing branch into a new worktree.
+// Returns the capsule directory name used for the worktree.
+func (w *Workspace) DockWorktree(repo, branch string) (string, error) {
+	GitFetch(w.BareDir(repo)) // best-effort fetch
+	return w.CreateDockWorktree(repo, branch)
 }
 
 // RemovePrecheck holds info the CLI needs before confirming removal.
@@ -172,4 +185,31 @@ func (w *Workspace) Unboard(repo, capsule string) error {
 		}
 	}
 	return fmt.Errorf("capsule %s/%s is not boarded", repo, capsule)
+}
+
+// CopyFromGround copies files from groundDir to capsuleDir.
+// Missing source files are skipped and returned in the skipped slice.
+// Returns a hard error for permission/IO failures on files that do exist.
+func CopyFromGround(groundDir, capsuleDir string, paths []string) (skipped []string, err error) {
+	for _, p := range paths {
+		src := filepath.Join(groundDir, p)
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			skipped = append(skipped, p)
+			continue
+		}
+
+		dst := filepath.Join(capsuleDir, p)
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			return skipped, fmt.Errorf("creating directory for %s: %w", p, err)
+		}
+
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return skipped, fmt.Errorf("reading %s: %w", p, err)
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			return skipped, fmt.Errorf("writing %s: %w", p, err)
+		}
+	}
+	return skipped, nil
 }

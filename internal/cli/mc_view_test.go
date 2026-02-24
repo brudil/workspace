@@ -74,6 +74,29 @@ func TestView_ZeroWidth(t *testing.T) {
 	}
 }
 
+func TestRenderWorktreeRow_LiveIndicator(t *testing.T) {
+	m := viewMCModel()
+	row := mcRow{kind: rowWorktree, repo: "repo1", wt: "feat", loaded: true, live: true}
+
+	got := m.renderWorktreeRow(row, 60)
+
+	if !strings.Contains(got, "●") {
+		t.Error("live row should contain ● indicator")
+	}
+}
+
+func TestRenderDetail_LiveTag(t *testing.T) {
+	m := viewMCModel()
+	m.rows = append(m.rows, mcRow{kind: rowWorktree, repo: "repo1", wt: "feat", loaded: true, live: true})
+	m.cursor = 2
+
+	got := m.renderDetail(60)
+
+	if !strings.Contains(got, "live") {
+		t.Error("detail view should contain 'live' tag for live row")
+	}
+}
+
 func TestView_ShowHelp(t *testing.T) {
 	m := viewMCModel()
 	m.showHelp = true

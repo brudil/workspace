@@ -136,6 +136,34 @@ func TestFuzzyMatch(t *testing.T) {
 	}
 }
 
+func TestFuzzyMatchPositions(t *testing.T) {
+	tests := []struct {
+		pattern, target string
+		want            []int
+	}{
+		{"fnt", "frontend", []int{0, 3, 4}},
+		{"fe", "frontend", []int{0, 5}},
+		{"FE", "frontend", []int{0, 5}}, // case insensitive
+		{"xyz", "frontend", nil},
+		{"", "frontend", nil}, // empty pattern = no positions
+		{"go", "Go", []int{0, 1}},
+		{"fil", "Filter: Local", []int{0, 1, 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pattern+"_"+tt.target, func(t *testing.T) {
+			got := FuzzyMatchPositions(tt.pattern, tt.target)
+			if len(got) != len(tt.want) {
+				t.Fatalf("FuzzyMatchPositions(%q, %q) = %v, want %v", tt.pattern, tt.target, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("FuzzyMatchPositions(%q, %q)[%d] = %d, want %d", tt.pattern, tt.target, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestFuzzyMatchRepos(t *testing.T) {
 	ws := &Workspace{
 		RepoNames: []string{"frontend", "backend", "infra-core"},

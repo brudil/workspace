@@ -32,7 +32,7 @@ func newSetupCmd() *cobra.Command {
 			}
 
 			workspace.DisableWorkspaceGit(ctx.WS.Root)
-			runPostCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
+			runAfterCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
 
 			for _, name := range clonedRepos {
 				ctx.WS.Board(name, workspace.GroundDir)

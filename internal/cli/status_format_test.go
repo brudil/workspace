@@ -224,10 +224,10 @@ func TestRenderRepoBlock(t *testing.T) {
 
 func TestFormatFooter(t *testing.T) {
 	tests := []struct {
-		name                                                     string
+		name                                                           string
 		repoCount, wtCount, dirtyCount, behindCount, prCount, prErrors int
-		contains                                                 []string
-		notContains                                              []string
+		contains                                                       []string
+		notContains                                                    []string
 	}{
 		{
 			name:        "all clean",
@@ -237,11 +237,11 @@ func TestFormatFooter(t *testing.T) {
 			notContains: []string{"dirty", "behind"},
 		},
 		{
-			name:       "some dirty",
-			repoCount:  2,
-			wtCount:    5,
-			dirtyCount: 3,
-			contains:   []string{"2 repos", "5 worktrees", "3 dirty"},
+			name:        "some dirty",
+			repoCount:   2,
+			wtCount:     5,
+			dirtyCount:  3,
+			contains:    []string{"2 repos", "5 worktrees", "3 dirty"},
 			notContains: []string{"all clean"},
 		},
 		{

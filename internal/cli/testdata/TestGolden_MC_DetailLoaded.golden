@@ -1,0 +1,40 @@
+ Acme Corp Mission Control                                                                                  / to filter 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ frontend                             [Ground] │  feat-auth  docked   boarded                                frontend  
+├────────────────────────────────────────────── │                                                                       
+│ › feat-auth  ●                                │  ↑2                                                                   
+│   fix-styles                                  │                                                                       
+│   redesign                                    │  Recent Commits                                                       
+                                                │  feat: add login form validation                                      
+│ backend                              [Ground] │  feat: wire up auth API client                                        
+├────────────────────────────────────────────── │  chore: scaffold auth module                                          
+│   add-api                                     │                                                                       
+│   refactor-db  ●                              │  Changes                                                              
+                                                │   5 files changed, 142 insertions(+), 23 deletions(-)                 
+                                                │                                                                       
+                                                │  Stash: 1 entries                                                     
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                                                                                        
+j/k navigate  →/l ground  ←/h leave ground  J/K scroll detail  / filter  ⏎ go  o open  b board  d undock  r refresh  : commands  ? help  q quit

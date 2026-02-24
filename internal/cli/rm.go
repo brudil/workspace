@@ -79,7 +79,7 @@ func newBurnCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(os.Stderr, "  %s Removed %s/%s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), capsule)
+			fmt.Fprintf(os.Stderr, "  %s Removed %s %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 			return nil
 		},
 	}

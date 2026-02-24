@@ -4,11 +4,10 @@ You are working in a multi-repo workspace managed by `ws`. This file explains ho
 
 ## Layout
 
-Repos live under `repos/`. Each repo is a **bare clone** with linked worktrees. The workspace config is in `ws.toml` at the root.
+Repos live under `repos/`. Each repo is a **bare clone** with linked worktrees.
 
 ```
 workspace-root/
-  ws.toml                        # workspace config (repos, org, default branch)
   repos/
     repo-name/
       .bare/                     # bare git repo (do not touch)
@@ -36,21 +35,21 @@ There is no `current` symlink. `ws` infers the active repo and capsule from your
 
 **Ground is read-only.** Do not make commits or changes in `.ground/`. All work happens in capsules.
 
-**Repo names and aliases.** Users may refer to repos by display name or alias rather than the canonical directory name. Check `ws.toml` under `[repos]` to resolve which repo they mean — look at `display_name` and `aliases` fields.
+**Repo names and aliases.** Users may refer to repos by display name or alias rather than the canonical directory name. Run `ws status -f llm` to see display names and aliases for each repo.
 
 ## Seeing workspace state
 
-Run `ws status -f json` to get live state for all repos. The output includes:
+Run `ws status -f llm` to get live state for all repos. The output includes:
 
-- Every repo and its capsules
-- Branch name, dirty state, ahead/behind counts
-- Open pull requests linked to each capsule
+- Every repo (with display names and aliases) and its capsules
+- Notable state only: dirty, ahead/behind, open PRs, boarded status
+- Repos the user may refer to by alias or display name
 Use this to orient yourself before starting work.
 
 ## Commands
 
 ```
-ws status [-f json]                # live state for all repos and capsules
+ws status [-f llm]                 # live state for all repos and capsules (use llm format)
 ws lift <repo> <name> [base]       # create a new capsule (branch + worktree) from base
 ws dock <repo> <branch|PR#|PR-URL> # check out an existing branch or PR into a capsule
 ws burn [repo] <capsule>           # remove a capsule (alias: ws rm)

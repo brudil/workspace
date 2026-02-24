@@ -1,0 +1,9 @@
+Acme Corp · 1 repos
+
+│ frontend
+├─────────
+│   .ground       → main
+│ › feat-auth   ● ↑2 ]8;;https://github.com/acme/frontend/pull/42\#42]8;;\ ✓ cleared
+│   fix-styles
+
+1 repos · 3 worktrees · 1 dirty · 1 open PRs

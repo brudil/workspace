@@ -85,7 +85,11 @@ func PickMultiple(title string, options []string, descriptions []string) ([]int,
 	return selected, err
 }
 
-func Confirm(message string) (bool, error) {
+// ConfirmFunc is the implementation behind Confirm. Tests can replace it to
+// avoid interactive prompts (same pattern as cli.SetContextOverride).
+var ConfirmFunc = confirmImpl
+
+func confirmImpl(message string) (bool, error) {
 	if !IsInteractive() {
 		return false, fmt.Errorf("confirmation required but not in an interactive terminal")
 	}
@@ -97,4 +101,8 @@ func Confirm(message string) (bool, error) {
 		Run()
 
 	return confirmed, err
+}
+
+func Confirm(message string) (bool, error) {
+	return ConfirmFunc(message)
 }

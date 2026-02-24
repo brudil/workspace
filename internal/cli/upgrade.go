@@ -71,7 +71,7 @@ func newUpgradeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				runPostCreateHooks(newCtx.WS, clonedRepos, os.Stderr, os.Stderr)
+				runAfterCreateHooks(newCtx.WS, clonedRepos, os.Stderr, os.Stderr)
 			}
 
 			fmt.Fprintln(os.Stderr, "\nUpgrade complete.")

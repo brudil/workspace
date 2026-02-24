@@ -31,6 +31,7 @@ type mcRow struct {
 	pr        *github.PR
 	isBoarded bool
 	merged    bool
+	live      bool
 }
 
 // --- detail tier 2 data ---
@@ -43,6 +44,10 @@ type detailData struct {
 	prBody     string
 	checks     []github.CheckRun
 	loaded     bool
+
+	// Ground-specific
+	landings []github.PR          // recently merged PRs
+	actions  []github.WorkflowRun // recent workflow runs
 }
 
 // --- filter flags ---
@@ -60,6 +65,7 @@ const (
 
 type mcModel struct {
 	ws     *workspace.Workspace
+	gh     github.Client
 	cwd    string
 	rows   []mcRow
 	cursor int
@@ -93,6 +99,7 @@ type mcModel struct {
 	paletteActive bool
 	paletteInput  textinput.Model
 	paletteCursor int
+	paletteOffset int
 
 	activeFilters filterFlag
 	ghUser        string
@@ -147,6 +154,10 @@ type mcGhUserMsg struct {
 	login string
 }
 
+type mcTmuxWindowsMsg struct {
+	windows map[string]string
+}
+
 type mcMergedMsg struct {
 	repo     string
 	branches map[string]bool
@@ -154,7 +165,7 @@ type mcMergedMsg struct {
 
 // --- constructor ---
 
-func newMCModel(ws *workspace.Workspace, cwd string) mcModel {
+func newMCModel(ws *workspace.Workspace, gh github.Client, cwd string) mcModel {
 	outlines := ws.StatusOutline(true)
 	repos := make([]mcRepoData, len(outlines))
 	var rows []mcRow
@@ -217,6 +228,7 @@ func newMCModel(ws *workspace.Workspace, cwd string) mcModel {
 
 	m := mcModel{
 		ws:            ws,
+		gh:            gh,
 		cwd:           cwd,
 		rows:          rows,
 		cursor:        cursor,
@@ -230,11 +242,21 @@ func newMCModel(ws *workspace.Workspace, cwd string) mcModel {
 		paletteInput:  pi,
 	}
 
-	// Load cached PR data for instant first render
+	// Load cached data for instant first render.
+	// Branches first so that processPRs can match worktrees to PRs.
 	cacheDir := github.CacheDir()
 	for _, repo := range repos {
 		if repo.err != nil {
 			continue
+		}
+		if branches := github.ReadBranchCache(cacheDir, ws.Org, repo.name); len(branches) > 0 {
+			for i := range m.rows {
+				if m.rows[i].kind == rowWorktree && m.rows[i].repo == repo.name {
+					if b, ok := branches[m.rows[i].wt]; ok {
+						m.rows[i].branch = b
+					}
+				}
+			}
 		}
 		prs, _ := github.ReadPRCache(cacheDir, ws.Org, repo.name)
 		if len(prs) > 0 {

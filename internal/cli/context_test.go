@@ -130,14 +130,14 @@ repo-a = ["main", "feature-x"]
 	}
 }
 
-func TestLoadContextFromDir_PostCreateHooks(t *testing.T) {
+func TestLoadContextFromDir_AfterCreateHooks(t *testing.T) {
 	root := t.TempDir()
 	content := `[workspace]
 org = "org"
 default_branch = "main"
 
 [repos]
-repo-a = { post_create = "npm install" }
+repo-a = { after_create = "npm install" }
 repo-b = {}
 `
 	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(content), 0644)
@@ -147,11 +147,11 @@ repo-b = {}
 		t.Fatalf("LoadContextFromDir() error: %v", err)
 	}
 
-	if hook := ctx.WS.PostCreateHooks["repo-a"]; hook != "npm install" {
-		t.Errorf("PostCreateHooks[repo-a] = %q, want %q", hook, "npm install")
+	if hook := ctx.WS.AfterCreateHooks["repo-a"]; hook != "npm install" {
+		t.Errorf("AfterCreateHooks[repo-a] = %q, want %q", hook, "npm install")
 	}
-	if _, ok := ctx.WS.PostCreateHooks["repo-b"]; ok {
-		t.Error("repo-b should not have a post_create hook")
+	if _, ok := ctx.WS.AfterCreateHooks["repo-b"]; ok {
+		t.Error("repo-b should not have an after_create hook")
 	}
 }
 

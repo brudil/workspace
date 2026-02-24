@@ -7,9 +7,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+func (m mcModel) isOnGround() bool {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return false
+	}
+	r := m.rows[m.cursor]
+	return r.kind == rowWorktree && r.wt == workspace.GroundDir
+}
+
 func (m mcModel) isRowVisible(i int) bool {
 	row := m.rows[i]
 	if row.kind == rowRepoHeader {
+		return false
+	}
+	if row.kind == rowWorktree && row.wt == workspace.GroundDir {
 		return false
 	}
 
@@ -145,6 +156,50 @@ func (m mcModel) repoColorFor(repoName string) lipgloss.Color {
 		}
 	}
 	return repoPalette[0]
+}
+
+// lineToRowIndex maps a rendered line number (0-based, in list viewport content)
+// to a global row index. Returns -1 for non-row lines (headers, separators, blanks).
+func (m mcModel) lineToRowIndex(line int) int {
+	cur := 0
+	firstGroup := true
+	for i, row := range m.rows {
+		if row.kind == rowRepoHeader {
+			// Check if this repo group has any visible children
+			hasVisible := false
+			for j := i + 1; j < len(m.rows) && m.rows[j].kind != rowRepoHeader; j++ {
+				if m.isRowVisible(j) {
+					hasVisible = true
+					break
+				}
+			}
+			if !hasVisible {
+				continue
+			}
+			if !firstGroup {
+				cur++ // blank line between groups
+			}
+			firstGroup = false
+			cur += 2 // header line + separator line
+			continue
+		}
+		if !m.isRowVisible(i) {
+			continue
+		}
+		if cur == line {
+			return i
+		}
+		cur++
+	}
+	return -1
+}
+
+func (m *mcModel) syncListContent() {
+	if m.width == 0 {
+		return
+	}
+	listWidth := m.width * 2 / 5
+	m.listVP.SetContent(m.renderList(listWidth))
 }
 
 func (m *mcModel) syncDetailContent() {

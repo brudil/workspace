@@ -1,0 +1,40 @@
+ Acme Corp Mission Control                                                                                  / to filter 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ frontend                             [Ground] │  feat-auth  docked   boarded                                frontend  
+├────────────────────────────────────────────── │                                                                       
+│ › feat-auth  ●                                │  ↑2                                                                   
+│   fix-styles                                  │                                                                       
+│   redesign                                    │  loading details…                                                     
+                                                │                                                                       
+│ backend                              [Ground] │                                                                       
+├────────────────────────────────────────────── │                                                                       
+│   add-api                                     │                                                                       
+│   refactor-db  ●                              │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                │                                                                       
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    ⏎  Go  cd into worktree                                                                                   worktree  
+    o  Open in Editor  open in $EDITOR                                                                        worktree
+    b  Unboard  remove from IDE workspace                                                                     worktree
+    d  Undock  remove worktree                                                                                worktree
+       Copy Path  copy worktree path                                                                          worktree
+       View Repo on GitHub  open repo in browser                                                                  repo
+       Fetch  fetch PR data for repo                                                                              repo
+    1  Filter: Local  toggle local filter
+  ▼
+:  

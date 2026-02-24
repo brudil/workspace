@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
 
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ui"
+	"github.com/brudil/workspace/internal/workspace"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 )
 
 // --- View ---
@@ -132,10 +135,12 @@ func (m mcModel) renderList(width int) string {
 	var b strings.Builder
 
 	type repoGroup struct {
-		name    string
-		color   lipgloss.Color
-		rows    []mcRow
-		rowIdxs []int
+		name      string
+		color     lipgloss.Color
+		ground    *mcRow
+		groundIdx int
+		rows      []mcRow
+		rowIdxs   []int
 	}
 
 	var groups []repoGroup
@@ -158,8 +163,14 @@ func (m mcModel) renderList(width int) string {
 				color: color,
 			}
 		} else if current != nil {
-			current.rows = append(current.rows, row)
-			current.rowIdxs = append(current.rowIdxs, i)
+			if row.kind == rowWorktree && row.wt == workspace.GroundDir {
+				r := m.rows[i]
+				current.ground = &r
+				current.groundIdx = i
+			} else {
+				current.rows = append(current.rows, row)
+				current.rowIdxs = append(current.rowIdxs, i)
+			}
 		}
 	}
 	if current != nil {
@@ -179,10 +190,29 @@ func (m mcModel) renderList(width int) string {
 			header += " " + ui.Dim.Render("("+g.name+")")
 		}
 
+		var groundLabel string
+		if g.ground != nil {
+			if m.cursor == g.groundIdx {
+				groundLabel = lipgloss.NewStyle().Background(lipgloss.Color("236")).Render("[Ground]")
+			} else {
+				groundLabel = ui.Dim.Render("[Ground]")
+			}
+		}
+
 		bStyle := lipgloss.NewStyle().Foreground(g.color)
-		b.WriteString(bStyle.Render("│") + " " + header + "\n")
+		prefix := bStyle.Render("│") + " "
+		if groundLabel != "" {
+			headerWidth := lipgloss.Width(header)
+			groundWidth := lipgloss.Width(groundLabel)
+			// 3 = prefix (2) + trailing space (1)
+			pad := max(width-3-headerWidth-groundWidth, 1)
+			b.WriteString(prefix + header + strings.Repeat(" ", pad) + groundLabel + "\n")
+		} else {
+			b.WriteString(prefix + header + "\n")
+		}
 		b.WriteString(bStyle.Render("├─") + strings.Repeat("─", width-3) + "\n")
 
+		rowWidth := width - 3 // prefix takes 3 visual chars
 		for j, row := range g.rows {
 			globalIdx := g.rowIdxs[j]
 			if !m.isRowVisible(globalIdx) {
@@ -190,7 +220,7 @@ func (m mcModel) renderList(width int) string {
 			}
 			selected := globalIdx == m.cursor
 
-			line := m.renderRow(row, selected, globalIdx)
+			line := m.renderRow(row, selected, globalIdx, rowWidth)
 			prefix := bStyle.Render("│") + " "
 			b.WriteString(prefix + line + "\n")
 		}
@@ -200,15 +230,15 @@ func (m mcModel) renderList(width int) string {
 	return b.String()
 }
 
-func (m mcModel) renderRow(row mcRow, selected bool, globalIdx int) string {
+func (m mcModel) renderRow(row mcRow, selected bool, globalIdx int, availWidth int) string {
 	highlightStyle := lipgloss.NewStyle().Background(lipgloss.Color("236"))
 
 	var line string
 	switch row.kind {
 	case rowWorktree:
-		line = m.renderWorktreeRow(row)
+		line = m.renderWorktreeRow(row, availWidth)
 	case rowGhostPR:
-		line = m.renderGhostRow(row)
+		line = m.renderGhostRow(row, availWidth)
 	}
 
 	if m.actionSpinner == globalIdx {
@@ -221,59 +251,90 @@ func (m mcModel) renderRow(row mcRow, selected bool, globalIdx int) string {
 	return line
 }
 
-func (m mcModel) renderWorktreeRow(row mcRow) string {
+func (m mcModel) renderWorktreeRow(row mcRow, availWidth int) string {
 	if m.confirmIdx >= 0 && m.confirmIdx < len(m.rows) && m.rows[m.confirmIdx].wt == row.wt && m.rows[m.confirmIdx].repo == row.repo {
 		return ui.Red.Render("delete " + row.wt + "? y/n")
 	}
 
-	var buf strings.Builder
-
+	// Build prefix (boarded marker)
+	var prefix string
 	if row.isBoarded {
-		buf.WriteString(ui.Blue.Render(ui.BoardedMarker) + " ")
+		prefix = ui.Blue.Render(ui.BoardedMarker) + " "
 	} else {
-		buf.WriteString("  ")
+		prefix = "  "
 	}
 
-	buf.WriteString(row.wt)
+	// Name part (truncatable)
+	var name string
+	if row.pr != nil && row.pr.Title != "" {
+		name = row.pr.Title
+	} else {
+		name = row.wt
+	}
 
 	if !row.loaded {
-		buf.WriteString("  " + ui.Dim.Render("…"))
-		return buf.String()
+		return prefix + name + "  " + ui.Dim.Render("…")
 	}
 
-	buf.WriteString("  ")
+	// Build suffix (treats — always visible)
+	var suffix strings.Builder
 
 	if row.dirty {
-		buf.WriteString(ui.Orange.Render("●") + " ")
+		suffix.WriteString(ui.Orange.Render("●") + " ")
+	}
+
+	if row.live {
+		suffix.WriteString(ui.Green.Render("●") + " ")
 	}
 
 	if row.merged {
-		buf.WriteString(ui.TagGreen.Render("landed") + " ")
-	}
-
-	if row.branch != "" && row.branch != row.wt {
-		buf.WriteString(ui.Dim.Render("→ "+row.branch) + " ")
-	}
-
-	if ab := formatAheadBehind(row.ahead, row.behind); ab != "" {
-		buf.WriteString(ui.Dim.Render(ab) + " ")
+		suffix.WriteString(ui.TagGreen.Render("landed") + " ")
 	}
 
 	if row.pr != nil {
-		buf.WriteString(formatPRInfo(row.pr))
+		suffix.WriteString(formatPRInfo(row.pr))
 	}
 
-	return strings.TrimRight(buf.String(), " ")
+	suffixStr := strings.TrimRight(suffix.String(), " ")
+	suffixWidth := lipgloss.Width(suffixStr)
+	prefixWidth := lipgloss.Width(prefix)
+
+	// Truncate name to fit: availWidth - prefix - suffix - gap
+	gap := 2 // "  " between name and suffix
+	nameBudget := max(availWidth-prefixWidth-suffixWidth-gap, 4)
+	name = truncate.StringWithTail(name, uint(nameBudget), "…")
+
+	if suffixStr != "" {
+		return prefix + name + "  " + suffixStr
+	}
+	return prefix + name
 }
 
-func (m mcModel) renderGhostRow(row mcRow) string {
-	var buf strings.Builder
-	buf.WriteString("  ")
-	buf.WriteString(ui.Dim.Render(row.branch))
-	if row.pr != nil {
-		buf.WriteString("  " + formatPRInfo(row.pr))
+func (m mcModel) renderGhostRow(row mcRow, availWidth int) string {
+	prefix := "  "
+	prefixWidth := 2
+
+	var name string
+	if row.pr != nil && row.pr.Title != "" {
+		name = row.pr.Title
+	} else {
+		name = row.branch
 	}
-	return buf.String()
+
+	var suffixStr string
+	if row.pr != nil {
+		suffixStr = formatPRInfo(row.pr)
+	}
+	suffixWidth := lipgloss.Width(suffixStr)
+
+	gap := 2
+	nameBudget := max(availWidth-prefixWidth-suffixWidth-gap, 4)
+	name = truncate.StringWithTail(name, uint(nameBudget), "…")
+
+	if suffixStr != "" {
+		return prefix + ui.Dim.Render(name) + "  " + suffixStr
+	}
+	return prefix + ui.Dim.Render(name)
 }
 
 func uintPtr(v uint) *uint { return &v }
@@ -291,68 +352,15 @@ func renderPRStatusParts(pr *github.PR) []string {
 
 // --- right panel ---
 
-func (m mcModel) renderDetail(width int) string {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return ""
-	}
-	row := m.rows[m.cursor]
-	if row.kind == rowRepoHeader {
-		return ""
-	}
-
+func (m mcModel) renderCapsuleStatusBlock(row mcRow, indent string, width int) string {
 	var b strings.Builder
-	indent := "  "
 
-	// --- header line: branch/wt name + status tags ... repo name (right-aligned) ---
-	branchName := row.wt
-	if row.kind == rowGhostPR {
-		branchName = row.branch
-	}
-	left := lipgloss.NewStyle().Bold(true).Render(branchName)
-
-	// Status tags
-	var tags []string
-	if row.kind == rowWorktree {
-		tags = append(tags, ui.TagDim.Render("docked"))
-	}
-	if row.kind == rowGhostPR {
-		tags = append(tags, ui.TagOrange.Render("remote"))
-	}
-	if row.isBoarded {
-		tags = append(tags, ui.TagBlue.Render("boarded"))
-	}
-	if row.kind == rowWorktree && row.loaded && !row.dirty {
-		tags = append(tags, ui.TagGreen.Render("clean"))
-	}
-	if row.pr != nil && row.pr.ReviewDecision == "APPROVED" {
-		tags = append(tags, ui.TagGreen.Render("cleared"))
-	}
-	if row.merged {
-		tags = append(tags, ui.TagGreen.Render("landed"))
-	}
-	if len(tags) > 0 {
-		left += " " + strings.Join(tags, " ")
-	}
-
-	repoColor := m.repoColorFor(row.repo)
-	repoLabel := lipgloss.NewStyle().Foreground(repoColor).Render(m.ws.DisplayNameFor(row.repo))
-
-	// Right-align repo name on the header line
-	leftWidth := lipgloss.Width(left)
-	repoWidth := lipgloss.Width(repoLabel)
-	padding := max(
-		// 4 = 2 indent + 2 margin
-		width-4-leftWidth-repoWidth, 2)
-	b.WriteString(indent + left + strings.Repeat(" ", padding) + repoLabel + "\n")
-
-	// --- PR line (if applicable) ---
 	if row.pr != nil {
 		prNum := fmt.Sprintf("#%d", row.pr.Number)
 		if row.pr.URL != "" {
 			prNum = ui.Hyperlink(row.pr.URL, prNum)
 		}
 
-		// Use title from detail data if loaded, otherwise from PR object
 		title := row.pr.Title
 		if m.detailFor == m.cursor && m.detail.loaded && m.detail.prTitle != "" {
 			title = m.detail.prTitle
@@ -360,7 +368,6 @@ func (m mcModel) renderDetail(width int) string {
 
 		prRight := ui.Dim.Render(prNum)
 		prRightWidth := lipgloss.Width(prRight)
-		// 4 = 2 indent + 2 border/padding from style
 		titleWidth := max(width-4-prRightWidth-2, 10)
 
 		prStyle := lipgloss.NewStyle().
@@ -378,8 +385,7 @@ func (m mcModel) renderDetail(width int) string {
 
 	b.WriteString("\n")
 
-	// --- git status (worktree only) ---
-	if row.kind == rowWorktree && row.loaded {
+	if row.loaded {
 		var gitParts []string
 		if row.ahead > 0 {
 			gitParts = append(gitParts, fmt.Sprintf("↑%d", row.ahead))
@@ -389,7 +395,6 @@ func (m mcModel) renderDetail(width int) string {
 		}
 		b.WriteString(indent + strings.Join(gitParts, "  ") + "\n")
 
-		// PR status indicators
 		if row.pr != nil {
 			if prParts := renderPRStatusParts(row.pr); len(prParts) > 0 {
 				b.WriteString(indent + strings.Join(prParts, "  ") + "\n")
@@ -398,12 +403,122 @@ func (m mcModel) renderDetail(width int) string {
 		b.WriteString("\n")
 	}
 
-	// --- ghost PR status ---
-	if row.kind == rowGhostPR && row.pr != nil {
+	return b.String()
+}
+
+func (m mcModel) renderGhostStatusBlock(row mcRow, indent string, width int) string {
+	var b strings.Builder
+
+	if row.pr != nil {
+		prNum := fmt.Sprintf("#%d", row.pr.Number)
+		if row.pr.URL != "" {
+			prNum = ui.Hyperlink(row.pr.URL, prNum)
+		}
+
+		title := row.pr.Title
+		if m.detailFor == m.cursor && m.detail.loaded && m.detail.prTitle != "" {
+			title = m.detail.prTitle
+		}
+
+		prRight := ui.Dim.Render(prNum)
+		prRightWidth := lipgloss.Width(prRight)
+		titleWidth := max(width-4-prRightWidth-2, 10)
+
+		prStyle := lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderLeft(true).
+			BorderForeground(lipgloss.Color("238")).
+			PaddingLeft(1).
+			Width(titleWidth)
+
+		prRendered := prStyle.Render(title)
+		prRenderedWidth := lipgloss.Width(prRendered)
+		prPadding := max(width-4-prRenderedWidth-prRightWidth, 1)
+		b.WriteString(indent + prRendered + strings.Repeat(" ", prPadding) + prRight + "\n")
+	}
+
+	b.WriteString("\n")
+
+	if row.pr != nil {
 		if prParts := renderPRStatusParts(row.pr); len(prParts) > 0 {
 			b.WriteString(indent + strings.Join(prParts, "  ") + "\n")
 			b.WriteString("\n")
 		}
+	}
+
+	return b.String()
+}
+
+func (m mcModel) renderDetail(width int) string {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return ""
+	}
+	row := m.rows[m.cursor]
+	if row.kind == rowRepoHeader {
+		return ""
+	}
+
+	var b strings.Builder
+	indent := "  "
+	isGround := row.kind == rowWorktree && row.wt == workspace.GroundDir
+
+	// --- header line ---
+	var left string
+	if isGround {
+		left = lipgloss.NewStyle().Bold(true).Render(m.ws.DefaultBranch)
+	} else {
+		branchName := row.wt
+		if row.kind == rowGhostPR {
+			branchName = row.branch
+		}
+		left = lipgloss.NewStyle().Bold(true).Render(branchName)
+
+		// Status tags
+		var tags []string
+		if row.kind == rowWorktree {
+			tags = append(tags, ui.TagDim.Render("docked"))
+		}
+		if row.kind == rowGhostPR {
+			tags = append(tags, ui.TagOrange.Render("remote"))
+		}
+		if row.live {
+			tags = append(tags, ui.TagGreen.Render("live"))
+		}
+		if row.isBoarded {
+			tags = append(tags, ui.TagBlue.Render("boarded"))
+		}
+		if row.kind == rowWorktree && row.loaded && !row.dirty {
+			tags = append(tags, ui.TagGreen.Render("clean"))
+		}
+		if row.pr != nil && row.pr.ReviewDecision == "APPROVED" {
+			tags = append(tags, ui.TagGreen.Render("cleared"))
+		}
+		if row.merged {
+			tags = append(tags, ui.TagGreen.Render("landed"))
+		}
+		if len(tags) > 0 {
+			left += " " + strings.Join(tags, " ")
+		}
+	}
+
+	repoColor := m.repoColorFor(row.repo)
+	repoLabel := lipgloss.NewStyle().Foreground(repoColor).Render(m.ws.DisplayNameFor(row.repo))
+
+	// Right-align repo name on the header line
+	leftWidth := lipgloss.Width(left)
+	repoWidth := lipgloss.Width(repoLabel)
+	padding := max(
+		// 4 = 2 indent + 2 margin
+		width-4-leftWidth-repoWidth, 2)
+	b.WriteString(indent + left + strings.Repeat(" ", padding) + repoLabel + "\n")
+
+	switch {
+	case isGround:
+		b.WriteString("\n")
+	case row.kind == rowWorktree:
+		b.WriteString(m.renderCapsuleStatusBlock(row, indent, width))
+	case row.kind == rowGhostPR:
+		b.WriteString(m.renderGhostStatusBlock(row, indent, width))
 	}
 
 	if m.detailFor == m.cursor && m.detail.loaded {
@@ -416,6 +531,11 @@ func (m mcModel) renderDetail(width int) string {
 }
 
 func (m mcModel) renderDetailTier2(indent string, width int) string {
+	row := m.rows[m.cursor]
+	if row.kind == rowWorktree && row.wt == workspace.GroundDir {
+		return m.renderGroundDetail(indent, width)
+	}
+
 	d := m.detail
 	var b strings.Builder
 	// Usable width for content after indent
@@ -501,6 +621,95 @@ func (m mcModel) renderDetailTier2(indent string, width int) string {
 	return b.String()
 }
 
+func (m mcModel) renderGroundDetail(indent string, width int) string {
+	d := m.detail
+	var b strings.Builder
+	contentWidth := max(width-len(indent), 20)
+
+	if len(d.landings) > 0 {
+		b.WriteString(indent + lipgloss.NewStyle().Bold(true).Render("Recent Landings") + "\n")
+		for _, pr := range d.landings {
+			title := pr.Title
+			if pr.Number > 0 {
+				title += ui.Dim.Render(fmt.Sprintf(" (#%d)", pr.Number))
+			}
+
+			var right string
+			if pr.Author != "" {
+				right += ui.Dim.Render("@"+pr.Author) + "  "
+			}
+			if pr.MergedAt != "" {
+				right += ui.Dim.Render(relativeTime(pr.MergedAt))
+			}
+
+			titleWidth := lipgloss.Width(title)
+			rightWidth := lipgloss.Width(right)
+			pad := max(contentWidth-titleWidth-rightWidth, 2)
+			b.WriteString(indent + title + strings.Repeat(" ", pad) + right + "\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(d.actions) > 0 {
+		b.WriteString(indent + lipgloss.NewStyle().Bold(true).Render("Actions") + "\n")
+		for _, run := range d.actions {
+			var icon string
+			switch {
+			case run.Conclusion == "success":
+				icon = ui.Green.Render("✓")
+			case run.Status == "in_progress" || run.Status == "queued":
+				icon = ui.Orange.Render("⟳")
+			default:
+				icon = ui.Red.Render("✗")
+			}
+
+			label := run.Conclusion
+			if run.Status == "in_progress" {
+				label = "running"
+			} else if run.Status == "queued" {
+				label = "queued"
+			}
+
+			left := indent + run.Name
+			middle := icon + " " + label
+			right := ui.Dim.Render(relativeTime(run.CreatedAt))
+
+			leftW := lipgloss.Width(left)
+			middleW := lipgloss.Width(middle)
+			rightW := lipgloss.Width(right)
+			pad1 := max(contentWidth/2-leftW, 2)
+			pad2 := max(contentWidth-leftW-pad1-middleW-rightW, 2)
+
+			b.WriteString(left + strings.Repeat(" ", pad1) + middle + strings.Repeat(" ", pad2) + right + "\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(d.landings) == 0 && len(d.actions) == 0 {
+		b.WriteString(indent + ui.Dim.Render("No recent activity") + "\n")
+	}
+
+	return b.String()
+}
+
+func relativeTime(iso string) string {
+	t, err := time.Parse(time.RFC3339, iso)
+	if err != nil {
+		return iso
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
 // --- help ---
 
 func (m mcModel) renderHelpOverlay() string {
@@ -513,7 +722,9 @@ func (m mcModel) renderHelpOverlay() string {
 		{"3", "Toggle filter: review requested"},
 		{"4", "Toggle filter: dirty / needs push"},
 		{"Esc", "Clear all filters"},
-		{"g", "Go into worktree / open PR on GitHub"},
+		{"→/l", "Go to ground"},
+		{"←/h", "Leave ground"},
+		{"Enter", "Go into worktree"},
 		{"o", "Open worktree in $EDITOR"},
 		{"d", "Dock ghost PR / undock worktree"},
 		{"b", "Toggle board/unboard"},
@@ -536,6 +747,8 @@ func (m mcModel) renderHelpOverlay() string {
 func (m mcModel) renderHelpBar() string {
 	keys := []string{
 		"j/k navigate",
+		"→/l ground",
+		"←/h leave ground",
 		"J/K scroll detail",
 		"/ filter",
 	}
@@ -546,12 +759,10 @@ func (m mcModel) renderHelpBar() string {
 	}
 
 	switch {
-	case row.kind == rowWorktree && row.pr != nil:
-		keys = append(keys, "g github", "o open", "b board", "d undock")
-	case row.kind == rowGhostPR:
-		keys = append(keys, "g github", "d dock")
 	case row.kind == rowWorktree:
-		keys = append(keys, "g go", "o open", "b board", "d undock")
+		keys = append(keys, "⏎ go", "o open", "b board", "d undock")
+	case row.kind == rowGhostPR:
+		keys = append(keys, "d dock")
 	}
 
 	keys = append(keys, "r refresh", ": commands", "? help", "q quit")

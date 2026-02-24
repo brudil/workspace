@@ -1,0 +1,13 @@
+Acme Corp · 2 repos
+
+│ frontend
+├─────────
+│   .ground       → main
+│ › feat-auth   ● ↑2
+│   fix-styles
+
+│ backend
+├─────────
+│ error: permission denied: repos/backend
+
+2 repos · 3 worktrees · 1 dirty

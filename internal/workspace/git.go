@@ -17,7 +17,10 @@ func GitCloneBare(url, bareDir string) error {
 	if err := runGit("", "clone", "--bare", url, bareDir); err != nil {
 		return err
 	}
-	return runGit(bareDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+	if err := runGit(bareDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+		return err
+	}
+	return runGit(bareDir, "config", "push.autoSetupRemote", "true")
 }
 
 func GitFetch(repoDir string) error {

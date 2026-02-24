@@ -22,7 +22,7 @@ func newMCCmd() *cobra.Command {
 			}
 
 			cwd, _ := os.Getwd()
-			m := newMCModel(ctx.WS, cwd)
+			m := newMCModel(ctx.WS, ctx.GitHub, cwd)
 			p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(os.Stderr))
 			finalModel, err := p.Run()
 			if err != nil {

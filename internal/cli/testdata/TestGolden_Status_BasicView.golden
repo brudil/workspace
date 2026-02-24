@@ -1,0 +1,9 @@
+Acme Corp · 1 repos
+
+│ frontend
+├─────────
+│   .ground       → main
+│ › feat-auth   ● ↑2
+│   fix-styles
+
+1 repos · 3 worktrees · 1 dirty

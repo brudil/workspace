@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/brudil/workspace/internal/github"
@@ -233,6 +235,62 @@ func TestHandleKey_D_OnWorktree(t *testing.T) {
 
 	if m.confirmIdx != 2 {
 		t.Errorf("confirmIdx = %d, want 2 (delete confirmation)", m.confirmIdx)
+	}
+}
+
+func TestHandleKey_Board_TogglesIsBoarded(t *testing.T) {
+	m := keysMCModel()
+	// Create temp dir so Board() can stat the capsule path
+	repoDir := t.TempDir()
+	m.ws.Root = filepath.Dir(filepath.Dir(repoDir))
+	// Remap so RepoDir("repo1") points to our temp dir
+	m.ws.Root = t.TempDir()
+	reposDir := filepath.Join(m.ws.Root, "repos")
+	os.MkdirAll(filepath.Join(reposDir, "repo1", "feat"), 0755)
+
+	m.cursor = 2 // "feat" worktree row
+
+	// Board
+	m, _ = m.handleKey(keyMsg("b"))
+	if !m.rows[2].isBoarded {
+		t.Error("expected feat to be boarded after pressing b")
+	}
+
+	// Unboard
+	m, _ = m.handleKey(keyMsg("b"))
+	if m.rows[2].isBoarded {
+		t.Error("expected feat to be unboarded after pressing b again")
+	}
+}
+
+func TestHandleKey_Board_SkipsDefaultBranch(t *testing.T) {
+	m := keysMCModel()
+	m.ws.Root = t.TempDir()
+	os.MkdirAll(filepath.Join(m.ws.Root, "repos", "repo1", "main"), 0755)
+
+	m.cursor = 1 // "main" worktree row (DefaultBranch)
+
+	m, _ = m.handleKey(keyMsg("b"))
+	if m.rows[1].isBoarded {
+		t.Error("should not be able to board the default branch")
+	}
+}
+
+func TestDoGo_NonTmux_SetsJumpPath(t *testing.T) {
+	m := keysMCModel()
+	m.ws.Root = t.TempDir()
+	os.MkdirAll(filepath.Join(m.ws.Root, "repos", "repo1", "feat"), 0755)
+	m.cursor = 2 // "feat" worktree
+
+	t.Setenv("TMUX", "")
+
+	m, cmd := m.doGo()
+
+	if m.jumpPath == "" {
+		t.Error("jumpPath should be set when not in tmux")
+	}
+	if !isQuitCmd(cmd) {
+		t.Error("should return tea.Quit when not in tmux")
 	}
 }
 

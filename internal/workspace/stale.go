@@ -80,12 +80,8 @@ func (w *Workspace) FindAllCapsules(maxDays int, repoFilter string) []CapsuleInf
 			lastCommit := GitLastCommitDate(wtPath)
 			merged := mergedSet[branch]
 			inactive := !lastCommit.IsZero() && lastCommit.Before(cutoff)
-			dirty := GitIsDirty(wtPath)
-
-			var dirtyCount int
-			if dirty {
-				dirtyCount = GitDirtyCount(wtPath)
-			}
+			dirtyCount := GitDirtyCount(wtPath)
+			dirty := dirtyCount > 0
 
 			ahead, behind := GitAheadBehind(wtPath)
 

@@ -141,3 +141,97 @@ func TestUnboard_NotBoarded(t *testing.T) {
 		t.Error("expected error for unboarding non-boarded capsule")
 	}
 }
+
+func TestCopyFromGround_AllFilesExist(t *testing.T) {
+	tmp := t.TempDir()
+	groundDir := filepath.Join(tmp, ".ground")
+	capsuleDir := filepath.Join(tmp, "my-feature")
+	os.MkdirAll(groundDir, 0755)
+	os.MkdirAll(capsuleDir, 0755)
+
+	os.WriteFile(filepath.Join(groundDir, ".env"), []byte("SECRET=abc"), 0644)
+
+	skipped, err := CopyFromGround(groundDir, capsuleDir, []string{".env"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %v, want empty", skipped)
+	}
+
+	got, err := os.ReadFile(filepath.Join(capsuleDir, ".env"))
+	if err != nil {
+		t.Fatalf("reading copied file: %v", err)
+	}
+	if string(got) != "SECRET=abc" {
+		t.Errorf("content = %q, want %q", string(got), "SECRET=abc")
+	}
+}
+
+func TestCopyFromGround_NestedDirs(t *testing.T) {
+	tmp := t.TempDir()
+	groundDir := filepath.Join(tmp, ".ground")
+	capsuleDir := filepath.Join(tmp, "my-feature")
+	os.MkdirAll(filepath.Join(groundDir, "config"), 0755)
+	os.MkdirAll(capsuleDir, 0755)
+
+	os.WriteFile(filepath.Join(groundDir, "config", "local.yaml"), []byte("key: val"), 0644)
+
+	skipped, err := CopyFromGround(groundDir, capsuleDir, []string{"config/local.yaml"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %v, want empty", skipped)
+	}
+
+	got, err := os.ReadFile(filepath.Join(capsuleDir, "config", "local.yaml"))
+	if err != nil {
+		t.Fatalf("reading copied file: %v", err)
+	}
+	if string(got) != "key: val" {
+		t.Errorf("content = %q, want %q", string(got), "key: val")
+	}
+}
+
+func TestCopyFromGround_SomeMissing(t *testing.T) {
+	tmp := t.TempDir()
+	groundDir := filepath.Join(tmp, ".ground")
+	capsuleDir := filepath.Join(tmp, "my-feature")
+	os.MkdirAll(groundDir, 0755)
+	os.MkdirAll(capsuleDir, 0755)
+
+	os.WriteFile(filepath.Join(groundDir, ".env"), []byte("SECRET=abc"), 0644)
+
+	skipped, err := CopyFromGround(groundDir, capsuleDir, []string{".env", "missing.txt", "also-missing.conf"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(skipped) != 2 {
+		t.Fatalf("skipped count = %d, want 2", len(skipped))
+	}
+	if skipped[0] != "missing.txt" || skipped[1] != "also-missing.conf" {
+		t.Errorf("skipped = %v, want [missing.txt also-missing.conf]", skipped)
+	}
+
+	// .env should still have been copied
+	if _, err := os.Stat(filepath.Join(capsuleDir, ".env")); err != nil {
+		t.Error("expected .env to be copied despite other missing files")
+	}
+}
+
+func TestCopyFromGround_EmptyList(t *testing.T) {
+	tmp := t.TempDir()
+	groundDir := filepath.Join(tmp, ".ground")
+	capsuleDir := filepath.Join(tmp, "my-feature")
+	os.MkdirAll(groundDir, 0755)
+	os.MkdirAll(capsuleDir, 0755)
+
+	skipped, err := CopyFromGround(groundDir, capsuleDir, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %v, want empty", skipped)
+	}
+}

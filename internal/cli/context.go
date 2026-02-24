@@ -57,7 +57,7 @@ func LoadContextFromDir(dir string) (*Context, error) {
 	aliasMap := make(map[string]string)
 	displayNames := make(map[string]string)
 	repoColors := make(map[string]string)
-	postCreateHooks := make(map[string]string)
+	afterCreateHooks := make(map[string]string)
 
 	for name, rc := range cfg.Repos {
 		if rc.DisplayName != "" {
@@ -66,8 +66,8 @@ func LoadContextFromDir(dir string) (*Context, error) {
 		if rc.Color != "" {
 			repoColors[name] = rc.Color
 		}
-		if rc.PostCreate != "" {
-			postCreateHooks[name] = rc.PostCreate
+		if rc.AfterCreate != "" {
+			afterCreateHooks[name] = rc.AfterCreate
 		}
 		for _, alias := range rc.Aliases {
 			if _, isCanonical := cfg.Repos[alias]; isCanonical {
@@ -81,17 +81,17 @@ func LoadContextFromDir(dir string) (*Context, error) {
 	}
 
 	ws := &workspace.Workspace{
-		Root:            root,
-		Org:             cfg.Workspace.Org,
-		DefaultBranch:   cfg.Workspace.DefaultBranch,
-		GitProtocol:     cfg.Git,
-		Name:            cfg.Workspace.DisplayName,
-		RepoNames:       names,
-		AliasMap:        aliasMap,
-		DisplayNames:    displayNames,
-		RepoColors:      repoColors,
-		PostCreateHooks: postCreateHooks,
-		Boarded:         cfg.Boarded,
+		Root:             root,
+		Org:              cfg.Workspace.Org,
+		DefaultBranch:    cfg.Workspace.DefaultBranch,
+		GitProtocol:      cfg.Git,
+		Name:             cfg.Workspace.DisplayName,
+		RepoNames:        names,
+		AliasMap:         aliasMap,
+		DisplayNames:     displayNames,
+		RepoColors:       repoColors,
+		AfterCreateHooks: afterCreateHooks,
+		Boarded:          cfg.Boarded,
 	}
 
 	return &Context{Config: cfg, WS: ws, GitHub: github.LiveClient{}}, nil

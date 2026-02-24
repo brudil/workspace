@@ -20,6 +20,7 @@ Work happens in **capsules**, not on the main branch. Ground is sacred.
 - [Configuration](#configuration)
   - [ws.toml](#wstoml)
   - [ws.local.toml](#wslocaltoml)
+  - [ws.repo.toml](#wsrepotoml)
 - [Shell Integration](#shell-integration)
   - [The ws Wrapper](#the-ws-wrapper)
   - [Tab Completions](#tab-completions)
@@ -132,7 +133,7 @@ ws lift <repo> <branch> [base]
 - `repo` can be the canonical name, an alias, or `.` to infer from your current directory.
 - `base` defaults to `origin/<default-branch>`. Pass a different ref to branch from somewhere else.
 
-After lifting, `ws` runs the repo's `post_create` hook (if configured), boards the capsule into your IDE workspace, and `cd`s you into the new worktree.
+After lifting, `ws` runs the repo's `after_create` hook (if configured), boards the capsule into your IDE workspace, and `cd`s you into the new worktree.
 
 ### Docking
 
@@ -151,7 +152,7 @@ ws dock https://github.com/your-org/frontend/pull/1234
 
 When docking by PR number or URL, `ws` resolves the PR's head branch via the GitHub API and creates a worktree for it.
 
-Like lifting, docking runs `post_create` hooks, boards the capsule, and `cd`s you in.
+Like lifting, docking runs `after_create` hooks, boards the capsule, and `cd`s you in.
 
 ### Boarding
 
@@ -200,14 +201,14 @@ ws debrief frontend
 - `?` to toggle help
 
 **Actions:**
-- `g` — go to the selected capsule (`cd` in your shell, or a new tmux window if inside tmux)
+- `Enter` — go to the selected capsule (`cd` in your shell, or a tmux window if inside tmux)
 - `o` — open in `$EDITOR`
 - `b` — toggle boarding for the selected capsule
 - `d` — delete (burn) the selected capsule, or dock a ghost PR
 - `r` — refresh (debrief and rebuild)
 - `:` — command palette
 
-Mission control shows live data: dirty status, ahead/behind counts, open PRs with CI check results. Ghost PRs (open PRs without a local worktree) appear under their repo so you can dock them with a single keypress.
+Mission control shows live data: dirty status, ahead/behind counts, open PRs with CI check results. Ghost PRs (open PRs without a local worktree) appear under their repo so you can dock them with a single keypress. Capsules with an open tmux window show a green `●` indicator and a `live` tag in the detail panel.
 
 ### Repos and Aliases
 
@@ -239,12 +240,12 @@ display_name = "My Workspace" # optional — shown in prompts and mission contro
 display_name = "Frontend"
 aliases = ["fe", "front"]
 color = "#FF6B9D"
-post_create = "npm install && npm run build"
+after_create = "npm install && npm run build"
 
 [repos.backend]
 display_name = "API"
 aliases = ["api", "be"]
-post_create = "make setup"
+after_create = "make setup"
 
 [repos.infrastructure]
 aliases = ["infra"]
@@ -265,7 +266,7 @@ aliases = ["infra"]
 | `display_name` | Human-friendly name shown in UI. Falls back to the canonical name. |
 | `aliases` | Short names for the repo (e.g. `fe` for `frontend`). Used in commands and completions. |
 | `color` | Terminal colour for this repo. Accepts hex (`#FF6B9D`) or 256-colour codes. |
-| `post_create` | Shell command run in the worktree after `lift` or `dock`. Failures are logged but non-fatal. |
+| `after_create` | Shell command run in the worktree after `lift` or `dock`. Failures are logged but non-fatal. |
 
 ### ws.local.toml
 
@@ -275,7 +276,7 @@ Per-machine overrides. Lives alongside `ws.toml` but is gitignored. Created auto
 git = "ssh"
 
 [repos.frontend]
-post_create = "pnpm install"
+after_create = "pnpm install"
 aliases = ["f"]
 
 [boarded]
@@ -291,11 +292,42 @@ backend = [".ground"]
 
 **Repo overrides:**
 
-You can override `display_name`, `color`, `post_create`, and `aliases` per repo. Aliases are appended to the shared list; other fields replace the shared value.
+You can override `display_name`, `color`, `after_create`, and `aliases` per repo. Aliases are appended to the shared list; other fields replace the shared value.
 
 **Boarded section:**
 
 Managed automatically by `ws`. You generally don't edit this by hand. Lists which capsules are currently visible in your IDE workspace.
+
+### ws.repo.toml
+
+Some repos need setup work before you can develop in them — installing dependencies, copying local config files, running code generation. These steps need to happen every time someone creates a capsule, and they're specific to the repo, not the workspace.
+
+`ws.repo.toml` lives inside the repo itself, committed alongside the code. Place it at the root of the repo (it'll be read from `.ground/ws.repo.toml`).
+
+```toml
+[capsule]
+copy_from_ground = [".env", "config/local.yaml"]
+after_create = "npm install && npm run codegen"
+```
+
+**`copy_from_ground`** — Files that exist in your ground worktree but aren't checked into git (local config, `.env` files, generated certs). When a capsule is created, these are copied from `.ground/` into the new worktree before any hooks run. Missing files are silently skipped.
+
+This solves a common pain point: you set up `.env` once in ground, and every capsule gets a copy automatically. No more "why isn't my app starting" after lifting a new branch.
+
+**`after_create`** — A shell command run in the new worktree after file copying. Use it for dependency installation, build steps, or anything the repo needs to be workable.
+
+This field is a fallback — if `after_create` is also set in `ws.toml` or `ws.local.toml` for this repo, those take precedence. The priority order is:
+
+1. `ws.local.toml` (your machine-specific override)
+2. `ws.toml` (workspace-wide config)
+3. `ws.repo.toml` (repo's own default)
+
+This lets repos ship sensible defaults while still allowing workspace-level or personal overrides.
+
+| Field | Description |
+|---|---|
+| `copy_from_ground` | List of file paths to copy from `.ground/` into new capsules. Paths are relative to the repo root. Missing files are skipped. |
+| `after_create` | Shell command run after capsule creation. Used as a fallback when no workspace-level hook is set. |
 
 ---
 
@@ -368,9 +400,14 @@ Add `${custom.ws}` to your `format` string to position it in your prompt. `when 
 
 ### Tmux
 
-Mission control detects tmux automatically. When you press `g` (go) on a capsule inside a tmux session, instead of `cd`-ing in your current shell, it opens the capsule in a **new tmux window**. This lets you keep mission control open while jumping between capsules in separate windows.
+Mission control detects tmux automatically. When `$TMUX` is set, several things change:
 
-Outside of tmux, `g` performs a regular `cd` via the shell wrapper.
+- **`Enter` (go)** opens the capsule in a **named tmux window** instead of `cd`-ing. The window is named `RepoDisplay:capsule` (e.g. `Frontend:auth-flow`). If a window already exists for that capsule, MC focuses it rather than creating a duplicate. If all panes in the window are busy (running vim, node, etc.), a new pane is split instead.
+- **`o` (open)** launches `$EDITOR` in a new pane within the capsule's window, rather than suspending MC.
+- **Live tracking** — capsules with an open tmux window show a green `●` in the list and a `live` tag in the detail panel.
+- **Lifecycle cleanup** — when a capsule is deleted or debriefed, its tmux window is closed automatically.
+
+Outside of tmux, `Enter` performs a regular `cd` via the shell wrapper and `o` opens the editor in the foreground.
 
 ---
 
@@ -416,14 +453,14 @@ Accepts hex colours or 256-colour codes.
 
 ### Post-Create Hooks
 
-A `post_create` hook runs in the new worktree after every `lift` or `dock`. Use it for dependency installation, code generation, or build steps:
+A `after_create` hook runs in the new worktree after every `lift` or `dock`. Use it for dependency installation, code generation, or build steps:
 
 ```toml
 [repos.frontend]
-post_create = "npm install && npm run build"
+after_create = "npm install && npm run build"
 
 [repos.backend]
-post_create = "make setup"
+after_create = "make setup"
 ```
 
 Hook failures are logged to stderr but don't block the command. You can override a repo's hook locally in `ws.local.toml`.

@@ -239,20 +239,20 @@ func TestMerge_AppendsAliases(t *testing.T) {
 	}
 }
 
-func TestMerge_ReplacesPostCreate(t *testing.T) {
+func TestMerge_ReplacesAfterCreate(t *testing.T) {
 	base := &Config{
 		Repos: map[string]RepoConfig{
-			"repo-a": {PostCreate: "npm install"},
+			"repo-a": {AfterCreate: "npm install"},
 		},
 	}
 	local := &Config{
 		Repos: map[string]RepoConfig{
-			"repo-a": {PostCreate: "bun install"},
+			"repo-a": {AfterCreate: "bun install"},
 		},
 	}
 	merged := Merge(base, local)
-	if got := merged.Repos["repo-a"].PostCreate; got != "bun install" {
-		t.Errorf("post_create = %q, want %q", got, "bun install")
+	if got := merged.Repos["repo-a"].AfterCreate; got != "bun install" {
+		t.Errorf("after_create = %q, want %q", got, "bun install")
 	}
 }
 
@@ -299,7 +299,7 @@ func TestMerge_IgnoresUnknownRepos(t *testing.T) {
 	local := &Config{
 		Repos: map[string]RepoConfig{
 			"repo-a":   {Color: "#00ff00"},
-			"repo-new": {Color: "#0000ff", PostCreate: "make"},
+			"repo-new": {Color: "#0000ff", AfterCreate: "make"},
 		},
 	}
 	merged := Merge(base, local)
@@ -317,7 +317,7 @@ func TestMerge_EmptyFieldsNoOverride(t *testing.T) {
 			"repo-a": {
 				DisplayName: "Original",
 				Color:       "#ff0000",
-				PostCreate:  "npm install",
+				AfterCreate: "npm install",
 				Aliases:     []string{"a"},
 			},
 		},
@@ -335,8 +335,8 @@ func TestMerge_EmptyFieldsNoOverride(t *testing.T) {
 	if repo.Color != "#ff0000" {
 		t.Errorf("color = %q, want %q", repo.Color, "#ff0000")
 	}
-	if repo.PostCreate != "npm install" {
-		t.Errorf("post_create = %q, want %q", repo.PostCreate, "npm install")
+	if repo.AfterCreate != "npm install" {
+		t.Errorf("after_create = %q, want %q", repo.AfterCreate, "npm install")
 	}
 	if len(repo.Aliases) != 1 || repo.Aliases[0] != "a" {
 		t.Errorf("aliases = %v, want [a]", repo.Aliases)
@@ -351,12 +351,12 @@ default_branch = "main"
 
 [repos.repo-a]
 color = "#ff0000"
-post_create = "npm install"
+after_create = "npm install"
 aliases = ["a"]
 `
 	local := `[repos.repo-a]
 color = "#00ff00"
-post_create = "bun install"
+after_create = "bun install"
 aliases = ["my-a"]
 `
 	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(base), 0644)
@@ -373,8 +373,8 @@ aliases = ["my-a"]
 	if repo.Color != "#00ff00" {
 		t.Errorf("color = %q, want %q", repo.Color, "#00ff00")
 	}
-	if repo.PostCreate != "bun install" {
-		t.Errorf("post_create = %q, want %q", repo.PostCreate, "bun install")
+	if repo.AfterCreate != "bun install" {
+		t.Errorf("after_create = %q, want %q", repo.AfterCreate, "bun install")
 	}
 	want := []string{"a", "my-a"}
 	if len(repo.Aliases) != len(want) {
@@ -622,5 +622,96 @@ repo-a = ["old-branch"]
 	}
 	if cfg.Git != "ssh" {
 		t.Errorf("git field was lost: got %q", cfg.Git)
+	}
+}
+
+func TestParseRepoConfig_Valid(t *testing.T) {
+	content := `[capsule]
+copy_from_ground = [".env", "config/local.yaml"]
+after_create = "npm install"
+`
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "ws.repo.toml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := ParseRepoConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if len(cfg.Capsule.CopyFromGround) != 2 {
+		t.Fatalf("copy_from_ground count = %d, want 2", len(cfg.Capsule.CopyFromGround))
+	}
+	if cfg.Capsule.CopyFromGround[0] != ".env" {
+		t.Errorf("copy_from_ground[0] = %q, want %q", cfg.Capsule.CopyFromGround[0], ".env")
+	}
+	if cfg.Capsule.CopyFromGround[1] != "config/local.yaml" {
+		t.Errorf("copy_from_ground[1] = %q, want %q", cfg.Capsule.CopyFromGround[1], "config/local.yaml")
+	}
+	if cfg.Capsule.AfterCreate != "npm install" {
+		t.Errorf("after_create = %q, want %q", cfg.Capsule.AfterCreate, "npm install")
+	}
+}
+
+func TestParseRepoConfig_MissingFile(t *testing.T) {
+	cfg, err := ParseRepoConfig(filepath.Join(t.TempDir(), "nonexistent.toml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Error("expected nil config for missing file")
+	}
+}
+
+func TestParseRepoConfig_Malformed(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "ws.repo.toml")
+	os.WriteFile(path, []byte("this is not valid toml [[["), 0644)
+
+	_, err := ParseRepoConfig(path)
+	if err == nil {
+		t.Error("expected error for malformed TOML")
+	}
+}
+
+func TestParseRepoConfig_EmptyFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "ws.repo.toml")
+	os.WriteFile(path, []byte(""), 0644)
+
+	cfg, err := ParseRepoConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config for empty file")
+	}
+	if len(cfg.Capsule.CopyFromGround) != 0 {
+		t.Errorf("copy_from_ground = %v, want empty", cfg.Capsule.CopyFromGround)
+	}
+	if cfg.Capsule.AfterCreate != "" {
+		t.Errorf("after_create = %q, want empty", cfg.Capsule.AfterCreate)
+	}
+}
+
+func TestParseRepoConfig_OnlyAfterCreate(t *testing.T) {
+	content := `[capsule]
+after_create = "make setup"
+`
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "ws.repo.toml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := ParseRepoConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Capsule.AfterCreate != "make setup" {
+		t.Errorf("after_create = %q, want %q", cfg.Capsule.AfterCreate, "make setup")
+	}
+	if len(cfg.Capsule.CopyFromGround) != 0 {
+		t.Errorf("copy_from_ground = %v, want empty", cfg.Capsule.CopyFromGround)
 	}
 }

@@ -20,6 +20,15 @@ type PR struct {
 	StatusRollup   string `json:"statusRollup"` // derived from statusCheckRollup
 	URL            string `json:"url"`
 	Author         string `json:"authorLogin"` // GitHub login; extracted from nested author.login via extractAuthor(); tag avoids collision with gh's "author" object
+	MergedAt       string `json:"mergedAt"`
+}
+
+// WorkflowRun represents a GitHub Actions workflow run.
+type WorkflowRun struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`     // completed, in_progress, queued
+	Conclusion string `json:"conclusion"` // success, failure, cancelled, etc.
+	CreatedAt  string `json:"createdAt"`
 }
 
 // CheckRun represents a single CI check.
@@ -64,18 +73,56 @@ func PRsForRepo(org, repo string) ([]PR, error) {
 	return prs, nil
 }
 
-// PRForBranch finds an open PR matching a branch name, or nil if none.
-func PRForBranch(org, repo, branch string) (*PR, error) {
-	prs, err := PRsForRepo(org, repo)
+// MergedPRsForRepo returns recently merged PRs for a given org/repo.
+func MergedPRsForRepo(org, repo string) ([]PR, error) {
+	fullRepo := repoSlug(org, repo)
+	stdOut, _, err := gh.Exec(
+		"pr", "list",
+		"--repo", fullRepo,
+		"--state", "merged",
+		"--json", "number,title,headRefName,state,reviewDecision,url,statusCheckRollup,author,mergedAt",
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gh pr list --state merged for %s: %w", fullRepo, err)
 	}
-	for _, pr := range prs {
-		if pr.HeadRefName == branch {
-			return &pr, nil
+
+	var raw []json.RawMessage
+	if err := json.Unmarshal(stdOut.Bytes(), &raw); err != nil {
+		return nil, fmt.Errorf("parsing gh output: %w", err)
+	}
+
+	var prs []PR
+	for _, r := range raw {
+		var pr PR
+		if err := json.Unmarshal(r, &pr); err != nil {
+			continue
 		}
+		pr.StatusRollup = deriveStatus(r)
+		pr.Author = extractAuthor(r)
+		prs = append(prs, pr)
 	}
-	return nil, nil
+	return prs, nil
+}
+
+// WorkflowRuns returns recent workflow runs for a repo/branch.
+func WorkflowRuns(org, repo, branch string, limit int) ([]WorkflowRun, error) {
+	fullRepo := repoSlug(org, repo)
+	stdOut, _, err := gh.Exec(
+		"run", "list",
+		"--repo", fullRepo,
+		"--branch", branch,
+		"--limit", fmt.Sprintf("%d", limit),
+		"--json", "name,status,conclusion,createdAt",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gh run list for %s: %w", fullRepo, err)
+	}
+
+	var runs []WorkflowRun
+	if err := json.Unmarshal(stdOut.Bytes(), &runs); err != nil {
+		return nil, fmt.Errorf("parsing gh output: %w", err)
+	}
+	return runs, nil
 }
 
 // PRFromNumber fetches a specific PR by number.
@@ -181,6 +228,36 @@ func ReadPRCache(cacheDir, org, repo string) ([]PR, error) {
 		return nil, nil
 	}
 	return prs, nil
+}
+
+// WriteBranchCache writes worktree-to-branch mappings to a cache file.
+func WriteBranchCache(cacheDir, org, repo string, branches map[string]string) {
+	data, err := json.Marshal(branches)
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(cacheDir, 0o755)
+	tmp := filepath.Join(cacheDir, fmt.Sprintf("%s-%s-branches.tmp", org, repo))
+	target := filepath.Join(cacheDir, fmt.Sprintf("%s-%s-branches.json", org, repo))
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, target)
+}
+
+// ReadBranchCache reads cached worktree-to-branch mappings.
+// Returns nil on miss or corruption.
+func ReadBranchCache(cacheDir, org, repo string) map[string]string {
+	path := filepath.Join(cacheDir, fmt.Sprintf("%s-%s-branches.json", org, repo))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var branches map[string]string
+	if err := json.Unmarshal(data, &branches); err != nil {
+		return nil
+	}
+	return branches
 }
 
 // WriteUserCache writes the GitHub username to a cache file.

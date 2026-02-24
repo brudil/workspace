@@ -37,7 +37,7 @@ aliases = ["fe"]
 
 [repos.backend]
 display_name = "API"
-post_create = "make setup"
+after_create = "make setup"
 ```
 
 Then use capsules (worktrees) to work on branches without ever switching:

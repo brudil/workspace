@@ -1,0 +1,22 @@
+  Mission Control
+
+  j/k ↑/↓    Navigate worktrees
+  J/K        Scroll detail panel
+  /          Filter by branch name
+  1          Toggle filter: local worktrees only
+  2          Toggle filter: my PRs
+  3          Toggle filter: review requested
+  4          Toggle filter: dirty / needs push
+  Esc        Clear all filters
+  →/l        Go to ground
+  ←/h        Leave ground
+  Enter      Go into worktree
+  o          Open worktree in $EDITOR
+  d          Dock ghost PR / undock worktree
+  b          Toggle board/unboard
+  r          Refresh all data
+  :          Command palette
+  ?          Toggle this help
+  q          Quit
+
+  Press ? to close

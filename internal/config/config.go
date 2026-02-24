@@ -25,6 +25,30 @@ type LocalConfig struct {
 	Boarded map[string][]string   `toml:"boarded"`
 }
 
+const RepoFileName = "ws.repo.toml"
+
+type RepoFileConfig struct {
+	Capsule CapsuleConfig `toml:"capsule"`
+}
+
+type CapsuleConfig struct {
+	CopyFromGround []string `toml:"copy_from_ground"`
+	AfterCreate    string   `toml:"after_create"`
+}
+
+// ParseRepoConfig parses a ws.repo.toml file at the given path.
+// Returns nil, nil if the file does not exist.
+func ParseRepoConfig(path string) (*RepoFileConfig, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, nil
+	}
+	var cfg RepoFileConfig
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
 type WorkspaceConfig struct {
 	Org           string `toml:"org"`
 	DefaultBranch string `toml:"default_branch"`
@@ -35,7 +59,7 @@ type RepoConfig struct {
 	DisplayName string   `toml:"display_name"`
 	Aliases     []string `toml:"aliases"`
 	Color       string   `toml:"color"`
-	PostCreate  string   `toml:"post_create"`
+	AfterCreate string   `toml:"after_create"`
 }
 
 func Parse(path string) (*Config, error) {
@@ -66,7 +90,7 @@ func Discover(startDir string) (string, error) {
 
 // Merge returns a new Config with local overrides applied on top of base.
 // Only repos that exist in base are considered; unknown repos in local are skipped.
-// Aliases are appended; PostCreate, Color, and DisplayName replace if non-empty.
+// Aliases are appended; AfterCreate, Color, and DisplayName replace if non-empty.
 func Merge(base, local *Config) *Config {
 	merged := &Config{
 		Workspace: base.Workspace,
@@ -78,8 +102,8 @@ func Merge(base, local *Config) *Config {
 		if !ok {
 			continue
 		}
-		if localRepo.PostCreate != "" {
-			baseRepo.PostCreate = localRepo.PostCreate
+		if localRepo.AfterCreate != "" {
+			baseRepo.AfterCreate = localRepo.AfterCreate
 		}
 		if localRepo.Color != "" {
 			baseRepo.Color = localRepo.Color
@@ -135,11 +159,9 @@ func Load(startDir string) (*Config, string, error) {
 	return cfg, root, nil
 }
 
-// SaveBoarded writes the boarded state to ws.local.toml, preserving existing repo overrides.
-func SaveBoarded(root string, boarded map[string][]string) error {
+func UpdateLocal(root string, fn func(*LocalConfig)) error {
 	path := filepath.Join(root, LocalFileName)
 
-	// Read existing local config (if any)
 	var local LocalConfig
 	if _, err := os.Stat(path); err == nil {
 		if _, err := toml.DecodeFile(path, &local); err != nil {
@@ -147,7 +169,7 @@ func SaveBoarded(root string, boarded map[string][]string) error {
 		}
 	}
 
-	local.Boarded = boarded
+	fn(&local)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -155,4 +177,10 @@ func SaveBoarded(root string, boarded map[string][]string) error {
 	}
 	defer f.Close()
 	return toml.NewEncoder(f).Encode(local)
+}
+
+func SaveBoarded(root string, boarded map[string][]string) error {
+	return UpdateLocal(root, func(local *LocalConfig) {
+		local.Boarded = boarded
+	})
 }

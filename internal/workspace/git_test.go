@@ -420,6 +420,15 @@ func TestGitCloneBare(t *testing.T) {
 	if got := strings.TrimSpace(out); got != want {
 		t.Errorf("fetch refspec = %q, want %q", got, want)
 	}
+
+	// Verify push.autoSetupRemote was configured
+	out, err = runGitOutput(dst, "config", "push.autoSetupRemote")
+	if err != nil {
+		t.Fatalf("git config push.autoSetupRemote error: %v", err)
+	}
+	if got := strings.TrimSpace(out); got != "true" {
+		t.Errorf("push.autoSetupRemote = %q, want %q", got, "true")
+	}
 }
 
 func TestRepoCloneURL_SSH(t *testing.T) {

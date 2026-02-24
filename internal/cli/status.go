@@ -28,8 +28,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			if format == "json" {
+			switch format {
+			case "json":
 				return runStatusJSON(ctx.WS, ctx.GitHub)
+			case "llm":
+				return runStatusLLM(ctx.WS, ctx.GitHub)
 			}
 
 			m := newStatusModel(ctx.WS, ctx.GitHub)
@@ -39,9 +42,9 @@ func newStatusCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&format, "format", "f", "", "Output format: json")
+	cmd.Flags().StringVarP(&format, "format", "f", "", "Output format: json, llm")
 	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"json"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"json", "llm"}, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
@@ -272,15 +275,9 @@ func (m statusModel) View() string {
 		cols := computeColumns(repo.worktrees)
 		lines := []string{headers[i], rule}
 		for _, wt := range repo.worktrees {
-			// Look up PR by branch name (if git data loaded), falling back to worktree name
 			var pr *github.PR
 			if repo.prs != nil {
-				if wt.branch != "" {
-					pr = repo.prs[wt.branch]
-				}
-				if pr == nil {
-					pr = repo.prs[wt.name]
-				}
+				pr = lookupPR(repo.prs, wt.branch, wt.name)
 			}
 			lines = append(lines, formatWorktreeLine(wt, slices.Contains(repo.boarded, wt.name), cols, pr))
 		}

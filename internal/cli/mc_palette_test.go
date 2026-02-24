@@ -97,16 +97,16 @@ func TestAvailableCommands_TextFilter(t *testing.T) {
 	cmds := m.availableCommands()
 	names := cmdNames(cmds)
 
-	// Should match filter-* commands
+	// Should match "Filter: *" labels (fuzzy match on label)
 	if !contains(names, "filter-local") {
-		t.Error("expected 'filter-local' to match 'filt'")
+		t.Error("expected 'filter-local' to match 'filt' against label 'Filter: Local'")
 	}
 	// Should not match non-matching commands
 	if contains(names, "go") {
-		t.Error("'go' should not match 'filt'")
+		t.Error("'go' (label 'Go') should not match 'filt'")
 	}
 	if contains(names, "refresh") {
-		t.Error("'refresh' should not match 'filt'")
+		t.Error("'refresh' (label 'Refresh') should not match 'filt'")
 	}
 }
 
@@ -156,6 +156,33 @@ func TestHandlePaletteKey_Navigation(t *testing.T) {
 	m, _ = m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyUp})
 	if m.paletteCursor != 0 {
 		t.Errorf("expected paletteCursor=0 at top boundary, got %d", m.paletteCursor)
+	}
+}
+
+func TestAvailableCommands_SmartSort(t *testing.T) {
+	m := mcModel{
+		cursor: 0,
+		rows: []mcRow{
+			{kind: rowWorktree, repo: "r", wt: "feat", loaded: true},
+		},
+	}
+
+	cmds := m.availableCommands()
+
+	// Find the boundary: context commands should come before global commands.
+	lastContext := -1
+	firstGlobal := -1
+	for i, cmd := range cmds {
+		if cmd.scope != scopeAlways {
+			lastContext = i
+		}
+		if cmd.scope == scopeAlways && firstGlobal == -1 {
+			firstGlobal = i
+		}
+	}
+
+	if lastContext >= firstGlobal && firstGlobal >= 0 {
+		t.Errorf("context commands should sort before global: lastContext=%d, firstGlobal=%d", lastContext, firstGlobal)
 	}
 }
 

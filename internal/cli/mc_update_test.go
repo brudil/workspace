@@ -84,6 +84,46 @@ func TestMCUpdate_WtStatusMsg(t *testing.T) {
 	}
 }
 
+func TestMCUpdate_WtStatusMsg_MatchesGhostPR(t *testing.T) {
+	m := baseMCModel()
+	// Simulate cached PRs already processed: feat worktree had no branch yet,
+	// so PR #42 became a ghost row.
+	m.rows[2].branch = "" // branch not yet known
+	m.rows[2].loaded = false
+	ghostPR := &github.PR{Number: 42, HeadRefName: "feat"}
+	m.rows = append(m.rows[:3], append([]mcRow{
+		{kind: rowGhostPR, repo: "repo1", branch: "feat", pr: ghostPR, loaded: true},
+	}, m.rows[3:]...)...)
+	m.repos[0].prs = map[string]*github.PR{"feat": ghostPR}
+
+	msg := mcWtStatusMsg{
+		repo: "repo1",
+		wt: workspace.WorktreeStatus{
+			Name:   "feat",
+			Branch: "feat",
+			Dirty:  true,
+		},
+	}
+
+	result, _ := m.Update(msg)
+	rm := result.(mcModel)
+
+	// Worktree row should now have the PR linked
+	if rm.rows[2].pr == nil {
+		t.Fatal("feat worktree row should have PR attached after branch became known")
+	}
+	if rm.rows[2].pr.Number != 42 {
+		t.Errorf("PR number = %d, want 42", rm.rows[2].pr.Number)
+	}
+
+	// Ghost row should be removed
+	for _, row := range rm.rows {
+		if row.kind == rowGhostPR && row.branch == "feat" {
+			t.Error("ghost row for 'feat' should have been removed")
+		}
+	}
+}
+
 func TestMCUpdate_PRsMsg_Success(t *testing.T) {
 	m := baseMCModel()
 	m.rows[1].branch = "main"
@@ -338,5 +378,92 @@ func TestMCUpdate_DetailDataMsg_WrongRow(t *testing.T) {
 
 	if rm.detail.loaded {
 		t.Error("detail should not be loaded for wrong row")
+	}
+}
+
+func TestMCUpdate_DetailDataMsg_Ground(t *testing.T) {
+	m := baseMCModel()
+	// Replace "main" worktree with a ground row
+	m.rows[1] = mcRow{kind: rowWorktree, repo: "repo1", wt: ".ground", branch: "main", loaded: true}
+	m.cursor = 1
+
+	landings := []github.PR{
+		{Number: 100, Title: "fix auth", Author: "alice", MergedAt: "2025-01-01T00:00:00Z"},
+		{Number: 99, Title: "add rate limit", Author: "bob", MergedAt: "2025-01-01T00:00:00Z"},
+	}
+	actions := []github.WorkflowRun{
+		{Name: "deploy-prod", Status: "completed", Conclusion: "success", CreatedAt: "2025-01-01T00:00:00Z"},
+		{Name: "nightly-tests", Status: "completed", Conclusion: "failure", CreatedAt: "2025-01-01T00:00:00Z"},
+	}
+
+	msg := mcDetailDataMsg{
+		rowIdx: 1,
+		data: detailData{
+			landings: landings,
+			actions:  actions,
+			loaded:   true,
+		},
+	}
+
+	result, _ := m.Update(msg)
+	rm := result.(mcModel)
+
+	if rm.detailFor != 1 {
+		t.Errorf("detailFor = %d, want 1", rm.detailFor)
+	}
+	if !rm.detail.loaded {
+		t.Error("detail should be loaded")
+	}
+	if len(rm.detail.landings) != 2 {
+		t.Errorf("landings count = %d, want 2", len(rm.detail.landings))
+	}
+	if rm.detail.landings[0].Title != "fix auth" {
+		t.Errorf("landings[0].Title = %q, want %q", rm.detail.landings[0].Title, "fix auth")
+	}
+	if len(rm.detail.actions) != 2 {
+		t.Errorf("actions count = %d, want 2", len(rm.detail.actions))
+	}
+	if rm.detail.actions[0].Name != "deploy-prod" {
+		t.Errorf("actions[0].Name = %q, want %q", rm.detail.actions[0].Name, "deploy-prod")
+	}
+}
+
+func TestMCUpdate_TmuxWindowsMsg(t *testing.T) {
+	m := baseMCModel()
+	m.ws.DisplayNames = map[string]string{"repo1": "Repo One"}
+	m.rows[2].wt = "feat"
+
+	msg := mcTmuxWindowsMsg{
+		windows: map[string]string{
+			"Repo One:feat": "@1",
+		},
+	}
+
+	result, _ := m.Update(msg)
+	rm := result.(mcModel)
+
+	if !rm.rows[2].live {
+		t.Error("feat row should be live")
+	}
+	if rm.rows[1].live {
+		t.Error("main row should not be live")
+	}
+}
+
+func TestMCUpdate_TmuxWindowsMsg_NoDisplayName(t *testing.T) {
+	m := baseMCModel()
+	m.rows[2].wt = "feat"
+
+	msg := mcTmuxWindowsMsg{
+		windows: map[string]string{
+			"repo1:feat": "@1",
+		},
+	}
+
+	result, _ := m.Update(msg)
+	rm := result.(mcModel)
+
+	if !rm.rows[2].live {
+		t.Error("feat row should be live")
 	}
 }
