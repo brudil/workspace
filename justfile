@@ -1,6 +1,11 @@
 build:
     go build -trimpath -ldflags="-s -w" -o bin/workspace ./cmd/workspace
 
+check:
+    gofmt -l . | grep . && exit 1 || true
+    go vet ./...
+    go build ./...
+
 test:
     go test ./...
 

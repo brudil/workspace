@@ -218,8 +218,8 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 		for i := range m.rows {
 			if i == msg.rowIdx && m.rows[i].kind == rowGhostPR {
 				m.rows[i].kind = rowWorktree
-				m.rows[i].wt = msg.branch
-				return m, m.queryWorktree(msg.repo, msg.branch)
+				m.rows[i].wt = msg.capsule
+				return m, m.queryWorktree(msg.repo, msg.capsule)
 			}
 		}
 		return m, nil

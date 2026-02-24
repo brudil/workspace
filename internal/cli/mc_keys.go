@@ -273,8 +273,8 @@ func (m mcModel) doCreateWorktree() (mcModel, tea.Cmd) {
 	branch := row.branch
 	ws := m.ws
 	return m, func() tea.Msg {
-		_, err := ws.DockWorktree(repo, branch)
-		return mcWorktreeCreatedMsg{rowIdx: idx, repo: repo, branch: branch, err: err}
+		capsule, err := ws.DockWorktree(repo, branch)
+		return mcWorktreeCreatedMsg{rowIdx: idx, repo: repo, branch: branch, capsule: capsule, err: err}
 	}
 }
 

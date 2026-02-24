@@ -137,10 +137,11 @@ type mcDetailDataMsg struct {
 }
 
 type mcWorktreeCreatedMsg struct {
-	rowIdx int
-	repo   string
-	branch string
-	err    error
+	rowIdx  int
+	repo    string
+	branch  string
+	capsule string
+	err     error
 }
 
 type mcWorktreeDeletedMsg struct {

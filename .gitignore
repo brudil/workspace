@@ -1,5 +1,5 @@
 bin/
-cover.out
+*.out
 ws.local.toml
 .DS_Store
 .idea/

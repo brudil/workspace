@@ -15,6 +15,8 @@ jobs:
         with:
           go-version: "1.25"
 
+      - run: git config --global user.name "CI" && git config --global user.email "ci@test"
+
       - run: go vet ./...
 
       - name: Check formatting
@@ -25,5 +27,7 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+      - run: go build ./...
 
       - run: go test ./...
