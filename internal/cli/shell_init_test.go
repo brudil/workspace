@@ -34,7 +34,7 @@ func TestShellInitZsh(t *testing.T) {
 	}
 
 	// Must contain case for eval-able commands
-	for _, cmd := range []string{"jump", "lift", "dock", "mc"} {
+	for _, cmd := range []string{"jump", "lift", "dock", "init", "mc"} {
 		if !strings.Contains(output, cmd) {
 			t.Errorf("output missing %s in eval case", cmd)
 		}

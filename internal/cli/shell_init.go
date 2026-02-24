@@ -20,7 +20,7 @@ const zshWrapper = `# ws — shell wrapper for workspace
 
 ws() {
   case "${1:-}" in
-    jump|j|lift|dock|mc)
+    jump|j|lift|dock|init|mc)
       eval "$(command workspace "$@")"
       ;;
     *)
