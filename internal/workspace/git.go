@@ -31,9 +31,19 @@ func GitPull(dir string) error {
 	return runGit(dir, "pull")
 }
 
+// GitFFMerge fast-forwards the current branch to the given ref.
+func GitFFMerge(dir, ref string) error {
+	return runGit(dir, "merge", "--ff-only", ref)
+}
+
 // GitWorktreeAddBranch checks out an existing branch into a new worktree.
 func GitWorktreeAddBranch(gitDir, path, branch string) error {
 	return runGit(gitDir, "worktree", "add", path, branch)
+}
+
+// GitSetUpstream sets the upstream tracking branch for a local branch.
+func GitSetUpstream(gitDir, branch, remote string) error {
+	return runGit(gitDir, "branch", "--set-upstream-to="+remote+"/"+branch, branch)
 }
 
 // GitWorktreeAddNewBranch creates a new branch from base and checks it out into a new worktree.
@@ -212,8 +222,23 @@ func GitMergedBranches(dir, base string) []string {
 	return branches
 }
 
+// GitRevParse resolves a ref to its commit SHA.
+func GitRevParse(dir, ref string) string {
+	out, err := runGitOutput(dir, "rev-parse", ref)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 func runGit(dir string, args ...string) error {
-	_, err := runGitOutput(dir, args...)
+	out, err := runGitOutput(dir, args...)
+	if err != nil {
+		msg := strings.TrimSpace(out)
+		if msg != "" {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+	}
 	return err
 }
 

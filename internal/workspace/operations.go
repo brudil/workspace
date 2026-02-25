@@ -54,6 +54,10 @@ func (w *Workspace) SetupRepo(name string) SetupResult {
 		return SetupResult{Repo: name, Err: fmt.Errorf("creating %s worktree for %s: %w", w.DefaultBranch, name, err)}
 	}
 
+	if err := GitSetUpstream(bareDir, w.DefaultBranch, "origin"); err != nil {
+		return SetupResult{Repo: name, Err: fmt.Errorf("setting upstream for %s: %w", w.DefaultBranch, err)}
+	}
+
 	return SetupResult{Repo: name, Cloned: true}
 }
 

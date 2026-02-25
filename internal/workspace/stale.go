@@ -70,6 +70,8 @@ func (w *Workspace) FindAllCapsules(maxDays int, repoFilter string) []CapsuleInf
 			mergedSet[b] = true
 		}
 
+		defaultTip := GitRevParse(bareDir, w.DefaultBranch)
+
 		for _, wt := range worktrees {
 			if wt == w.DefaultBranch {
 				continue
@@ -78,7 +80,10 @@ func (w *Workspace) FindAllCapsules(maxDays int, repoFilter string) []CapsuleInf
 			wtPath := filepath.Join(repoDir, wt)
 			branch := GitCurrentBranch(wtPath)
 			lastCommit := GitLastCommitDate(wtPath)
-			merged := mergedSet[branch]
+			// A branch at the same commit as the default branch was just
+			// created from it — not actually landed via a merge.
+			branchTip := GitRevParse(wtPath, "HEAD")
+			merged := mergedSet[branch] && branchTip != defaultTip
 			inactive := !lastCommit.IsZero() && lastCommit.Before(cutoff)
 			dirtyCount := GitDirtyCount(wtPath)
 			dirty := dirtyCount > 0

@@ -40,7 +40,7 @@ Examples:
 				base = args[2]
 			}
 
-			return runCapsuleCreate(ctx, repo, func() (string, error) {
+			return runCapsuleCreate(ctx, repo, branch, func() (string, error) {
 				return ctx.WS.CreateLiftWorktree(repo, branch, base)
 			}, "Lift off!")
 		},

@@ -10,6 +10,8 @@ import (
 	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -45,23 +47,47 @@ func newDebriefCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&days, "days", 14, "Inactivity threshold in days")
+	cmd.Flags().IntVar(&days, "days", 90, "Inactivity threshold in days")
 
 	return cmd
 }
 
 func runDebrief(ctx *Context, days int, repoFilter string) error {
-	fmt.Fprintln(os.Stderr, "Scanning capsules...")
-	fmt.Fprintln(os.Stderr)
+	var capsules []workspace.CapsuleInfo
+	var prsByBranch map[string]*github.PR
+	var mergedBranches map[string]bool
 
-	capsules := ctx.WS.FindAllCapsules(days, repoFilter)
-	if len(capsules) == 0 {
-		fmt.Fprintln(os.Stderr, "All clear — no capsules in orbit.")
-		return nil
+	stepNames := []string{"Scanning capsules", "Fetching PRs"}
+	op := func(name string) (bool, error) {
+		switch name {
+		case "Scanning capsules":
+			capsules = ctx.WS.FindAllCapsules(days, repoFilter)
+			return false, nil
+		case "Fetching PRs":
+			if len(capsules) == 0 {
+				return true, nil
+			}
+			prsByBranch, mergedBranches = fetchPRsByBranch(ctx, capsules)
+			return false, nil
+		}
+		return false, nil
 	}
 
-	// Batch-fetch open PRs per repo for "still in orbit" annotations
-	prsByBranch, mergedBranches := fetchPRsByBranch(ctx, capsules)
+	if ui.IsInteractive() {
+		m := newOperationModel(stepNames, nil, op, false, true)
+		p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+		if _, err := p.Run(); err != nil {
+			return err
+		}
+	} else {
+		results := runOperationSync(stepNames, nil, op, true)
+		fprintResults(os.Stderr, results)
+	}
+
+	if len(capsules) == 0 {
+		fmt.Fprintln(os.Stderr, "\nAll clear — no capsules in orbit.")
+		return nil
+	}
 
 	// Cross-reference: mark capsules as merged if they have a merged PR
 	for i := range capsules {
@@ -70,59 +96,63 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 		}
 	}
 
+	fmt.Fprintln(os.Stderr)
+
+	// Compute column widths for aligned output.
+	var maxRepoW, maxTagW int
+	for _, c := range capsules {
+		if w := lipgloss.Width(ctx.WS.FormatRepoName(c.Repo)); w > maxRepoW {
+			maxRepoW = w
+		}
+		if w := lipgloss.Width(ui.TagDim.Render(c.Name)); w > maxTagW {
+			maxTagW = w
+		}
+	}
+
 	var debriefed, skipped, inOrbit int
 	boardChanged := false
 
 	for _, c := range capsules {
-		label := fmt.Sprintf("%s/%s", ctx.WS.FormatRepoName(c.Repo), c.Name)
+		repoName := ctx.WS.FormatRepoName(c.Repo)
+		tag := ui.TagDim.Render(c.Name)
+		repoPad := strings.Repeat(" ", maxRepoW-lipgloss.Width(repoName))
+		tagPad := strings.Repeat(" ", maxTagW-lipgloss.Width(tag))
 
 		if c.Merged || c.Inactive {
 			if c.Dirty {
-				// Landed/inactive but dirty — skip
-				fmt.Fprintf(os.Stderr, "%-40s %s %s, but %d uncommitted files — skipped\n",
-					label,
-					ui.Red.Render("✗"),
-					debriefReason(c),
-					c.DirtyCount,
+				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, but %d uncommitted files — skipped\n",
+					ui.Red.Render("✗"), repoName, repoPad, tag, tagPad,
+					debriefReason(c), c.DirtyCount,
 				)
 				skipped++
 			} else {
-				// Landed/inactive and clean — remove
 				if ctx.WS.IsBoarded(c.Repo, c.Name) {
 					ctx.WS.Unboard(c.Repo, c.Name)
 					boardChanged = true
 				}
 
 				if err := ctx.WS.RemoveWorktree(c.Repo, c.Name); err != nil {
-					fmt.Fprintf(os.Stderr, "%-40s %s failed to remove: %v\n",
-						label,
-						ui.Red.Render("✗"),
-						err,
+					fmt.Fprintf(os.Stderr, "  %s %s%s %s%s failed to remove: %v\n",
+						ui.Red.Render("✗"), repoName, repoPad, tag, tagPad, err,
 					)
 					skipped++
 					continue
 				}
 
-				fmt.Fprintf(os.Stderr, "%-40s %s %s, clean — removing\n",
-					label,
-					ui.Green.Render("✓"),
-					debriefReason(c),
+				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, clean — removed\n",
+					ui.Green.Render("✓"), repoName, repoPad, tag, tagPad, debriefReason(c),
 				)
 				debriefed++
 			}
 		} else {
-			// Still in orbit
 			extra := orbitExtra(c, prsByBranch)
-			fmt.Fprintf(os.Stderr, "%-40s %s still in orbit%s\n",
-				label,
-				ui.Dim.Render("-"),
-				extra,
+			fmt.Fprintf(os.Stderr, "  %s %s%s %s%s still in orbit%s\n",
+				ui.Dim.Render("-"), repoName, repoPad, tag, tagPad, extra,
 			)
 			inOrbit++
 		}
 	}
 
-	// Save board state and regen IDE files once at the end
 	if boardChanged {
 		config.SaveBoarded(ctx.WS.Root, ctx.WS.Boarded)
 		if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
@@ -130,7 +160,6 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 		}
 	}
 
-	// Summary
 	fmt.Fprintln(os.Stderr)
 	summary := fmt.Sprintf("Debriefed %d capsule", debriefed)
 	if debriefed != 1 {

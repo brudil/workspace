@@ -106,7 +106,7 @@ Examples:
 				}
 			}
 
-			return runCapsuleCreate(ctx, repo, func() (string, error) {
+			return runCapsuleCreate(ctx, repo, branch, func() (string, error) {
 				return ctx.WS.CreateDockWorktree(repo, branch)
 			}, "Docked!")
 		},

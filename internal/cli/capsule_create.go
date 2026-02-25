@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,13 @@ import (
 
 type createCapsuleFn func() (string, error)
 
-func runCapsuleCreate(ctx *Context, repo string, createWorktree createCapsuleFn, successMsg string) error {
+func runCapsuleCreate(ctx *Context, repo string, branch string, createWorktree createCapsuleFn, successMsg string) error {
+	capsuleName := workspace.CapsuleName(branch)
+	capsulePath := filepath.Join(ctx.WS.RepoDir(repo), capsuleName)
+	if _, err := os.Stat(capsulePath); err == nil {
+		return fmt.Errorf("capsule %q already exists for %s", capsuleName, repo)
+	}
+
 	var capsule string
 	var hookErr error
 	bareDir := ctx.WS.BareDir(repo)
@@ -39,16 +44,17 @@ func runCapsuleCreate(ctx *Context, repo string, createWorktree createCapsuleFn,
 	if hasCopy {
 		stepNames = append(stepNames, "Copying files")
 	}
-	if hasHook {
-		stepNames = append(stepNames, "Running hooks")
-	}
 
 	var copySkipped []string
 
 	op := func(name string) (bool, error) {
 		switch name {
 		case "Aligning ground":
-			return false, workspace.GitFetch(bareDir)
+			if err := workspace.GitFetch(bareDir); err != nil {
+				return false, err
+			}
+			groundDir := ctx.WS.MainWorktree(repo)
+			return false, workspace.GitFFMerge(groundDir, "origin/"+ctx.WS.DefaultBranch)
 		case "Making capsule":
 			c, err := createWorktree()
 			if err != nil {
@@ -62,25 +68,31 @@ func runCapsuleCreate(ctx *Context, repo string, createWorktree createCapsuleFn,
 			s, err := workspace.CopyFromGround(groundDir, wtPath, repoCfg.Capsule.CopyFromGround)
 			copySkipped = s
 			return false, err
-		case "Running hooks":
-			wtPath := filepath.Join(ctx.WS.RepoDir(repo), capsule)
-			if err := workspace.RunHook(wtPath, hook, io.Discard, io.Discard); err != nil {
-				hookErr = err
-			}
-			return false, nil
 		}
 		return false, nil
 	}
 
 	if ui.IsInteractive() {
-		m := newOperationModel(stepNames, nil, op, false)
+		opModel := newOperationModel(stepNames, nil, op, false, true)
+		hookDirFn := func() string { return filepath.Join(ctx.WS.RepoDir(repo), capsule) }
+		m := newCapsuleCreateModel(opModel, hasHook, hookDirFn, hook)
 		p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
-		if _, err := p.Run(); err != nil {
+		final, err := p.Run()
+		if err != nil {
 			return err
 		}
+		if fm, ok := final.(capsuleCreateModel); ok {
+			hookErr = fm.HookErr()
+		}
 	} else {
-		results := runOperationSync(stepNames, nil, op)
+		results := runOperationSync(stepNames, nil, op, true)
 		fprintResults(os.Stderr, results)
+		if hasHook && capsule != "" {
+			wtPath := filepath.Join(ctx.WS.RepoDir(repo), capsule)
+			if err := workspace.RunHook(wtPath, hook, os.Stderr, os.Stderr); err != nil {
+				hookErr = err
+			}
+		}
 	}
 
 	if capsule == "" {

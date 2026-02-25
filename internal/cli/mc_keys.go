@@ -279,7 +279,7 @@ func (m mcModel) doCreateWorktree() (mcModel, tea.Cmd) {
 }
 
 func (m mcModel) doRefresh() (mcModel, tea.Cmd) {
-	capsules := m.ws.FindAllCapsules(14, "")
+	capsules := m.ws.FindAllCapsules(90, "")
 
 	if tmuxpkg.InTmux() {
 		windows := tmuxpkg.ListWindows()

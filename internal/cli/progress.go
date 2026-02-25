@@ -41,11 +41,12 @@ type repoResultMsg struct {
 type operationFunc func(name string) (skipped bool, err error)
 
 type operationModel struct {
-	repos    []repoEntry
-	op       operationFunc
-	parallel bool
-	spinner  spinner.Model
-	done     int
+	repos       []repoEntry
+	op          operationFunc
+	parallel    bool
+	stopOnError bool
+	spinner     spinner.Model
+	done        int
 }
 
 func formatDisplayName(name string, displayNames map[string]string) string {
@@ -55,7 +56,7 @@ func formatDisplayName(name string, displayNames map[string]string) string {
 	return name
 }
 
-func newOperationModel(repoNames []string, displayNames map[string]string, op operationFunc, parallel bool) operationModel {
+func newOperationModel(repoNames []string, displayNames map[string]string, op operationFunc, parallel bool, stopOnError bool) operationModel {
 	entries := make([]repoEntry, len(repoNames))
 	for i, name := range repoNames {
 		entries[i] = repoEntry{name: name, displayName: formatDisplayName(name, displayNames)}
@@ -65,10 +66,11 @@ func newOperationModel(repoNames []string, displayNames map[string]string, op op
 	s.Spinner = spinner.Dot
 
 	return operationModel{
-		repos:    entries,
-		op:       op,
-		parallel: parallel,
-		spinner:  s,
+		repos:       entries,
+		op:          op,
+		parallel:    parallel,
+		stopOnError: stopOnError,
+		spinner:     s,
 	}
 }
 
@@ -126,8 +128,11 @@ func (m operationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Sequential mode: start the next pending repo
+		// Sequential mode: stop on failure or start the next pending step.
 		if !m.parallel {
+			if msg.err != nil && m.stopOnError {
+				return m, tea.Quit
+			}
 			for i := range m.repos {
 				if m.repos[i].state == repoPending {
 					m.repos[i].state = repoRunning
@@ -173,8 +178,17 @@ func (m operationModel) View() string {
 	return b.String()
 }
 
+func (m operationModel) HasFailed() bool {
+	for _, r := range m.repos {
+		if r.state == repoFailed {
+			return true
+		}
+	}
+	return false
+}
+
 // runOperationSync runs the operation without bubbletea (for non-TTY contexts).
-func runOperationSync(repoNames []string, displayNames map[string]string, op operationFunc) []repoEntry {
+func runOperationSync(repoNames []string, displayNames map[string]string, op operationFunc, stopOnError bool) []repoEntry {
 	results := make([]repoEntry, len(repoNames))
 	for i, name := range repoNames {
 		results[i] = repoEntry{name: name, displayName: formatDisplayName(name, displayNames)}
@@ -183,6 +197,9 @@ func runOperationSync(repoNames []string, displayNames map[string]string, op ope
 		case err != nil:
 			results[i].state = repoFailed
 			results[i].err = err
+			if stopOnError {
+				return results[:i+1]
+			}
 		case skipped:
 			results[i].state = repoSkipped
 		default:
@@ -223,13 +240,13 @@ func cloneRepos(ws *workspace.Workspace, repoNames []string, output io.Writer) (
 	}
 
 	if ui.IsInteractive() {
-		m := newOperationModel(repoNames, ws.DisplayNames, op, false)
+		m := newOperationModel(repoNames, ws.DisplayNames, op, false, false)
 		p := tea.NewProgram(m, tea.WithOutput(output))
 		if _, err := p.Run(); err != nil {
 			return nil, err
 		}
 	} else {
-		results := runOperationSync(repoNames, ws.DisplayNames, op)
+		results := runOperationSync(repoNames, ws.DisplayNames, op, false)
 		fprintResults(output, results)
 	}
 

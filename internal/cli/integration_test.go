@@ -140,8 +140,6 @@ func TestDebrief_RemovesMergedCapsule(t *testing.T) {
 		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
 	})
 
-	// Lift a capsule — branch is created at the same commit as main,
-	// so git considers it already merged into main.
 	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "merged-feature")
 	if liftResult.Err != nil {
 		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
@@ -151,6 +149,16 @@ func TestDebrief_RemovesMergedCapsule(t *testing.T) {
 	if _, err := os.Stat(wtDir); err != nil {
 		t.Fatalf("worktree dir not created after lift: %v", err)
 	}
+
+	// Commit on the branch so it diverges from main.
+	os.WriteFile(filepath.Join(wtDir, "feature.txt"), []byte("work"), 0644)
+	testutil.GitCmd(t, wtDir, "add", ".")
+	testutil.GitCmd(t, wtDir, "commit", "-m", "feature work")
+
+	// Merge the branch into main via the ground worktree (--no-ff to
+	// create a merge commit, matching GitHub's merge behavior).
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+	testutil.GitCmd(t, groundDir, "merge", "--no-ff", "merged-feature", "-m", "Merge merged-feature")
 
 	// Debrief should detect the branch as merged and remove the worktree.
 	debriefResult := testutil.RunCommand(t, w.Root, nil, "debrief")
@@ -164,6 +172,32 @@ func TestDebrief_RemovesMergedCapsule(t *testing.T) {
 	}
 }
 
+func TestDebrief_IgnoresFreshCapsule(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	// Lift a capsule — branch sits at the same commit as main.
+	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "fresh-feature")
+	if liftResult.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
+	}
+
+	wtDir := filepath.Join(w.Root, "repos", "repo-a", "fresh-feature")
+
+	// Debrief should NOT treat this as landed — it was never worked on.
+	debriefResult := testutil.RunCommand(t, w.Root, nil, "debrief")
+	if debriefResult.Err != nil {
+		t.Fatalf("debrief failed: %v\nstderr: %s", debriefResult.Err, debriefResult.Stderr)
+	}
+
+	if _, err := os.Stat(wtDir); err != nil {
+		t.Errorf("worktree dir removed for fresh capsule: %v", err)
+	}
+}
+
 func TestDebrief_SkipsDirtyCapsule(t *testing.T) {
 	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
 		Org:           "test-org",
@@ -171,7 +205,6 @@ func TestDebrief_SkipsDirtyCapsule(t *testing.T) {
 		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
 	})
 
-	// Lift a capsule (branch at same commit as main, so merged).
 	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "dirty-feature")
 	if liftResult.Err != nil {
 		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
@@ -179,7 +212,15 @@ func TestDebrief_SkipsDirtyCapsule(t *testing.T) {
 
 	wtDir := filepath.Join(w.Root, "repos", "repo-a", "dirty-feature")
 
-	// Create an uncommitted file to make the worktree dirty.
+	// Commit on the branch, then merge into main so it's considered landed.
+	os.WriteFile(filepath.Join(wtDir, "feature.txt"), []byte("work"), 0644)
+	testutil.GitCmd(t, wtDir, "add", ".")
+	testutil.GitCmd(t, wtDir, "commit", "-m", "feature work")
+
+	groundDir := filepath.Join(w.Root, "repos", "repo-a", ".ground")
+	testutil.GitCmd(t, groundDir, "merge", "--no-ff", "dirty-feature", "-m", "Merge dirty-feature")
+
+	// Now add an uncommitted file to make the worktree dirty.
 	if err := os.WriteFile(filepath.Join(wtDir, "uncommitted.txt"), []byte("dirty"), 0644); err != nil {
 		t.Fatalf("failed to create dirty file: %v", err)
 	}
