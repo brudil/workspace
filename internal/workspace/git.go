@@ -20,7 +20,11 @@ func GitCloneBare(url, bareDir string) error {
 	if err := runGit(bareDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
 		return err
 	}
-	return runGit(bareDir, "config", "push.autoSetupRemote", "true")
+	if err := runGit(bareDir, "config", "push.autoSetupRemote", "true"); err != nil {
+		return err
+	}
+	// Populate remote tracking refs now that the refspec is configured.
+	return runGit(bareDir, "fetch", "origin")
 }
 
 func GitFetch(repoDir string) error {
