@@ -48,6 +48,85 @@ func TestDoctor_RepoNotCloned(t *testing.T) {
 	}
 }
 
+func TestCheckResult_HasFixFields(t *testing.T) {
+	called := false
+	r := CheckResult{
+		Name:    "test",
+		Status:  CheckFail,
+		Detail:  "broken",
+		Fix:     func() error { called = true; return nil },
+		FixHint: "try this",
+	}
+
+	if r.Fix == nil {
+		t.Fatal("Fix should not be nil")
+	}
+	if err := r.Fix(); err != nil {
+		t.Fatalf("Fix returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("Fix was not called")
+	}
+	if r.FixHint != "try this" {
+		t.Errorf("FixHint = %q, want %q", r.FixHint, "try this")
+	}
+}
+
+func TestCheckRepos_MissingRepo_HasFix(t *testing.T) {
+	root := t.TempDir()
+	reposDir := filepath.Join(root, "repos")
+	os.MkdirAll(filepath.Join(reposDir, "exists", ".bare"), 0755)
+	os.MkdirAll(filepath.Join(reposDir, "missing"), 0755)
+
+	w := &Workspace{
+		Root:      root,
+		RepoNames: []string{"exists", "missing"},
+	}
+
+	cat := w.checkRepos()
+
+	for _, check := range cat.Checks {
+		if check.Name == "exists" {
+			if check.Status != CheckOK {
+				t.Errorf("exists: status = %d, want CheckOK", check.Status)
+			}
+			if check.Fix != nil {
+				t.Error("exists: Fix should be nil for healthy repo")
+			}
+		}
+		if check.Name == "missing" {
+			if check.Status != CheckFail {
+				t.Errorf("missing: status = %d, want CheckFail", check.Status)
+			}
+			if check.Fix == nil {
+				t.Error("missing: Fix should not be nil for missing repo")
+			}
+		}
+	}
+}
+
+func TestCheckTools_MissingGh_HasHint(t *testing.T) {
+	w := &Workspace{}
+
+	// Temporarily break PATH to ensure gh isn't found
+	origPath := os.Getenv("PATH")
+	os.Setenv("PATH", "")
+	defer os.Setenv("PATH", origPath)
+
+	cat := w.checkTools()
+
+	if len(cat.Checks) != 1 {
+		t.Fatalf("expected 1 check, got %d", len(cat.Checks))
+	}
+	check := cat.Checks[0]
+	if check.Status != CheckFail {
+		t.Errorf("status = %d, want CheckFail", check.Status)
+	}
+	if check.FixHint == "" {
+		t.Error("expected FixHint for missing gh tool")
+	}
+}
+
 func findCategory(cats []CheckCategory, name string) *CheckCategory {
 	for i := range cats {
 		if cats[i].Name == name {

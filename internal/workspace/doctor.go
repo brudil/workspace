@@ -17,9 +17,11 @@ const (
 )
 
 type CheckResult struct {
-	Name   string
-	Status CheckStatus
-	Detail string
+	Name    string
+	Status  CheckStatus
+	Detail  string
+	Fix     func() error // nil if not auto-fixable
+	FixHint string       // shown when Fix is nil but manual action exists
 }
 
 type CheckCategory struct {
@@ -44,6 +46,10 @@ func (w *Workspace) checkRepos() CheckCategory {
 		if _, err := os.Stat(bareDir); err != nil {
 			result.Status = CheckFail
 			result.Detail = fmt.Sprintf("not cloned (expected %s)", bareDir)
+			repoName := name // capture for closure
+			result.Fix = func() error {
+				return w.SetupRepo(repoName).Err
+			}
 		}
 		checks = append(checks, result)
 	}
@@ -71,10 +77,12 @@ func (w *Workspace) checkOrphanedWorktrees() CheckCategory {
 
 		for _, wt := range worktrees {
 			if !knownBranches[wt] {
+				wtPath := filepath.Join(w.RepoDir(name), wt)
 				checks = append(checks, CheckResult{
-					Name:   fmt.Sprintf("%s/%s", name, wt),
-					Status: CheckWarn,
-					Detail: "directory exists but not registered as a git worktree",
+					Name:    fmt.Sprintf("%s/%s", name, wt),
+					Status:  CheckWarn,
+					Detail:  "directory exists but not registered as a git worktree",
+					FixHint: fmt.Sprintf("rm -rf %s", wtPath),
 				})
 			}
 		}
@@ -94,6 +102,7 @@ func (w *Workspace) checkTools() CheckCategory {
 	if _, err := exec.LookPath("gh"); err != nil {
 		result.Status = CheckFail
 		result.Detail = "gh CLI not found on PATH"
+		result.FixHint = "install with: brew install gh"
 	}
 	return CheckCategory{Name: "Tools", Checks: []CheckResult{result}}
 }

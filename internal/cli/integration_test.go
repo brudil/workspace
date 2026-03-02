@@ -359,6 +359,64 @@ func TestDoctor_MissingRepo(t *testing.T) {
 	}
 }
 
+func TestDoctor_FixFlag_HealthyWorkspace(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	result := testutil.RunCommand(t, w.Root, nil, "doctor", "--fix")
+	if result.Err != nil {
+		t.Fatalf("doctor --fix failed on healthy workspace: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+}
+
+func TestDoctor_FixFlag_MissingRepo_ShowsFixAttempt(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}, {Name: "repo-b"}},
+	})
+
+	// Remove repo-b to simulate missing
+	os.RemoveAll(filepath.Join(w.Root, "repos", "repo-b", ".bare"))
+	os.RemoveAll(filepath.Join(w.Root, "repos", "repo-b", ".ground"))
+
+	result := testutil.RunCommand(t, w.Root, nil, "doctor", "--fix")
+
+	// Fix will fail because test-org/repo-b isn't a real GitHub repo,
+	// but verify the fix was attempted (error message changes from
+	// "not cloned" to "fix failed").
+	if result.Err == nil {
+		t.Fatal("expected doctor to still report failure when fix fails")
+	}
+	if !strings.Contains(result.Stderr, "fix failed") {
+		t.Errorf("expected 'fix failed' in stderr, got:\n%s", result.Stderr)
+	}
+}
+
+func TestDoctor_WithoutFix_NoHints(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}, {Name: "repo-b"}},
+	})
+
+	// Remove repo-b to simulate missing
+	os.RemoveAll(filepath.Join(w.Root, "repos", "repo-b", ".bare"))
+
+	result := testutil.RunCommand(t, w.Root, nil, "doctor")
+
+	// Without --fix, should not show "fix failed" or hints
+	if strings.Contains(result.Stderr, "fix failed") {
+		t.Error("should not attempt fix without --fix flag")
+	}
+	if strings.Contains(result.Stderr, "hint:") {
+		t.Error("should not show hints without --fix flag")
+	}
+}
+
 // --- Status JSON integration tests ---
 
 // statusJSONOutput is a minimal representation for asserting JSON output.
