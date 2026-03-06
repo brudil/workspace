@@ -57,6 +57,7 @@ func runStatusLLM(ws *workspace.Workspace, gh github.Client) error {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Workspace: %s\n", ws.Title()))
+	b.WriteString(fmt.Sprintf("Workspace root: %s\n", ws.Root))
 
 	for idx, repo := range repos {
 		if idx > 0 {
