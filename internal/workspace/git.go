@@ -31,8 +31,12 @@ func GitFetch(repoDir string) error {
 	return runGit(repoDir, "fetch", "--all", "--prune")
 }
 
-func GitPull(dir string) error {
-	return runGit(dir, "pull")
+func GitFetchOrigin(dir string) error {
+	return runGit(dir, "fetch", "origin")
+}
+
+func GitResetHard(dir, ref string) error {
+	return runGit(dir, "reset", "--hard", ref)
 }
 
 // GitFFMerge fast-forwards the current branch to the given ref.

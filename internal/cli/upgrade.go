@@ -80,10 +80,14 @@ func newUpgradeCmd() *cobra.Command {
 	}
 }
 
-// pullAndParse enables git, pulls, and parses the new config.
+// pullAndParse fetches the latest remote config and resets tracked files to match.
+// Untracked files (like ws.local.toml) are preserved.
 func pullAndParse(root, configPath string) (*config.Config, error) {
-	if err := workspace.GitPull(root); err != nil {
-		return nil, fmt.Errorf("git pull: %w", err)
+	if err := workspace.GitFetchOrigin(root); err != nil {
+		return nil, fmt.Errorf("git fetch: %w", err)
+	}
+	if err := workspace.GitResetHard(root, "origin/HEAD"); err != nil {
+		return nil, fmt.Errorf("git reset: %w", err)
 	}
 
 	cfg, err := config.Parse(configPath)
