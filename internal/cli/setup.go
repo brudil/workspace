@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brudil/workspace/internal/config"
-	"github.com/brudil/workspace/internal/ide"
-	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -33,14 +30,6 @@ func newSetupCmd() *cobra.Command {
 
 			workspace.DisableWorkspaceGit(ctx.WS.Root)
 			runAfterCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
-
-			for _, name := range clonedRepos {
-				ctx.WS.Board(name, workspace.GroundDir)
-			}
-			config.SaveBoarded(ctx.WS.Root, ctx.WS.Boarded)
-			if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
-				fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
-			}
 
 			fmt.Fprintln(os.Stderr, "\nSetup complete. Run 'ws open' to open in your editor.")
 			return nil
