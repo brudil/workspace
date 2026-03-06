@@ -18,6 +18,12 @@ func TestDoctor_AllHealthy(t *testing.T) {
 		RepoNames:     []string{"repo-a"},
 	}
 
+	orig := CheckGitHubAuthFunc
+	CheckGitHubAuthFunc = func() CheckResult {
+		return CheckResult{Name: "gh auth", Status: CheckOK}
+	}
+	t.Cleanup(func() { CheckGitHubAuthFunc = orig })
+
 	categories := ws.Doctor()
 	for _, cat := range categories {
 		for _, check := range cat.Checks {

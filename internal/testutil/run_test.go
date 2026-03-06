@@ -5,6 +5,7 @@ import (
 )
 
 func TestRunCommand_Doctor(t *testing.T) {
+	StubGitHubAuth(t)
 	w := SetupWorkspace(t, WorkspaceOpts{
 		Org:           "test-org",
 		DefaultBranch: "main",

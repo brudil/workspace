@@ -331,6 +331,7 @@ func TestJump_OutputsCd(t *testing.T) {
 }
 
 func TestDoctor_HealthyWorkspace(t *testing.T) {
+	testutil.StubGitHubAuth(t)
 	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
 		Org:           "test-org",
 		DefaultBranch: "main",
@@ -360,6 +361,7 @@ func TestDoctor_MissingRepo(t *testing.T) {
 }
 
 func TestDoctor_FixFlag_HealthyWorkspace(t *testing.T) {
+	testutil.StubGitHubAuth(t)
 	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
 		Org:           "test-org",
 		DefaultBranch: "main",

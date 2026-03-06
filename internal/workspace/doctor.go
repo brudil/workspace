@@ -97,6 +97,10 @@ func (w *Workspace) checkOrphanedWorktrees() CheckCategory {
 	return CheckCategory{Name: "Worktrees", Checks: checks}
 }
 
+// CheckGitHubAuthFunc is the function used to check GitHub auth status.
+// Tests can replace this to avoid shelling out to gh.
+var CheckGitHubAuthFunc = checkGitHubAuth
+
 func (w *Workspace) checkTools() CheckCategory {
 	ghResult := CheckResult{Name: "gh", Status: CheckOK}
 	if _, err := exec.LookPath("gh"); err != nil {
@@ -105,7 +109,7 @@ func (w *Workspace) checkTools() CheckCategory {
 		ghResult.FixHint = "install with: brew install gh"
 	}
 
-	authResult := checkGitHubAuth()
+	authResult := CheckGitHubAuthFunc()
 
 	return CheckCategory{Name: "Tools", Checks: []CheckResult{ghResult, authResult}}
 }
