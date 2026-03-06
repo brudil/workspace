@@ -115,8 +115,8 @@ func TestCheckTools_MissingGh_HasHint(t *testing.T) {
 
 	cat := w.checkTools()
 
-	if len(cat.Checks) != 1 {
-		t.Fatalf("expected 1 check, got %d", len(cat.Checks))
+	if len(cat.Checks) < 1 {
+		t.Fatalf("expected at least 1 check, got %d", len(cat.Checks))
 	}
 	check := cat.Checks[0]
 	if check.Status != CheckFail {

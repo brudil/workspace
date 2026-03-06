@@ -98,13 +98,38 @@ func (w *Workspace) checkOrphanedWorktrees() CheckCategory {
 }
 
 func (w *Workspace) checkTools() CheckCategory {
-	result := CheckResult{Name: "gh", Status: CheckOK}
+	ghResult := CheckResult{Name: "gh", Status: CheckOK}
 	if _, err := exec.LookPath("gh"); err != nil {
-		result.Status = CheckFail
-		result.Detail = "gh CLI not found on PATH"
-		result.FixHint = "install with: brew install gh"
+		ghResult.Status = CheckFail
+		ghResult.Detail = "gh CLI not found on PATH"
+		ghResult.FixHint = "install with: brew install gh"
 	}
-	return CheckCategory{Name: "Tools", Checks: []CheckResult{result}}
+
+	authResult := checkGitHubAuth()
+
+	return CheckCategory{Name: "Tools", Checks: []CheckResult{ghResult, authResult}}
+}
+
+func checkGitHubAuth() CheckResult {
+	result := CheckResult{Name: "gh auth", Status: CheckOK}
+	out, err := exec.Command("gh", "auth", "status", "--hostname", "github.com").CombinedOutput()
+	if err != nil {
+		result.Status = CheckFail
+		result.Detail = "not authenticated"
+		result.FixHint = "run: gh auth login"
+		return result
+	}
+	// Extract username from "Logged in to github.com account <user> ..."
+	for line := range strings.SplitSeq(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if _, after, ok := strings.Cut(line, "account "); ok {
+			if user, _, ok := strings.Cut(after, " "); ok {
+				result.Detail = user
+			}
+			break
+		}
+	}
+	return result
 }
 
 // gitWorktreeListBranches uses `git worktree list` to get registered worktree paths,
