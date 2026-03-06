@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/brudil/workspace/internal/config"
+	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
@@ -72,6 +73,14 @@ func newUpgradeCmd() *cobra.Command {
 					return err
 				}
 				runAfterCreateHooks(newCtx.WS, clonedRepos, os.Stderr, os.Stderr)
+			}
+
+			// Resync IDE workspace files in case config changed
+			refreshCtx, err := LoadContextFromDir(root)
+			if err == nil {
+				if err := ide.Regenerate(refreshCtx.WS.Root, refreshCtx.WS.Boarded, refreshCtx.WS.DisplayNames, refreshCtx.WS.Org); err != nil {
+					fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+				}
 			}
 
 			fmt.Fprintln(os.Stderr, "\nUpgrade complete.")
