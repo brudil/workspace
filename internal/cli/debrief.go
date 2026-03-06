@@ -57,9 +57,22 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 	var prsByBranch map[string]*github.PR
 	var mergedBranches map[string]bool
 
-	stepNames := []string{"Scanning capsules", "Fetching PRs"}
+	repos := ctx.WS.RepoNames
+	if repoFilter != "" {
+		repos = []string{repoFilter}
+	}
+
+	stepNames := []string{"Aligning ground", "Scanning capsules", "Fetching PRs"}
 	op := func(name string) (bool, error) {
 		switch name {
+		case "Aligning ground":
+			for _, repo := range repos {
+				bareDir := ctx.WS.BareDir(repo)
+				workspace.GitFetch(bareDir)
+				groundDir := ctx.WS.MainWorktree(repo)
+				workspace.GitFFMerge(groundDir, "origin/"+ctx.WS.DefaultBranch)
+			}
+			return false, nil
 		case "Scanning capsules":
 			capsules = ctx.WS.FindAllCapsules(days, repoFilter)
 			return false, nil
