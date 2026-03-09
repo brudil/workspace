@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -62,39 +64,38 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 		repos = []string{repoFilter}
 	}
 
-	stepNames := []string{"Aligning ground", "Scanning capsules", "Fetching PRs"}
-	op := func(name string) (bool, error) {
-		switch name {
-		case "Aligning ground":
-			for _, repo := range repos {
-				bareDir := ctx.WS.BareDir(repo)
-				workspace.GitFetch(bareDir)
-				groundDir := ctx.WS.MainWorktree(repo)
-				workspace.GitFFMerge(groundDir, "origin/"+ctx.WS.DefaultBranch)
-			}
-			return false, nil
-		case "Scanning capsules":
-			capsules = ctx.WS.FindAllCapsules(days, repoFilter)
-			return false, nil
-		case "Fetching PRs":
-			if len(capsules) == 0 {
-				return true, nil
-			}
-			prsByBranch, mergedBranches = fetchPRsByBranch(ctx, capsules)
-			return false, nil
-		}
-		return false, nil
-	}
-
 	if ui.IsInteractive() {
-		m := newOperationModel(stepNames, nil, op, false, true)
+		m := newDebriefModel(ctx, repos, days, repoFilter)
 		p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
-		if _, err := p.Run(); err != nil {
+		result, err := p.Run()
+		if err != nil {
 			return err
 		}
+		dm := result.(debriefModel)
+		capsules = dm.capsules
+		prsByBranch = dm.prsByBranch
+		mergedBranches = dm.mergedBranches
 	} else {
-		results := runOperationSync(stepNames, nil, op, true)
-		fprintResults(os.Stderr, results)
+		// Non-interactive: parallel fetch, then sequential steps.
+		fetchResults := make([]workspace.FetchResult, len(repos))
+		var wg sync.WaitGroup
+		for i, repo := range repos {
+			wg.Add(1)
+			go func(idx int, name string) {
+				defer wg.Done()
+				fetchResults[idx] = ctx.WS.FetchRepo(name)
+			}(i, repo)
+		}
+		wg.Wait()
+		for i, repo := range repos {
+			if fetchResults[i].Err == nil {
+				workspace.GitFFMerge(ctx.WS.MainWorktree(repo), "origin/"+ctx.WS.DefaultBranch)
+			}
+		}
+		capsules = ctx.WS.FindAllCapsules(days, repoFilter)
+		if len(capsules) > 0 {
+			prsByBranch, mergedBranches = fetchPRsByBranch(ctx, capsules)
+		}
 	}
 
 	if len(capsules) == 0 {
@@ -228,6 +229,197 @@ func orbitExtra(c workspace.CapsuleInfo, prsByBranch map[string]*github.PR) stri
 	}
 	result.WriteString(")")
 	return result.String()
+}
+
+// --- debrief bubbletea model ---
+
+type debriefAlignMsg struct {
+	name string
+	err  error
+}
+
+type debriefScanMsg struct {
+	capsules []workspace.CapsuleInfo
+}
+
+type debriefFetchPRsMsg struct {
+	prsByBranch    map[string]*github.PR
+	mergedBranches map[string]bool
+}
+
+type debriefModel struct {
+	phase   int // 0=align, 1=scan, 2=fetchPRs, 3=done
+	repos   []repoEntry
+	spinner spinner.Model
+
+	alignDone  int
+	skippedPRs bool
+
+	// Results extracted after Run().
+	capsules       []workspace.CapsuleInfo
+	prsByBranch    map[string]*github.PR
+	mergedBranches map[string]bool
+
+	// Config for scan/fetch phases.
+	ctx        *Context
+	repoNames  []string
+	days       int
+	repoFilter string
+}
+
+func newDebriefModel(ctx *Context, repos []string, days int, repoFilter string) debriefModel {
+	entries := make([]repoEntry, len(repos))
+	for i, name := range repos {
+		entries[i] = repoEntry{
+			name:        name,
+			displayName: ctx.WS.FormatRepoName(name),
+		}
+	}
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	return debriefModel{
+		repos:      entries,
+		spinner:    s,
+		ctx:        ctx,
+		repoNames:  repos,
+		days:       days,
+		repoFilter: repoFilter,
+	}
+}
+
+func (m debriefModel) Init() tea.Cmd {
+	cmds := []tea.Cmd{m.spinner.Tick}
+	for i := range m.repos {
+		m.repos[i].state = repoRunning
+		name := m.repos[i].name
+		ctx := m.ctx
+		cmds = append(cmds, func() tea.Msg {
+			err := workspace.GitFetch(ctx.WS.BareDir(name))
+			if err == nil {
+				workspace.GitFFMerge(ctx.WS.MainWorktree(name), "origin/"+ctx.WS.DefaultBranch)
+			}
+			return debriefAlignMsg{name: name, err: err}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m debriefModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case debriefAlignMsg:
+		for i := range m.repos {
+			if m.repos[i].name != msg.name {
+				continue
+			}
+			if msg.err != nil {
+				m.repos[i].state = repoFailed
+				m.repos[i].err = msg.err
+			} else {
+				m.repos[i].state = repoDone
+			}
+			m.alignDone++
+			break
+		}
+		if m.alignDone >= len(m.repos) {
+			m.phase = 1
+			return m, m.runScan()
+		}
+		return m, nil
+
+	case debriefScanMsg:
+		m.capsules = msg.capsules
+		if len(m.capsules) == 0 {
+			m.phase = 3
+			m.skippedPRs = true
+			return m, tea.Quit
+		}
+		m.phase = 2
+		return m, m.runFetchPRs()
+
+	case debriefFetchPRsMsg:
+		m.prsByBranch = msg.prsByBranch
+		m.mergedBranches = msg.mergedBranches
+		m.phase = 3
+		return m, tea.Quit
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m debriefModel) runScan() tea.Cmd {
+	ctx := m.ctx
+	days := m.days
+	repoFilter := m.repoFilter
+	return func() tea.Msg {
+		return debriefScanMsg{capsules: ctx.WS.FindAllCapsules(days, repoFilter)}
+	}
+}
+
+func (m debriefModel) runFetchPRs() tea.Cmd {
+	ctx := m.ctx
+	capsules := m.capsules
+	return func() tea.Msg {
+		prs, merged := fetchPRsByBranch(ctx, capsules)
+		return debriefFetchPRsMsg{prsByBranch: prs, mergedBranches: merged}
+	}
+}
+
+func (m debriefModel) View() string {
+	var b strings.Builder
+
+	// Aligning ground
+	if m.phase == 0 {
+		b.WriteString(fmt.Sprintf("  %s Aligning ground\n", m.spinner.View()))
+		for _, r := range m.repos {
+			switch r.state {
+			case repoPending:
+				b.WriteString(fmt.Sprintf("    %s %s\n", ui.Dim.Render("·"), ui.Dim.Render(r.displayName)))
+			case repoRunning:
+				b.WriteString(fmt.Sprintf("    %s %s\n", m.spinner.View(), r.displayName))
+			case repoDone:
+				b.WriteString(fmt.Sprintf("    %s %s\n", ui.Green.Render("✓"), r.displayName))
+			case repoFailed:
+				b.WriteString(fmt.Sprintf("    %s %s: %v\n", ui.Red.Render("✗"), r.displayName, r.err))
+			}
+		}
+	} else {
+		b.WriteString(fmt.Sprintf("  %s Aligning ground\n", ui.Green.Render("✓")))
+	}
+
+	// Scanning capsules
+	switch {
+	case m.phase < 1:
+		b.WriteString(fmt.Sprintf("  %s %s\n", ui.Dim.Render("·"), ui.Dim.Render("Scanning capsules")))
+	case m.phase == 1:
+		b.WriteString(fmt.Sprintf("  %s Scanning capsules\n", m.spinner.View()))
+	default:
+		b.WriteString(fmt.Sprintf("  %s Scanning capsules\n", ui.Green.Render("✓")))
+	}
+
+	// Fetching PRs
+	if m.skippedPRs {
+		b.WriteString(fmt.Sprintf("  %s %s\n", ui.Dim.Render("·"), ui.Dim.Render("Fetching PRs")))
+	} else {
+		switch {
+		case m.phase < 2:
+			b.WriteString(fmt.Sprintf("  %s %s\n", ui.Dim.Render("·"), ui.Dim.Render("Fetching PRs")))
+		case m.phase == 2:
+			b.WriteString(fmt.Sprintf("  %s Fetching PRs\n", m.spinner.View()))
+		default:
+			b.WriteString(fmt.Sprintf("  %s Fetching PRs\n", ui.Green.Render("✓")))
+		}
+	}
+
+	return b.String()
 }
 
 func fetchPRsByBranch(ctx *Context, capsules []workspace.CapsuleInfo) (map[string]*github.PR, map[string]bool) {
