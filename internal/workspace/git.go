@@ -50,8 +50,18 @@ func GitWorktreeAddBranch(gitDir, path, branch string) error {
 }
 
 // GitSetUpstream sets the upstream tracking branch for a local branch.
+// The remote tracking ref must already exist.
 func GitSetUpstream(gitDir, branch, remote string) error {
 	return runGit(gitDir, "branch", "--set-upstream-to="+remote+"/"+branch, branch)
+}
+
+// GitConfigBranchUpstream sets the upstream remote and merge ref for a branch
+// via git config, without requiring the remote tracking ref to already exist.
+func GitConfigBranchUpstream(gitDir, branch, remote string) error {
+	if err := runGit(gitDir, "config", "branch."+branch+".remote", remote); err != nil {
+		return err
+	}
+	return runGit(gitDir, "config", "branch."+branch+".merge", "refs/heads/"+branch)
 }
 
 // GitWorktreeAddNewBranch creates a new branch from base and checks it out into a new worktree.

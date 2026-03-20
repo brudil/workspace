@@ -102,6 +102,12 @@ func (w *Workspace) CreateLiftWorktree(repo, branch, base string) (string, error
 	if err := GitWorktreeAddNewBranch(bareDir, wtPath, branch, base); err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
+	// Override the tracking branch that git auto-set from the base ref (e.g. origin/main).
+	// The new branch should track its own remote counterpart, not the base branch.
+	// We use git config directly because the remote ref doesn't exist until the first push.
+	if err := GitConfigBranchUpstream(bareDir, branch, "origin"); err != nil {
+		return "", fmt.Errorf("setting upstream for %s: %w", branch, err)
+	}
 	return capsule, nil
 }
 
