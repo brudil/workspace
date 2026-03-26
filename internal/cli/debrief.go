@@ -125,6 +125,7 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 
 	var debriefed, skipped, inOrbit int
 	boardChanged := false
+	siloChanged := false
 
 	for _, c := range capsules {
 		repoName := ctx.WS.FormatRepoName(c.Repo)
@@ -153,6 +154,19 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 					continue
 				}
 
+				// If this capsule was a silo target, repoint to .ground
+				if target, ok := ctx.WS.Silo[c.Repo]; ok && target == c.Name {
+					ctx.WS.Silo[c.Repo] = workspace.GroundDir
+					siloDir := ctx.WS.SiloWorktree(c.Repo)
+					groundDir := ctx.WS.MainWorktree(c.Repo)
+					if err := workspace.FullSync(groundDir, siloDir); err != nil {
+						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
+					} else {
+						siloChanged = true
+						fmt.Fprintf(os.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
+					}
+				}
+
 				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, clean — removed\n",
 					ui.Green.Render("✓"), repoName, repoPad, tag, tagPad, debriefReason(c),
 				)
@@ -172,6 +186,9 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 		if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
 			fmt.Fprintf(os.Stderr, "\n  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 		}
+	}
+	if siloChanged {
+		config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
 	}
 
 	fmt.Fprintln(os.Stderr)
