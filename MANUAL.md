@@ -543,11 +543,13 @@ Repos can define silo-specific behaviour in `ws.repo.toml`:
 ```toml
 [silo]
 after_switch = "docker compose restart api"
+after_change = "make generate"
 ```
 
 | Field | Description |
 |---|---|
 | `after_switch` | Shell command run in `.silo/` after the sync target changes. Useful for restarting services that don't hot-reload. |
+| `after_change` | Shell command run in `.silo/` after each incremental sync (debounced). Useful for code generation or build steps that need to run on every file change. |
 
 ### Integration with Other Commands
 

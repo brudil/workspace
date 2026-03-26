@@ -31,6 +31,7 @@ const RepoFileName = "ws.repo.toml"
 
 type SiloRepoConfig struct {
 	AfterSwitch string `toml:"after_switch"`
+	AfterChange string `toml:"after_change"`
 }
 
 type RepoFileConfig struct {

@@ -202,6 +202,11 @@ func (sw *SiloWatcher) flushPending(repo string) {
 		}
 	}
 	sw.log.Printf("  %s: synced %d file(s)", repo, synced)
+
+	// Run after_change hook
+	if synced > 0 {
+		sw.runChangeHook(repo, siloDir)
+	}
 }
 
 func (sw *SiloWatcher) reloadTargets() {
@@ -271,5 +276,24 @@ func (sw *SiloWatcher) runSwitchHooks(repo, siloDir string) {
 	if cfg.Silo.AfterSwitch != "" {
 		sw.log.Printf("  running after_switch hook for %s", repo)
 		RunHook(siloDir, cfg.Silo.AfterSwitch, io.Discard, io.Discard)
+	}
+}
+
+func (sw *SiloWatcher) runChangeHook(repo, siloDir string) {
+	repoConfigPath := filepath.Join(sw.MainWorktree(repo), "ws.repo.toml")
+	if _, err := os.Stat(repoConfigPath); os.IsNotExist(err) {
+		return
+	}
+	var cfg struct {
+		Silo struct {
+			AfterChange string `toml:"after_change"`
+		} `toml:"silo"`
+	}
+	if _, err := toml.DecodeFile(repoConfigPath, &cfg); err != nil {
+		return
+	}
+	if cfg.Silo.AfterChange != "" {
+		sw.log.Printf("  running after_change hook for %s", repo)
+		RunHook(siloDir, cfg.Silo.AfterChange, io.Discard, io.Discard)
 	}
 }
