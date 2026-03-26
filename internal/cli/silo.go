@@ -73,6 +73,9 @@ func newSiloPointCmd() *cobra.Command {
 			}
 
 			// Update silo state
+			if ctx.WS.Silo == nil {
+				ctx.WS.Silo = make(map[string]string)
+			}
 			ctx.WS.Silo[repo] = capsule
 			if err := config.SaveSilo(ctx.WS.Root, ctx.WS.Silo); err != nil {
 				return fmt.Errorf("saving silo state: %w", err)
