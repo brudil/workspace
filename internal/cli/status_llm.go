@@ -80,6 +80,10 @@ func runStatusLLM(ws *workspace.Workspace, gh github.Client) error {
 			b.WriteString(formatLLMWorktreeLine(wt.name, wt.status, wt.pr, slices.Contains(repo.outline.Boarded, wt.name)))
 			b.WriteByte('\n')
 		}
+
+		if target, ok := ws.Silo[name]; ok {
+			b.WriteString(fmt.Sprintf("  silo -> %s\n", target))
+		}
 	}
 
 	_, err := os.Stdout.WriteString(b.String())

@@ -62,12 +62,13 @@ type worktreeView struct {
 }
 
 type repoView struct {
-	name      string
-	boarded   []string
-	worktrees []worktreeView
-	err       error
-	prs       map[string]*github.PR // headRefName → PR, nil until loaded
-	prsLoaded bool
+	name       string
+	boarded    []string
+	worktrees  []worktreeView
+	err        error
+	prs        map[string]*github.PR // headRefName → PR, nil until loaded
+	prsLoaded  bool
+	siloTarget string // non-empty when silo is configured for this repo
 }
 
 type statusModel struct {
@@ -107,10 +108,11 @@ func newStatusModel(ws *workspace.Workspace, gh github.Client) statusModel {
 			total++
 		}
 		repos[i] = repoView{
-			name:      o.Name,
-			boarded:   o.Boarded,
-			worktrees: wts,
-			err:       o.Err,
+			name:       o.Name,
+			boarded:    o.Boarded,
+			worktrees:  wts,
+			err:        o.Err,
+			siloTarget: ws.Silo[o.Name],
 		}
 		if o.Err == nil {
 			prTotal++
@@ -280,6 +282,9 @@ func (m statusModel) View() string {
 				pr = lookupPR(repo.prs, wt.branch, wt.name)
 			}
 			lines = append(lines, formatWorktreeLine(wt, slices.Contains(repo.boarded, wt.name), cols, pr))
+		}
+		if repo.siloTarget != "" {
+			lines = append(lines, ui.Dim.Render("silo → "+repo.siloTarget))
 		}
 		b.WriteString(renderRepoBlock(lines, 1, borderColor) + "\n\n")
 	}

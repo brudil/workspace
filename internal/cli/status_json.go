@@ -16,10 +16,11 @@ type statusJSON struct {
 }
 
 type repoJSON struct {
-	Name      string         `json:"name"`
-	Boarded   []string       `json:"boarded"`
-	Error     string         `json:"error,omitempty"`
-	Worktrees []worktreeJSON `json:"worktrees"`
+	Name       string         `json:"name"`
+	Boarded    []string       `json:"boarded"`
+	Error      string         `json:"error,omitempty"`
+	SiloTarget string         `json:"silo_target,omitempty"`
+	Worktrees  []worktreeJSON `json:"worktrees"`
 }
 
 type worktreeJSON struct {
@@ -50,8 +51,9 @@ func runStatusJSON(ws *workspace.Workspace, gh github.Client) error {
 
 	for i, o := range outlines {
 		rj := repoJSON{
-			Name:    o.Name,
-			Boarded: o.Boarded,
+			Name:       o.Name,
+			Boarded:    o.Boarded,
+			SiloTarget: ws.Silo[o.Name],
 		}
 		if o.Err != nil {
 			rj.Error = o.Err.Error()
