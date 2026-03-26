@@ -31,11 +31,15 @@ type CheckCategory struct {
 
 // Doctor runs all workspace health checks and returns results grouped by category.
 func (w *Workspace) Doctor() []CheckCategory {
-	return []CheckCategory{
+	cats := []CheckCategory{
 		w.checkRepos(),
 		w.checkOrphanedWorktrees(),
 		w.checkTools(),
 	}
+	if siloChecks := w.checkSilos(); len(siloChecks.Checks) > 0 {
+		cats = append(cats, siloChecks)
+	}
+	return cats
 }
 
 func (w *Workspace) checkRepos() CheckCategory {
@@ -134,6 +138,68 @@ func checkGitHubAuth() CheckResult {
 		}
 	}
 	return result
+}
+
+func (w *Workspace) checkSilos() CheckCategory {
+	var checks []CheckResult
+
+	for repo, target := range w.Silo {
+		// Check target capsule exists
+		targetDir := filepath.Join(w.RepoDir(repo), target)
+		if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+			checks = append(checks, CheckResult{
+				Name:    fmt.Sprintf("%s/%s", repo, target),
+				Status:  CheckWarn,
+				Detail:  "silo target does not exist",
+				FixHint: fmt.Sprintf("ws silo point %s .ground", repo),
+			})
+		}
+
+		// Check .silo/ directory exists
+		siloDir := filepath.Join(w.RepoDir(repo), SiloDir)
+		if _, err := os.Stat(siloDir); os.IsNotExist(err) {
+			checks = append(checks, CheckResult{
+				Name:    fmt.Sprintf("%s/.silo", repo),
+				Status:  CheckWarn,
+				Detail:  "silo configured but .silo/ directory missing",
+				FixHint: fmt.Sprintf("ws silo point %s %s", repo, target),
+			})
+		}
+	}
+
+	// Check for orphaned .silo/ directories
+	for _, name := range w.RepoNames {
+		siloDir := filepath.Join(w.RepoDir(name), SiloDir)
+		if _, err := os.Stat(siloDir); err == nil {
+			if _, ok := w.Silo[name]; !ok {
+				checks = append(checks, CheckResult{
+					Name:    fmt.Sprintf("%s/.silo", name),
+					Status:  CheckWarn,
+					Detail:  ".silo/ directory exists but no silo configured",
+					FixHint: fmt.Sprintf("ws silo stop %s", name),
+				})
+			}
+		}
+	}
+
+	// Check for stale lock file
+	lockPath := filepath.Join(w.Root, ".silo.lock")
+	if _, err := os.Stat(lockPath); err == nil {
+		if err := AcquireLockFile(lockPath); err == nil {
+			ReleaseLockFile(lockPath)
+			lp := lockPath // capture for closure
+			checks = append(checks, CheckResult{
+				Name:   ".silo.lock",
+				Status: CheckWarn,
+				Detail: "stale lock file (no running watcher)",
+				Fix: func() error {
+					return os.Remove(lp)
+				},
+			})
+		}
+	}
+
+	return CheckCategory{Name: "Silos", Checks: checks}
 }
 
 // gitWorktreeListBranches uses `git worktree list` to get registered worktree paths,
