@@ -715,3 +715,87 @@ after_create = "make setup"
 		t.Errorf("copy_from_ground = %v, want empty", cfg.Capsule.CopyFromGround)
 	}
 }
+
+func TestLocalConfigParseSilo(t *testing.T) {
+	root := t.TempDir()
+	base := `[workspace]
+org = "test-org"
+default_branch = "main"
+
+[repos.repo-a]
+`
+	local := `[silo]
+repo-a = "capsule-feat-x"
+repo-b = "capsule-feat-y"
+`
+	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(base), 0644)
+	os.WriteFile(filepath.Join(root, "ws.local.toml"), []byte(local), 0644)
+
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Silo) != 2 {
+		t.Fatalf("silo count = %d, want 2", len(cfg.Silo))
+	}
+	if cfg.Silo["repo-a"] != "capsule-feat-x" {
+		t.Errorf("silo[repo-a] = %q, want %q", cfg.Silo["repo-a"], "capsule-feat-x")
+	}
+	if cfg.Silo["repo-b"] != "capsule-feat-y" {
+		t.Errorf("silo[repo-b] = %q, want %q", cfg.Silo["repo-b"], "capsule-feat-y")
+	}
+}
+
+func TestSaveSilo(t *testing.T) {
+	root := t.TempDir()
+	// Pre-populate with boarded data to ensure it's not clobbered
+	existing := `[boarded]
+repo-a = ["main", "feature-x"]
+`
+	os.WriteFile(filepath.Join(root, "ws.local.toml"), []byte(existing), 0644)
+
+	silo := map[string]string{
+		"repo-a": "capsule-feat-x",
+	}
+	if err := SaveSilo(root, silo); err != nil {
+		t.Fatalf("SaveSilo() error: %v", err)
+	}
+
+	// Reload and verify silo was persisted
+	var local LocalConfig
+	if _, err := toml.DecodeFile(filepath.Join(root, "ws.local.toml"), &local); err != nil {
+		t.Fatalf("re-parse error: %v", err)
+	}
+	if local.Silo["repo-a"] != "capsule-feat-x" {
+		t.Errorf("silo[repo-a] = %q, want %q", local.Silo["repo-a"], "capsule-feat-x")
+	}
+	// Verify boarded was not clobbered
+	if len(local.Boarded["repo-a"]) != 2 || local.Boarded["repo-a"][0] != "main" {
+		t.Errorf("boarded was clobbered: got %v, want [main feature-x]", local.Boarded["repo-a"])
+	}
+}
+
+func TestRepoConfigSilo(t *testing.T) {
+	content := `[capsule]
+copy_from_ground = [".env"]
+after_create = "npm install"
+
+[silo]
+after_switch = "npm run db:migrate"
+`
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "ws.repo.toml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := ParseRepoConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Silo.AfterSwitch != "npm run db:migrate" {
+		t.Errorf("silo.after_switch = %q, want %q", cfg.Silo.AfterSwitch, "npm run db:migrate")
+	}
+	// Verify capsule section still works
+	if cfg.Capsule.AfterCreate != "npm install" {
+		t.Errorf("capsule.after_create = %q, want %q", cfg.Capsule.AfterCreate, "npm install")
+	}
+}

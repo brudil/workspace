@@ -17,18 +17,25 @@ type Config struct {
 	Repos     map[string]RepoConfig `toml:"repos"`
 	Boarded   map[string][]string   `toml:"-"` // from ws.local.toml [boarded] section
 	Git       string                `toml:"-"` // from ws.local.toml only
+	Silo      map[string]string     `toml:"-"` // from ws.local.toml [silo] section
 }
 
 type LocalConfig struct {
 	Git     string                `toml:"git"`
 	Repos   map[string]RepoConfig `toml:"repos"`
 	Boarded map[string][]string   `toml:"boarded"`
+	Silo    map[string]string     `toml:"silo"`
 }
 
 const RepoFileName = "ws.repo.toml"
 
+type SiloRepoConfig struct {
+	AfterSwitch string `toml:"after_switch"`
+}
+
 type RepoFileConfig struct {
-	Capsule CapsuleConfig `toml:"capsule"`
+	Capsule CapsuleConfig  `toml:"capsule"`
+	Silo    SiloRepoConfig `toml:"silo"`
 }
 
 type CapsuleConfig struct {
@@ -130,6 +137,7 @@ func Load(startDir string) (*Config, string, error) {
 	}
 
 	cfg.Boarded = make(map[string][]string)
+	cfg.Silo = make(map[string]string)
 
 	localPath := filepath.Join(root, LocalFileName)
 	if _, err := os.Stat(localPath); err == nil {
@@ -145,6 +153,10 @@ func Load(startDir string) (*Config, string, error) {
 		// Preserve Boarded from local config
 		if local.Boarded != nil {
 			cfg.Boarded = local.Boarded
+		}
+
+		if local.Silo != nil {
+			cfg.Silo = local.Silo
 		}
 
 		if local.Git != "" {
@@ -182,5 +194,11 @@ func UpdateLocal(root string, fn func(*LocalConfig)) error {
 func SaveBoarded(root string, boarded map[string][]string) error {
 	return UpdateLocal(root, func(local *LocalConfig) {
 		local.Boarded = boarded
+	})
+}
+
+func SaveSilo(root string, silo map[string]string) error {
+	return UpdateLocal(root, func(local *LocalConfig) {
+		local.Silo = silo
 	})
 }
