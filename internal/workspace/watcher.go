@@ -14,6 +14,14 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// SyncEvent is emitted after a sync operation completes.
+type SyncEvent struct {
+	Repo      string
+	Capsule   string
+	FileCount int
+	Time      time.Time
+}
+
 // SiloWatcher manages file watchers for all active silos.
 type SiloWatcher struct {
 	Root             string
@@ -22,6 +30,7 @@ type SiloWatcher struct {
 	MainWorktree     func(name string) string
 	AfterCreateHooks map[string]string
 	DefaultBranch    string
+	OnSync           func(SyncEvent) // optional callback for sync events
 
 	watcher  *fsnotify.Watcher
 	targets  map[string]string // repo -> capsule
@@ -203,8 +212,15 @@ func (sw *SiloWatcher) flushPending(repo string) {
 	}
 	sw.log.Printf("  %s: synced %d file(s)", repo, synced)
 
-	// Run after_change hook
 	if synced > 0 {
+		if sw.OnSync != nil {
+			sw.OnSync(SyncEvent{
+				Repo:      repo,
+				Capsule:   capsule,
+				FileCount: synced,
+				Time:      time.Now(),
+			})
+		}
 		sw.runChangeHook(repo, siloDir)
 	}
 }

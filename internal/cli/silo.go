@@ -11,6 +11,7 @@ import (
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -227,6 +228,32 @@ func newSiloWatchCmd() *cobra.Command {
 			}
 
 			stop := make(chan struct{})
+
+			if ui.IsInteractive() {
+				syncCh := make(chan workspace.SyncEvent, 64)
+				watcher.OnSync = func(ev workspace.SyncEvent) {
+					select {
+					case syncCh <- ev:
+					default: // drop if UI is behind
+					}
+				}
+
+				go func() {
+					watcher.Watch(stop, ctx.WS.Silo)
+					close(syncCh)
+				}()
+
+				m := newSiloWatchModel(ctx.WS, syncCh)
+				p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+				if _, err := p.Run(); err != nil {
+					close(stop)
+					return err
+				}
+				close(stop)
+				return nil
+			}
+
+			// Non-interactive: plain log output
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 			go func() {
