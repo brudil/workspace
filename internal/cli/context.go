@@ -92,6 +92,7 @@ func LoadContextFromDir(dir string) (*Context, error) {
 		RepoColors:       repoColors,
 		AfterCreateHooks: afterCreateHooks,
 		Boarded:          cfg.Boarded,
+		Silo:             cfg.Silo,
 	}
 
 	return &Context{Config: cfg, WS: ws, GitHub: github.LiveClient{}}, nil

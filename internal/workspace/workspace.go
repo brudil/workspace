@@ -22,6 +22,7 @@ type Workspace struct {
 	RepoColors       map[string]string   // canonical name → custom color (256-color or hex)
 	AfterCreateHooks map[string]string   // canonical name → shell command
 	Boarded          map[string][]string // repo → boarded capsule names (from ws.local.toml)
+	Silo             map[string]string   // repo → capsule name the silo points at (from ws.local.toml)
 }
 
 func (w *Workspace) ReposDir() string {
@@ -33,9 +34,14 @@ func (w *Workspace) RepoDir(name string) string {
 }
 
 const GroundDir = ".ground"
+const SiloDir = ".silo"
 
 func (w *Workspace) MainWorktree(name string) string {
 	return filepath.Join(w.RepoDir(name), GroundDir)
+}
+
+func (w *Workspace) SiloWorktree(name string) string {
+	return filepath.Join(w.RepoDir(name), SiloDir)
 }
 
 func (w *Workspace) BareDir(name string) string {
