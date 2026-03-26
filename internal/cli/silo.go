@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -221,15 +222,16 @@ func newSiloWatchCmd() *cobra.Command {
 			}
 			defer workspace.ReleaseLockFile(lockPath)
 
-			logger := log.New(os.Stderr, "", log.LstdFlags)
-			watcher, err := workspace.NewSiloWatcher(ctx.WS, logger)
-			if err != nil {
-				return err
-			}
-
 			stop := make(chan struct{})
 
 			if ui.IsInteractive() {
+				// Silence the logger in interactive mode — TUI handles display
+				silentLogger := log.New(io.Discard, "", 0)
+				watcher, err := workspace.NewSiloWatcher(ctx.WS, silentLogger)
+				if err != nil {
+					return err
+				}
+
 				syncCh := make(chan workspace.SyncEvent, 64)
 				watcher.OnSync = func(ev workspace.SyncEvent) {
 					select {
@@ -254,6 +256,11 @@ func newSiloWatchCmd() *cobra.Command {
 			}
 
 			// Non-interactive: plain log output
+			logger := log.New(os.Stderr, "", log.LstdFlags)
+			watcher, err := workspace.NewSiloWatcher(ctx.WS, logger)
+			if err != nil {
+				return err
+			}
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 			go func() {
