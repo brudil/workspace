@@ -24,7 +24,7 @@ type SiloWatcher struct {
 	DefaultBranch    string
 
 	watcher  *fsnotify.Watcher
-	targets  map[string]string          // repo -> capsule
+	targets  map[string]string // repo -> capsule
 	mu       sync.Mutex
 	log      *log.Logger
 	debounce map[string]*time.Timer     // repo -> debounce timer
