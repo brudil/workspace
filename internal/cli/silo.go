@@ -63,11 +63,11 @@ func newSiloPointCmd() *cobra.Command {
 			siloDir := ctx.WS.SiloWorktree(repo)
 			capsuleDir := filepath.Join(ctx.WS.RepoDir(repo), capsule)
 
-			// Create .silo/ worktree if doesn't exist
+			// Create .silo/ worktree if doesn't exist (detached HEAD to avoid branch conflicts)
 			if _, err := os.Stat(siloDir); os.IsNotExist(err) {
 				fmt.Fprintf(os.Stderr, "  Creating silo for %s...\n", ctx.WS.FormatRepoName(repo))
 				bareDir := ctx.WS.BareDir(repo)
-				if err := workspace.GitWorktreeAddBranch(bareDir, siloDir, ctx.WS.DefaultBranch); err != nil {
+				if err := workspace.GitWorktreeAddDetached(bareDir, siloDir, ctx.WS.DefaultBranch); err != nil {
 					return fmt.Errorf("creating silo worktree: %w", err)
 				}
 			}

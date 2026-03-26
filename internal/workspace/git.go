@@ -49,6 +49,11 @@ func GitWorktreeAddBranch(gitDir, path, branch string) error {
 	return runGit(gitDir, "worktree", "add", path, branch)
 }
 
+// GitWorktreeAddDetached creates a worktree with a detached HEAD at the given ref.
+func GitWorktreeAddDetached(gitDir, path, ref string) error {
+	return runGit(gitDir, "worktree", "add", "--detach", path, ref)
+}
+
 // GitSetUpstream sets the upstream tracking branch for a local branch.
 // The remote tracking ref must already exist.
 func GitSetUpstream(gitDir, branch, remote string) error {
