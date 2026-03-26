@@ -73,6 +73,10 @@ func GitWorktreeRemove(gitDir, path string) error {
 	return runGit(gitDir, "worktree", "remove", path)
 }
 
+func GitWorktreeRemoveForce(gitDir, path string) error {
+	return runGit(gitDir, "worktree", "remove", "--force", path)
+}
+
 func GitIsDirty(dir string) bool {
 	out, err := runGitOutput(dir, "status", "--porcelain")
 	return err == nil && strings.TrimSpace(out) != ""

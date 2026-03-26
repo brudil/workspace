@@ -30,3 +30,21 @@ func AcquireLockFile(path string) error {
 func ReleaseLockFile(path string) {
 	os.Remove(path)
 }
+
+// IsLockHeld returns true if the lock file exists and the owning process is alive.
+func IsLockHeld(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	pidStr := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}

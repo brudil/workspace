@@ -185,9 +185,8 @@ func (w *Workspace) checkSilos() CheckCategory {
 	// Check for stale lock file
 	lockPath := filepath.Join(w.Root, ".silo.lock")
 	if _, err := os.Stat(lockPath); err == nil {
-		if err := AcquireLockFile(lockPath); err == nil {
-			ReleaseLockFile(lockPath)
-			lp := lockPath // capture for closure
+		if !IsLockHeld(lockPath) {
+			lp := lockPath
 			checks = append(checks, CheckResult{
 				Name:   ".silo.lock",
 				Status: CheckWarn,

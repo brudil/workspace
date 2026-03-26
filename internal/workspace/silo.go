@@ -54,7 +54,11 @@ func FullSync(srcDir, dstDir string) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", f, err)
 		}
-		if err := os.WriteFile(dst, data, 0644); err != nil {
+		info, err := os.Stat(src)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", f, err)
+		}
+		if err := os.WriteFile(dst, data, info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", f, err)
 		}
 	}
@@ -84,7 +88,11 @@ func SyncFile(srcDir, dstDir, relPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0644)
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, info.Mode())
 }
 
 // RemoveSyncedFile removes a file from dstDir (relative path).

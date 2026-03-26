@@ -126,7 +126,8 @@ func newSiloStopCmd() *cobra.Command {
 				return fmt.Errorf("no silo exists for %s", repo)
 			}
 			bareDir := ctx.WS.BareDir(repo)
-			if err := workspace.GitWorktreeRemove(bareDir, siloDir); err != nil {
+			// Force remove since .silo/ may have build artifacts that make it "dirty"
+			if err := workspace.GitWorktreeRemoveForce(bareDir, siloDir); err != nil {
 				return fmt.Errorf("removing silo worktree: %w", err)
 			}
 			delete(ctx.WS.Silo, repo)
@@ -178,11 +179,7 @@ func newSiloStatusCmd() *cobra.Command {
 }
 
 func isWatcherRunning(lockPath string) bool {
-	if err := workspace.AcquireLockFile(lockPath); err != nil {
-		return true
-	}
-	workspace.ReleaseLockFile(lockPath)
-	return false
+	return workspace.IsLockHeld(lockPath)
 }
 
 func newSiloWatchCmd() *cobra.Command {
