@@ -31,6 +31,16 @@ func newSiloPointCmd() *cobra.Command {
 		Use:   "point <repo> <capsule>",
 		Short: "Point a repo's silo at a capsule",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			switch len(args) {
+			case 0:
+				return completeRepoNames(cmd, args, toComplete)
+			case 1:
+				return completeWorktreeNames(0)(cmd, args, toComplete)
+			default:
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
 			if err != nil {
@@ -112,6 +122,12 @@ func newSiloStopCmd() *cobra.Command {
 		Use:   "stop <repo>",
 		Short: "Remove a repo's silo",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completeRepoNames(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
 			if err != nil {
