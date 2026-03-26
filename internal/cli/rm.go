@@ -7,6 +7,7 @@ import (
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
+	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -64,6 +65,28 @@ func newBurnCmd() *cobra.Command {
 				if !confirmed {
 					fmt.Fprintf(os.Stderr, "  %s Aborted\n", ui.Dim.Render("·"))
 					return nil
+				}
+			}
+
+			if target, ok := ctx.WS.Silo[repo]; ok && target == capsule {
+				fmt.Fprintf(os.Stderr, "  %s Capsule %s/%s is an active silo target\n",
+					ui.Orange.Render("⚠"), ctx.WS.FormatRepoName(repo), capsule)
+				repoint, err := ui.Confirm("Repoint silo to .ground?")
+				if err != nil {
+					return err
+				}
+				if repoint {
+					ctx.WS.Silo[repo] = workspace.GroundDir
+					siloDir := ctx.WS.SiloWorktree(repo)
+					groundDir := ctx.WS.MainWorktree(repo)
+					if err := workspace.FullSync(groundDir, siloDir); err != nil {
+						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
+					}
+					config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
+					fmt.Fprintf(os.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
+				} else {
+					delete(ctx.WS.Silo, repo)
+					config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
 				}
 			}
 
