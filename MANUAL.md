@@ -30,6 +30,13 @@ Work happens in **capsules**, not on the main branch. Ground is sacred.
   - [VS Code / Cursor](#vs-code--cursor)
   - [IntelliJ](#intellij)
   - [Opening Your Editor](#opening-your-editor)
+- [Silos](#silos)
+  - [The Problem](#the-problem)
+  - [How It Works](#how-it-works)
+  - [Commands](#silo-commands)
+  - [Live Watching](#live-watching)
+  - [Hooks](#silo-hooks)
+  - [ws.repo.toml Silo Config](#wsrepotoml-silo-config)
 - [Customisation](#customisation)
   - [Repo Colors](#repo-colors)
   - [Post-Create Hooks](#post-create-hooks)
@@ -435,6 +442,121 @@ ws open cursor-agent
 ```
 
 This opens the workspace-level project file, which includes all your boarded capsules.
+
+---
+
+## Silos
+
+### The Problem
+
+Some tools expect a single, stable directory path. Docker compose, for example, needs volume mounts that don't change when you switch what you're working on. With git worktrees, every capsule has its own directory, so you'd have to reconfigure ports, mounts, and container setups every time you want to test a different branch.
+
+### How It Works
+
+A **silo** is a per-repo directory (`.silo/`) that acts as a stable runtime location. You point it at any capsule, and `ws` mirrors the capsule's git-tracked files into `.silo/` in real time. Docker compose always runs from `.silo/` — you switch what's being tested by re-pointing the silo, not by reconfiguring containers.
+
+```
+repos/frontend/
+  .bare/
+  .ground/          # default branch (sacred)
+  .silo/            # stable runtime mirror
+  my-feature/       # capsule
+  bugfix-login/     # capsule
+```
+
+Each repo can have at most one silo. `.silo/` is a real git worktree (with a detached HEAD), so path-dependent tools work normally. Non-tracked files in `.silo/` — `node_modules`, build artifacts, `.env` — are left alone and belong to the silo.
+
+Silo state is stored in `ws.local.toml`:
+
+```toml
+[silo]
+frontend = ".ground"
+backend = "add-health"
+```
+
+### Silo Commands
+
+**Point a silo at a capsule:**
+
+```bash
+ws silo point <repo> <capsule>
+```
+
+Creates `.silo/` if it doesn't exist, syncs all git-tracked files from the capsule, and runs hooks. `.ground` is a valid target — use it to run the main branch version.
+
+```bash
+ws silo point frontend .ground     # use main branch
+ws silo point frontend my-feature  # switch to a capsule
+```
+
+`silo point` works whether or not the watcher is running. If the watcher is running, it detects the change and starts watching the new target automatically.
+
+**Start the live watcher:**
+
+```bash
+ws silo watch
+```
+
+Watches all active silos across the workspace. One command, all repos. See [Live Watching](#live-watching).
+
+**Show silo state:**
+
+```bash
+ws silo status
+```
+
+Shows each active silo, its target, and whether the watcher is running.
+
+**Remove a silo:**
+
+```bash
+ws silo stop <repo>
+```
+
+Removes the `.silo/` worktree and clears the silo config.
+
+### Live Watching
+
+`ws silo watch` is a single foreground process that syncs all active silos in real time:
+
+- Uses `fsnotify` to watch capsule directories for changes.
+- Debounces rapid edits (200ms) to batch saves.
+- Only syncs git-tracked files — untracked files (build output, dependencies) are ignored.
+- Watches `ws.local.toml` for target changes — when you `silo point` from another terminal, the watcher picks it up, re-syncs, and starts watching the new capsule.
+- Only one watcher can run per workspace (enforced via a lock file at `.silo.lock`).
+
+Press `Ctrl+C` to stop.
+
+### Silo Hooks
+
+When a silo is created or re-pointed, two hooks run in sequence:
+
+1. **`after_create`** — the same hook that runs when creating a capsule (precedence: `ws.local.toml` > `ws.toml` > `ws.repo.toml`). Use it for dependency installation.
+2. **`after_switch`** — a silo-specific hook defined in `ws.repo.toml`. Use it for restarting services.
+
+Both hooks run with the working directory set to `.silo/`.
+
+### ws.repo.toml Silo Config
+
+Repos can define silo-specific behaviour in `ws.repo.toml`:
+
+```toml
+[silo]
+after_switch = "docker compose restart api"
+```
+
+| Field | Description |
+|---|---|
+| `after_switch` | Shell command run in `.silo/` after the sync target changes. Useful for restarting services that don't hot-reload. |
+
+### Integration with Other Commands
+
+Silos integrate with the rest of `ws`:
+
+- **`ws burn`** — warns if the capsule you're burning is an active silo target and offers to repoint to `.ground`.
+- **`ws debrief`** — if a debriefed capsule was a silo target, automatically repoints to `.ground`.
+- **`ws status`** — shows a silo indicator for repos with an active silo.
+- **`ws doctor`** — checks for missing silo targets, orphaned `.silo/` directories, and stale lock files.
 
 ---
 
