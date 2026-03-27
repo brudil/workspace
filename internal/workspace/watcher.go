@@ -38,6 +38,10 @@ type SiloWatcher struct {
 	log      *log.Logger
 	debounce map[string]*time.Timer     // repo -> debounce timer
 	pending  map[string]map[string]bool // repo -> set of changed relative paths
+
+	// Git index debounce: when .git/index changes (pull, checkout, rebase),
+	// we schedule a full re-sync instead of relying on per-file events.
+	gitDebounce map[string]*time.Timer // repo -> git index debounce timer
 }
 
 func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
@@ -57,6 +61,7 @@ func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
 		log:              logger,
 		debounce:         make(map[string]*time.Timer),
 		pending:          make(map[string]map[string]bool),
+		gitDebounce:      make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -99,7 +104,12 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 		}
 		if info.IsDir() {
 			name := info.Name()
-			if name == ".git" || name == "node_modules" || name == ".next" {
+			if name == "node_modules" || name == ".next" {
+				return filepath.SkipDir
+			}
+			// Watch .git directory itself (not recursively) to detect index changes
+			if name == ".git" {
+				sw.watcher.Add(path)
 				return filepath.SkipDir
 			}
 			return sw.watcher.Add(path)
@@ -148,37 +158,63 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 
 	for repo, capsule := range sw.targets {
 		capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
-		if strings.HasPrefix(event.Name, capsuleDir+string(os.PathSeparator)) {
-			relPath, _ := filepath.Rel(capsuleDir, event.Name)
-			if strings.HasPrefix(relPath, ".git"+string(os.PathSeparator)) || relPath == ".git" {
-				return
-			}
-			if event.Has(fsnotify.Create) {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					sw.watcher.Add(event.Name)
-					return
-				}
-			}
-			if !IsGitTracked(capsuleDir, relPath) {
-				return
-			}
-			if sw.pending[repo] == nil {
-				sw.pending[repo] = make(map[string]bool)
-			}
-			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
-				sw.pending[repo]["DELETE:"+relPath] = true
-			} else {
-				sw.pending[repo][relPath] = true
-			}
-			if t, ok := sw.debounce[repo]; ok {
+		if !strings.HasPrefix(event.Name, capsuleDir+string(os.PathSeparator)) {
+			continue
+		}
+
+		relPath, _ := filepath.Rel(capsuleDir, event.Name)
+
+		// Detect git index changes (pull, checkout, rebase, commit).
+		// These bulk-update the working tree in ways that per-file fsnotify
+		// events can miss (renames, new dirs, etc.). Schedule a full re-sync.
+		if relPath == filepath.Join(".git", "index") {
+			if t, ok := sw.gitDebounce[repo]; ok {
 				t.Stop()
 			}
 			r := repo
-			sw.debounce[repo] = time.AfterFunc(200*time.Millisecond, func() {
-				sw.flushPending(r)
+			sw.gitDebounce[repo] = time.AfterFunc(500*time.Millisecond, func() {
+				sw.fullResync(r)
 			})
 			return
 		}
+
+		// Skip other .git events
+		if strings.HasPrefix(relPath, ".git"+string(os.PathSeparator)) || relPath == ".git" {
+			return
+		}
+
+		// Watch newly created directories
+		if event.Has(fsnotify.Create) {
+			if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+				sw.watcher.Add(event.Name)
+				return
+			}
+		}
+
+		if !IsGitTracked(capsuleDir, relPath) {
+			return
+		}
+
+		if sw.pending[repo] == nil {
+			sw.pending[repo] = make(map[string]bool)
+		}
+
+		if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+			// Don't blindly delete — the file may have been replaced (git uses
+			// rename-to-temp + rename-into-place). Mark it for a check at flush time.
+			sw.pending[repo]["CHECK:"+relPath] = true
+		} else {
+			sw.pending[repo][relPath] = true
+		}
+
+		if t, ok := sw.debounce[repo]; ok {
+			t.Stop()
+		}
+		r := repo
+		sw.debounce[repo] = time.AfterFunc(200*time.Millisecond, func() {
+			sw.flushPending(r)
+		})
+		return
 	}
 }
 
@@ -198,10 +234,22 @@ func (sw *SiloWatcher) flushPending(repo string) {
 	synced := 0
 
 	for path := range pending {
-		if strings.HasPrefix(path, "DELETE:") {
-			relPath := strings.TrimPrefix(path, "DELETE:")
-			RemoveSyncedFile(siloDir, relPath)
-			synced++
+		if strings.HasPrefix(path, "CHECK:") {
+			// File was renamed/removed. Check if it still exists in the capsule.
+			relPath := strings.TrimPrefix(path, "CHECK:")
+			srcPath := filepath.Join(capsuleDir, relPath)
+			if _, err := os.Stat(srcPath); err == nil {
+				// File still exists (was replaced, not deleted). Sync it.
+				if err := SyncFile(capsuleDir, siloDir, relPath); err != nil {
+					sw.log.Printf("  sync error %s/%s: %v", repo, relPath, err)
+				} else {
+					synced++
+				}
+			} else {
+				// File is actually gone. Remove from silo.
+				RemoveSyncedFile(siloDir, relPath)
+				synced++
+			}
 		} else {
 			if err := SyncFile(capsuleDir, siloDir, path); err != nil {
 				sw.log.Printf("  sync error %s/%s: %v", repo, path, err)
@@ -223,6 +271,66 @@ func (sw *SiloWatcher) flushPending(repo string) {
 		}
 		sw.runChangeHook(repo, siloDir)
 	}
+}
+
+// fullResync runs a complete FullSync for a repo, then re-establishes watches
+// for any new directories. Called when a git operation (pull, checkout, etc.)
+// is detected via .git/index changes.
+func (sw *SiloWatcher) fullResync(repo string) {
+	sw.mu.Lock()
+	capsule := sw.targets[repo]
+	// Clear any pending incremental syncs — the full sync covers everything.
+	delete(sw.pending, repo)
+	if t, ok := sw.debounce[repo]; ok {
+		t.Stop()
+		delete(sw.debounce, repo)
+	}
+	sw.mu.Unlock()
+
+	if capsule == "" {
+		return
+	}
+
+	capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
+	siloDir := sw.SiloWorktree(repo)
+
+	if err := FullSync(capsuleDir, siloDir); err != nil {
+		sw.log.Printf("  full re-sync error for %s: %v", repo, err)
+		return
+	}
+
+	// Re-walk to pick up any new directories
+	filepath.Walk(capsuleDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			name := info.Name()
+			if name == "node_modules" || name == ".next" {
+				return filepath.SkipDir
+			}
+			if name == ".git" {
+				sw.watcher.Add(path)
+				return filepath.SkipDir
+			}
+			sw.watcher.Add(path) // no-op if already watched
+		}
+		return nil
+	})
+
+	files, _ := GitLsFiles(capsuleDir)
+	count := len(files)
+	sw.log.Printf("  %s: full re-sync %d file(s)", repo, count)
+
+	if count > 0 && sw.OnSync != nil {
+		sw.OnSync(SyncEvent{
+			Repo:      repo,
+			Capsule:   capsule,
+			FileCount: count,
+			Time:      time.Now(),
+		})
+	}
+	sw.runChangeHook(repo, siloDir)
 }
 
 func (sw *SiloWatcher) reloadTargets() {

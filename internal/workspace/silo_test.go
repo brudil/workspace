@@ -83,17 +83,15 @@ func TestFullSync(t *testing.T) {
 	runGit(srcDir, "add", "file-a.txt", "sub/file-b.txt")
 	runGit(srcDir, "commit", "-m", "add files")
 
-	// Set up destination repo with an old tracked file and node_modules
-	dstDir := initGitRepo(t)
-	os.WriteFile(filepath.Join(dstDir, "old-file.txt"), []byte("old"), 0644)
-	runGit(dstDir, "add", "old-file.txt")
-	runGit(dstDir, "commit", "-m", "add old file")
+	// Destination is a plain directory (silo is a detached worktree, but for
+	// testing we just need a directory — FullSync uses a manifest, not git)
+	dstDir := t.TempDir()
 
 	// Add untracked node_modules in dest (should be preserved)
 	os.MkdirAll(filepath.Join(dstDir, "node_modules", "pkg"), 0755)
 	os.WriteFile(filepath.Join(dstDir, "node_modules", "pkg", "index.js"), []byte("module"), 0644)
 
-	// Run sync
+	// First sync
 	if err := FullSync(srcDir, dstDir); err != nil {
 		t.Fatalf("FullSync() error: %v", err)
 	}
@@ -115,11 +113,6 @@ func TestFullSync(t *testing.T) {
 		t.Errorf("sub/file-b.txt content = %q, want %q", string(data), "bbb")
 	}
 
-	// Verify old tracked file was removed
-	if _, err := os.Stat(filepath.Join(dstDir, "old-file.txt")); !os.IsNotExist(err) {
-		t.Error("old-file.txt should have been removed from dest")
-	}
-
 	// Verify node_modules preserved (untracked)
 	if _, err := os.Stat(filepath.Join(dstDir, "node_modules", "pkg", "index.js")); err != nil {
 		t.Error("node_modules should be preserved (untracked)")
@@ -128,6 +121,58 @@ func TestFullSync(t *testing.T) {
 	// Verify untracked source file was NOT copied
 	if _, err := os.Stat(filepath.Join(dstDir, "untracked-src.txt")); !os.IsNotExist(err) {
 		t.Error("untracked-src.txt should not have been copied to dest")
+	}
+
+	// Verify manifest was written
+	manifest := readManifest(dstDir)
+	if len(manifest) != 2 {
+		t.Fatalf("manifest has %d entries, want 2: %v", len(manifest), manifest)
+	}
+}
+
+func TestFullSync_CleansUpOldFiles(t *testing.T) {
+	// Source repo v1: has file-a.txt and file-b.txt
+	srcDir := initGitRepo(t)
+	os.WriteFile(filepath.Join(srcDir, "file-a.txt"), []byte("aaa"), 0644)
+	os.WriteFile(filepath.Join(srcDir, "file-b.txt"), []byte("bbb"), 0644)
+	runGit(srcDir, "add", ".")
+	runGit(srcDir, "commit", "-m", "v1")
+
+	dstDir := t.TempDir()
+
+	// Sync v1
+	if err := FullSync(srcDir, dstDir); err != nil {
+		t.Fatalf("FullSync v1 error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dstDir, "file-a.txt")); err != nil {
+		t.Fatal("file-a.txt should exist after v1 sync")
+	}
+	if _, err := os.Stat(filepath.Join(dstDir, "file-b.txt")); err != nil {
+		t.Fatal("file-b.txt should exist after v1 sync")
+	}
+
+	// Source repo v2: remove file-b.txt, add file-c.txt
+	os.Remove(filepath.Join(srcDir, "file-b.txt"))
+	os.WriteFile(filepath.Join(srcDir, "file-c.txt"), []byte("ccc"), 0644)
+	runGit(srcDir, "add", ".")
+	runGit(srcDir, "commit", "-m", "v2")
+
+	// Sync v2
+	if err := FullSync(srcDir, dstDir); err != nil {
+		t.Fatalf("FullSync v2 error: %v", err)
+	}
+
+	// file-a.txt still there
+	if _, err := os.Stat(filepath.Join(dstDir, "file-a.txt")); err != nil {
+		t.Error("file-a.txt should still exist after v2 sync")
+	}
+	// file-b.txt removed (was in manifest from v1 but not in v2 source)
+	if _, err := os.Stat(filepath.Join(dstDir, "file-b.txt")); !os.IsNotExist(err) {
+		t.Error("file-b.txt should have been removed after v2 sync")
+	}
+	// file-c.txt added
+	if _, err := os.Stat(filepath.Join(dstDir, "file-c.txt")); err != nil {
+		t.Error("file-c.txt should exist after v2 sync")
 	}
 }
 
