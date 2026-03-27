@@ -31,6 +31,7 @@ type SiloWatcher struct {
 	AfterCreateHooks map[string]string
 	DefaultBranch    string
 	OnSync           func(SyncEvent) // optional callback for sync events
+	Verbose          bool
 
 	watcher  *fsnotify.Watcher
 	targets  map[string]string // repo -> capsule
@@ -67,6 +68,12 @@ func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
 		gitDebounce:      make(map[string]*time.Timer),
 		lastFullSync:     make(map[string]time.Time),
 	}, nil
+}
+
+func (sw *SiloWatcher) verbose(format string, args ...any) {
+	if sw.Verbose {
+		sw.log.Printf("[verbose] "+format, args...)
+	}
 }
 
 func (sw *SiloWatcher) Watch(stop <-chan struct{}, silo map[string]string) error {
@@ -218,18 +225,21 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 	if filepath.Base(event.Name) == "index" {
 		gitdir := filepath.Dir(event.Name)
 		if repo, ok := sw.gitdirToRepo[gitdir]; ok {
+			sw.verbose("%s: index event", repo)
 			// Ignore index events that arrive shortly after a full resync.
 			// git ls-files (used by FullSync) refreshes the index stat cache
 			// as a side effect, which would otherwise trigger an infinite loop.
 			if last, ok := sw.lastFullSync[repo]; ok && time.Since(last) < 2*time.Second {
+				sw.verbose("%s: index event suppressed (fullResync %.1fs ago)", repo, time.Since(last).Seconds())
 				return
 			}
 			if t, ok := sw.gitDebounce[repo]; ok {
 				t.Stop()
 			}
+			sw.verbose("%s: index debounce scheduled (500ms)", repo)
 			r := repo
 			sw.gitDebounce[repo] = time.AfterFunc(500*time.Millisecond, func() {
-				sw.fullResync(r)
+				sw.fullResync(r, "index change")
 			})
 			return
 		}
@@ -248,15 +258,19 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 			return
 		}
 
+		sw.verbose("event: %s %q", event.Op, relPath)
+
 		// Watch newly created directories
 		if event.Has(fsnotify.Create) {
 			if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+				sw.verbose("%s: directory created, added watch", relPath)
 				sw.watcher.Add(event.Name)
 				return
 			}
 		}
 
 		if !IsGitTracked(capsuleDir, relPath) {
+			sw.verbose("%s: untracked, ignoring", relPath)
 			return
 		}
 
@@ -271,6 +285,8 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 		} else {
 			sw.pending[repo][relPath] = true
 		}
+
+		sw.verbose("%s: added to pending (%d pending)", relPath, len(sw.pending[repo]))
 
 		if t, ok := sw.debounce[repo]; ok {
 			t.Stop()
@@ -293,6 +309,8 @@ func (sw *SiloWatcher) flushPending(repo string) {
 	if len(pending) == 0 || capsule == "" {
 		return
 	}
+
+	sw.verbose("%s: flushing %d pending file(s)", repo, len(pending))
 
 	capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
 	siloDir := sw.SiloWorktree(repo)
@@ -341,7 +359,8 @@ func (sw *SiloWatcher) flushPending(repo string) {
 // fullResync runs a complete FullSync for a repo, then re-establishes watches
 // for any new directories. Called when a git operation (pull, checkout, etc.)
 // is detected via .git/index changes.
-func (sw *SiloWatcher) fullResync(repo string) {
+func (sw *SiloWatcher) fullResync(repo, reason string) {
+	sw.verbose("%s: fullResync triggered by %s", repo, reason)
 	sw.mu.Lock()
 	capsule := sw.targets[repo]
 	// Clear any pending incremental syncs — the full sync covers everything.
@@ -410,7 +429,7 @@ func (sw *SiloWatcher) FullResyncAll() {
 	sw.mu.Unlock()
 
 	for _, repo := range repos {
-		sw.fullResync(repo)
+		sw.fullResync(repo, "manual resync")
 	}
 }
 

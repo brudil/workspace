@@ -204,11 +204,13 @@ func isWatcherRunning(lockPath string) bool {
 }
 
 func newSiloWatchCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Watch and sync all active silos",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			verbose, _ := cmd.Flags().GetBool("verbose")
+
 			ctx, err := LoadContext()
 			if err != nil {
 				return err
@@ -224,7 +226,7 @@ func newSiloWatchCmd() *cobra.Command {
 
 			stop := make(chan struct{})
 
-			if ui.IsInteractive() {
+			if ui.IsInteractive() && !verbose {
 				// Silence the logger in interactive mode — TUI handles display
 				silentLogger := log.New(io.Discard, "", 0)
 				watcher, err := workspace.NewSiloWatcher(ctx.WS, silentLogger)
@@ -255,12 +257,13 @@ func newSiloWatchCmd() *cobra.Command {
 				return nil
 			}
 
-			// Non-interactive: plain log output
+			// Non-interactive (or verbose): plain log output
 			logger := log.New(os.Stderr, "", log.LstdFlags)
 			watcher, err := workspace.NewSiloWatcher(ctx.WS, logger)
 			if err != nil {
 				return err
 			}
+			watcher.Verbose = verbose
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 			go func() {
@@ -272,4 +275,6 @@ func newSiloWatchCmd() *cobra.Command {
 			return watcher.Watch(stop, ctx.WS.Silo)
 		},
 	}
+	cmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging of watcher events")
+	return cmd
 }
