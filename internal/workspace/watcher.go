@@ -39,9 +39,10 @@ type SiloWatcher struct {
 	debounce map[string]*time.Timer     // repo -> debounce timer
 	pending  map[string]map[string]bool // repo -> set of changed relative paths
 
-	// Git index debounce: when .git/index changes (pull, checkout, rebase),
-	// we schedule a full re-sync instead of relying on per-file events.
-	gitDebounce map[string]*time.Timer // repo -> git index debounce timer
+	// Git index watching: map from resolved gitdir path to repo name,
+	// so we can match .bare/worktrees/<name>/index events back to a repo.
+	gitdirToRepo map[string]string      // gitdir path -> repo name
+	gitDebounce  map[string]*time.Timer // repo -> git index debounce timer
 }
 
 func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
@@ -61,6 +62,7 @@ func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
 		log:              logger,
 		debounce:         make(map[string]*time.Timer),
 		pending:          make(map[string]map[string]bool),
+		gitdirToRepo:     make(map[string]string),
 		gitDebounce:      make(map[string]*time.Timer),
 	}, nil
 }
@@ -104,12 +106,7 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 		}
 		if info.IsDir() {
 			name := info.Name()
-			if name == "node_modules" || name == ".next" {
-				return filepath.SkipDir
-			}
-			// Watch .git directory itself (not recursively) to detect index changes
-			if name == ".git" {
-				sw.watcher.Add(path)
+			if name == "node_modules" || name == ".next" || name == ".git" {
 				return filepath.SkipDir
 			}
 			return sw.watcher.Add(path)
@@ -119,6 +116,11 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 	if err != nil {
 		return err
 	}
+
+	// Watch the real gitdir for index changes. In a bare-repo worktree layout,
+	// .git is a file containing "gitdir: <path>" pointing to .bare/worktrees/<name>/.
+	sw.watchGitIndex(repo, capsuleDir)
+
 	sw.mu.Lock()
 	sw.targets[repo] = capsule
 	sw.mu.Unlock()
@@ -126,11 +128,64 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 	return nil
 }
 
+// watchGitIndex resolves the real gitdir for a worktree and watches it
+// for index changes (triggered by pull, checkout, rebase, etc.).
+func (sw *SiloWatcher) watchGitIndex(repo, capsuleDir string) {
+	gitdir := resolveGitDir(capsuleDir)
+	if gitdir == "" {
+		return
+	}
+	if err := sw.watcher.Add(gitdir); err != nil {
+		sw.log.Printf("  warning: could not watch gitdir for %s: %v", repo, err)
+		return
+	}
+	sw.mu.Lock()
+	sw.gitdirToRepo[gitdir] = repo
+	sw.mu.Unlock()
+}
+
+// resolveGitDir returns the actual git directory for a worktree.
+// For linked worktrees, .git is a file containing "gitdir: <path>".
+// For regular repos, .git is a directory.
+func resolveGitDir(wtPath string) string {
+	gitPath := filepath.Join(wtPath, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return ""
+	}
+	if info.IsDir() {
+		return gitPath
+	}
+	// Linked worktree — .git is a file
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(line, "gitdir: ") {
+		return ""
+	}
+	gitdir := strings.TrimPrefix(line, "gitdir: ")
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(wtPath, gitdir)
+	}
+	gitdir = filepath.Clean(gitdir)
+	return gitdir
+}
+
 func (sw *SiloWatcher) removeWatch(repo string) {
 	sw.mu.Lock()
 	capsule, ok := sw.targets[repo]
 	if ok {
 		delete(sw.targets, repo)
+	}
+	// Clean up gitdir mapping
+	for gitdir, r := range sw.gitdirToRepo {
+		if r == repo {
+			sw.watcher.Remove(gitdir)
+			delete(sw.gitdirToRepo, gitdir)
+			break
+		}
 	}
 	sw.mu.Unlock()
 	if ok {
@@ -156,18 +211,11 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 
-	for repo, capsule := range sw.targets {
-		capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
-		if !strings.HasPrefix(event.Name, capsuleDir+string(os.PathSeparator)) {
-			continue
-		}
-
-		relPath, _ := filepath.Rel(capsuleDir, event.Name)
-
-		// Detect git index changes (pull, checkout, rebase, commit).
-		// These bulk-update the working tree in ways that per-file fsnotify
-		// events can miss (renames, new dirs, etc.). Schedule a full re-sync.
-		if relPath == filepath.Join(".git", "index") {
+	// Check if this is a git index change from a watched gitdir.
+	// The index lives at <gitdir>/index (e.g. .bare/worktrees/<name>/index).
+	if filepath.Base(event.Name) == "index" {
+		gitdir := filepath.Dir(event.Name)
+		if repo, ok := sw.gitdirToRepo[gitdir]; ok {
 			if t, ok := sw.gitDebounce[repo]; ok {
 				t.Stop()
 			}
@@ -177,8 +225,17 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 			})
 			return
 		}
+	}
 
-		// Skip other .git events
+	for repo, capsule := range sw.targets {
+		capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
+		if !strings.HasPrefix(event.Name, capsuleDir+string(os.PathSeparator)) {
+			continue
+		}
+
+		relPath, _ := filepath.Rel(capsuleDir, event.Name)
+
+		// Skip .git events (the .git file itself, not the resolved gitdir)
 		if strings.HasPrefix(relPath, ".git"+string(os.PathSeparator)) || relPath == ".git" {
 			return
 		}
@@ -306,11 +363,7 @@ func (sw *SiloWatcher) fullResync(repo string) {
 		}
 		if info.IsDir() {
 			name := info.Name()
-			if name == "node_modules" || name == ".next" {
-				return filepath.SkipDir
-			}
-			if name == ".git" {
-				sw.watcher.Add(path)
+			if name == ".git" || name == "node_modules" || name == ".next" {
 				return filepath.SkipDir
 			}
 			sw.watcher.Add(path) // no-op if already watched
