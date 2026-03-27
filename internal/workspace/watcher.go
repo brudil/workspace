@@ -41,9 +41,9 @@ type SiloWatcher struct {
 
 	// Git index watching: map from resolved gitdir path to repo name,
 	// so we can match .bare/worktrees/<name>/index events back to a repo.
-	gitdirToRepo  map[string]string      // gitdir path -> repo name
-	gitDebounce   map[string]*time.Timer // repo -> git index debounce timer
-	lastFullSync  map[string]time.Time   // repo -> last fullResync completion time
+	gitdirToRepo map[string]string      // gitdir path -> repo name
+	gitDebounce  map[string]*time.Timer // repo -> git index debounce timer
+	lastFullSync map[string]time.Time   // repo -> last fullResync completion time
 }
 
 func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
