@@ -386,6 +386,20 @@ func (sw *SiloWatcher) fullResync(repo string) {
 	sw.runChangeHook(repo, siloDir)
 }
 
+// FullResyncAll triggers a full re-sync for every active silo target.
+func (sw *SiloWatcher) FullResyncAll() {
+	sw.mu.Lock()
+	repos := make([]string, 0, len(sw.targets))
+	for repo := range sw.targets {
+		repos = append(repos, repo)
+	}
+	sw.mu.Unlock()
+
+	for _, repo := range repos {
+		sw.fullResync(repo)
+	}
+}
+
 func (sw *SiloWatcher) reloadTargets() {
 	localPath := filepath.Join(sw.Root, "ws.local.toml")
 	var local struct {

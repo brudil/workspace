@@ -245,7 +245,7 @@ func newSiloWatchCmd() *cobra.Command {
 					close(syncCh)
 				}()
 
-				m := newSiloWatchModel(ctx.WS, syncCh)
+				m := newSiloWatchModel(ctx.WS, syncCh, watcher.FullResyncAll)
 				p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 				if _, err := p.Run(); err != nil {
 					close(stop)

@@ -14,9 +14,12 @@ import (
 const maxSyncHistory = 3
 
 type siloWatchModel struct {
-	repos   []siloRepoView
-	spinner spinner.Model
-	syncCh  <-chan workspace.SyncEvent
+	repos      []siloRepoView
+	spinner    spinner.Model
+	syncCh     <-chan workspace.SyncEvent
+	onResync   func() // triggers FullResyncAll in a goroutine
+	resyncing  bool
+	lastResync time.Time
 }
 
 type siloRepoView struct {
@@ -32,8 +35,9 @@ type syncEntry struct {
 }
 
 type syncEventMsg workspace.SyncEvent
+type resyncDoneMsg struct{}
 
-func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEvent) siloWatchModel {
+func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEvent, onResync func()) siloWatchModel {
 	var repos []siloRepoView
 	for _, name := range ws.RepoNames {
 		capsule, ok := ws.Silo[name]
@@ -49,9 +53,10 @@ func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEven
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	return siloWatchModel{
-		repos:   repos,
-		spinner: s,
-		syncCh:  syncCh,
+		repos:    repos,
+		spinner:  s,
+		syncCh:   syncCh,
+		onResync: onResync,
 	}
 }
 
@@ -86,14 +91,29 @@ func (m siloWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForSync()
 
+	case resyncDoneMsg:
+		m.resyncing = false
+		m.lastResync = time.Now()
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" || msg.String() == "q" {
+		switch msg.String() {
+		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "r":
+			if !m.resyncing {
+				m.resyncing = true
+				fn := m.onResync
+				return m, func() tea.Msg {
+					fn()
+					return resyncDoneMsg{}
+				}
+			}
 		}
 	}
 	return m, nil
@@ -102,7 +122,12 @@ func (m siloWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m siloWatchModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("  %s Watching\n\n", m.spinner.View()))
+	header := fmt.Sprintf("  %s Watching", m.spinner.View())
+	if m.resyncing {
+		header += fmt.Sprintf("  %s", ui.Orange.Render("resyncing..."))
+	}
+	b.WriteString(header + "\n")
+	b.WriteString(fmt.Sprintf("  %s\n\n", ui.Dim.Render("r to resync, q to quit")))
 
 	for _, repo := range m.repos {
 		b.WriteString(fmt.Sprintf("  %s %s %s\n",
