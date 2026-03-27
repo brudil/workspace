@@ -79,7 +79,7 @@ func newBurnCmd() *cobra.Command {
 					ctx.WS.Silo[repo] = workspace.GroundDir
 					siloDir := ctx.WS.SiloWorktree(repo)
 					groundDir := ctx.WS.MainWorktree(repo)
-					if err := workspace.FullSync(groundDir, siloDir); err != nil {
+					if _, err := workspace.FullSync(groundDir, siloDir); err != nil {
 						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
 					}
 					config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)

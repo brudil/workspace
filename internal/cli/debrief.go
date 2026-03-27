@@ -159,7 +159,7 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 					ctx.WS.Silo[c.Repo] = workspace.GroundDir
 					siloDir := ctx.WS.SiloWorktree(c.Repo)
 					groundDir := ctx.WS.MainWorktree(c.Repo)
-					if err := workspace.FullSync(groundDir, siloDir); err != nil {
+					if _, err := workspace.FullSync(groundDir, siloDir); err != nil {
 						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
 					} else {
 						siloChanged = true

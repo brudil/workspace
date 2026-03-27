@@ -92,7 +92,7 @@ func TestFullSync(t *testing.T) {
 	os.WriteFile(filepath.Join(dstDir, "node_modules", "pkg", "index.js"), []byte("module"), 0644)
 
 	// First sync
-	if err := FullSync(srcDir, dstDir); err != nil {
+	if _, err := FullSync(srcDir, dstDir); err != nil {
 		t.Fatalf("FullSync() error: %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestFullSync_CleansUpOldFiles(t *testing.T) {
 	dstDir := t.TempDir()
 
 	// Sync v1
-	if err := FullSync(srcDir, dstDir); err != nil {
+	if _, err := FullSync(srcDir, dstDir); err != nil {
 		t.Fatalf("FullSync v1 error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dstDir, "file-a.txt")); err != nil {
@@ -158,7 +158,7 @@ func TestFullSync_CleansUpOldFiles(t *testing.T) {
 	runGit(srcDir, "commit", "-m", "v2")
 
 	// Sync v2
-	if err := FullSync(srcDir, dstDir); err != nil {
+	if _, err := FullSync(srcDir, dstDir); err != nil {
 		t.Fatalf("FullSync v2 error: %v", err)
 	}
 

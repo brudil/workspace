@@ -85,7 +85,7 @@ func newSiloPointCmd() *cobra.Command {
 
 			// Full sync
 			fmt.Fprintf(os.Stderr, "  Syncing %s -> .silo...\n", capsule)
-			if err := workspace.FullSync(capsuleDir, siloDir); err != nil {
+			if _, err := workspace.FullSync(capsuleDir, siloDir); err != nil {
 				return fmt.Errorf("syncing: %w", err)
 			}
 

@@ -39,10 +39,10 @@ func IsGitTracked(dir, relPath string) bool {
 // A manifest file tracks what was synced so cleanup doesn't depend on the
 // silo's git index (which is detached and stale).
 // Individual file errors are collected and returned but do not abort the sync.
-func FullSync(srcDir, dstDir string) error {
+func FullSync(srcDir, dstDir string) (int, error) {
 	srcFiles, err := GitLsFiles(srcDir)
 	if err != nil {
-		return fmt.Errorf("listing source files: %w", err)
+		return 0, fmt.Errorf("listing source files: %w", err)
 	}
 
 	srcSet := make(map[string]bool, len(srcFiles))
@@ -91,9 +91,9 @@ func FullSync(srcDir, dstDir string) error {
 	writeManifest(dstDir, synced)
 
 	if len(errs) > 0 {
-		return fmt.Errorf("failed to sync %d file(s): %s", len(errs), strings.Join(errs, ", "))
+		return len(srcFiles), fmt.Errorf("failed to sync %d file(s): %s", len(errs), strings.Join(errs, ", "))
 	}
-	return nil
+	return len(srcFiles), nil
 }
 
 // readManifest reads the list of previously synced files from the manifest.

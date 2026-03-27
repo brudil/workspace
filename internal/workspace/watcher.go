@@ -350,6 +350,9 @@ func (sw *SiloWatcher) fullResync(repo string) {
 		t.Stop()
 		delete(sw.debounce, repo)
 	}
+	// Stamp now so index events arriving during the resync are ignored.
+	// git ls-files refreshes the index stat cache as a side effect.
+	sw.lastFullSync[repo] = time.Now()
 	sw.mu.Unlock()
 
 	if capsule == "" {
@@ -359,7 +362,8 @@ func (sw *SiloWatcher) fullResync(repo string) {
 	capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
 	siloDir := sw.SiloWorktree(repo)
 
-	if err := FullSync(capsuleDir, siloDir); err != nil {
+	count, err := FullSync(capsuleDir, siloDir)
+	if err != nil {
 		sw.log.Printf("  full re-sync error for %s: %v", repo, err)
 		return
 	}
@@ -378,9 +382,6 @@ func (sw *SiloWatcher) fullResync(repo string) {
 		}
 		return nil
 	})
-
-	files, _ := GitLsFiles(capsuleDir)
-	count := len(files)
 	sw.log.Printf("  %s: full re-sync %d file(s)", repo, count)
 
 	if count > 0 && sw.OnSync != nil {
@@ -449,7 +450,7 @@ func (sw *SiloWatcher) reloadTargets() {
 			sw.log.Printf("  target changed: %s -> %s", repo, capsule)
 			capsuleDir := filepath.Join(sw.RepoDir(repo), capsule)
 			siloDir := sw.SiloWorktree(repo)
-			if err := FullSync(capsuleDir, siloDir); err != nil {
+			if _, err := FullSync(capsuleDir, siloDir); err != nil {
 				sw.log.Printf("  re-sync error for %s: %v", repo, err)
 			}
 			sw.runSwitchHooks(repo, siloDir)
