@@ -41,8 +41,9 @@ type SiloWatcher struct {
 
 	// Git index watching: map from resolved gitdir path to repo name,
 	// so we can match .bare/worktrees/<name>/index events back to a repo.
-	gitdirToRepo map[string]string      // gitdir path -> repo name
-	gitDebounce  map[string]*time.Timer // repo -> git index debounce timer
+	gitdirToRepo  map[string]string      // gitdir path -> repo name
+	gitDebounce   map[string]*time.Timer // repo -> git index debounce timer
+	lastFullSync  map[string]time.Time   // repo -> last fullResync completion time
 }
 
 func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
@@ -64,6 +65,7 @@ func NewSiloWatcher(w *Workspace, logger *log.Logger) (*SiloWatcher, error) {
 		pending:          make(map[string]map[string]bool),
 		gitdirToRepo:     make(map[string]string),
 		gitDebounce:      make(map[string]*time.Timer),
+		lastFullSync:     make(map[string]time.Time),
 	}, nil
 }
 
@@ -216,6 +218,12 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 	if filepath.Base(event.Name) == "index" {
 		gitdir := filepath.Dir(event.Name)
 		if repo, ok := sw.gitdirToRepo[gitdir]; ok {
+			// Ignore index events that arrive shortly after a full resync.
+			// git ls-files (used by FullSync) refreshes the index stat cache
+			// as a side effect, which would otherwise trigger an infinite loop.
+			if last, ok := sw.lastFullSync[repo]; ok && time.Since(last) < 2*time.Second {
+				return
+			}
 			if t, ok := sw.gitDebounce[repo]; ok {
 				t.Stop()
 			}
@@ -383,6 +391,11 @@ func (sw *SiloWatcher) fullResync(repo string) {
 			Time:      time.Now(),
 		})
 	}
+	// Record completion time so we can ignore index events caused by our own git ls-files.
+	sw.mu.Lock()
+	sw.lastFullSync[repo] = time.Now()
+	sw.mu.Unlock()
+
 	sw.runChangeHook(repo, siloDir)
 }
 
