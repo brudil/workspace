@@ -40,10 +40,10 @@ type SiloWatcher struct {
 	debounce map[string]*time.Timer     // repo -> debounce timer
 	pending  map[string]map[string]bool // repo -> set of changed relative paths
 
-	// Git index watching: map from resolved gitdir path to repo name,
-	// so we can match .bare/worktrees/<name>/index events back to a repo.
+	// Git HEAD watching: map from resolved gitdir path to repo name,
+	// so we can match .bare/worktrees/<name>/HEAD events back to a repo.
 	gitdirToRepo map[string]string      // gitdir path -> repo name
-	gitDebounce  map[string]*time.Timer // repo -> git index debounce timer
+	gitDebounce  map[string]*time.Timer // repo -> git HEAD debounce timer
 	lastFullSync map[string]time.Time   // repo -> last fullResync completion time
 }
 
@@ -126,9 +126,9 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 		return err
 	}
 
-	// Watch the real gitdir for index changes. In a bare-repo worktree layout,
+	// Watch the real gitdir for HEAD changes. In a bare-repo worktree layout,
 	// .git is a file containing "gitdir: <path>" pointing to .bare/worktrees/<name>/.
-	sw.watchGitIndex(repo, capsuleDir)
+	sw.watchGitDir(repo, capsuleDir)
 
 	sw.mu.Lock()
 	sw.targets[repo] = capsule
@@ -137,9 +137,9 @@ func (sw *SiloWatcher) addWatch(repo, capsule string) error {
 	return nil
 }
 
-// watchGitIndex resolves the real gitdir for a worktree and watches it
-// for index changes (triggered by pull, checkout, rebase, etc.).
-func (sw *SiloWatcher) watchGitIndex(repo, capsuleDir string) {
+// watchGitDir resolves the real gitdir for a worktree and watches it
+// for HEAD changes (triggered by checkout, pull, rebase, etc.).
+func (sw *SiloWatcher) watchGitDir(repo, capsuleDir string) {
 	gitdir := resolveGitDir(capsuleDir)
 	if gitdir == "" {
 		return
@@ -220,26 +220,29 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 
-	// Check if this is a git index change from a watched gitdir.
-	// The index lives at <gitdir>/index (e.g. .bare/worktrees/<name>/index).
-	if filepath.Base(event.Name) == "index" {
+	// Check if this is a HEAD change from a watched gitdir.
+	// HEAD lives at <gitdir>/HEAD (e.g. .bare/worktrees/<name>/HEAD).
+	// We watch HEAD instead of the index because index changes fire for many
+	// reasons (git gc, stat cache refreshes) including from OTHER worktrees,
+	// while HEAD only changes for operations that modify the working tree
+	// (checkout, pull, rebase, merge, reset) in THIS worktree.
+	if filepath.Base(event.Name) == "HEAD" {
 		gitdir := filepath.Dir(event.Name)
 		if repo, ok := sw.gitdirToRepo[gitdir]; ok {
-			sw.verbose("%s: index event", repo)
-			// Ignore index events that arrive shortly after a full resync.
-			// git ls-files (used by FullSync) refreshes the index stat cache
-			// as a side effect, which would otherwise trigger an infinite loop.
+			sw.verbose("%s: HEAD event", repo)
+			// Ignore HEAD events that arrive shortly after a full resync
+			// to prevent potential feedback loops.
 			if last, ok := sw.lastFullSync[repo]; ok && time.Since(last) < 2*time.Second {
-				sw.verbose("%s: index event suppressed (fullResync %.1fs ago)", repo, time.Since(last).Seconds())
+				sw.verbose("%s: HEAD event suppressed (fullResync %.1fs ago)", repo, time.Since(last).Seconds())
 				return
 			}
 			if t, ok := sw.gitDebounce[repo]; ok {
 				t.Stop()
 			}
-			sw.verbose("%s: index debounce scheduled (500ms)", repo)
+			sw.verbose("%s: HEAD debounce scheduled (500ms)", repo)
 			r := repo
 			sw.gitDebounce[repo] = time.AfterFunc(500*time.Millisecond, func() {
-				sw.fullResync(r, "index change")
+				sw.fullResync(r, "HEAD change")
 			})
 			return
 		}
@@ -358,7 +361,7 @@ func (sw *SiloWatcher) flushPending(repo string) {
 
 // fullResync runs a complete FullSync for a repo, then re-establishes watches
 // for any new directories. Called when a git operation (pull, checkout, etc.)
-// is detected via .git/index changes.
+// is detected via HEAD changes.
 func (sw *SiloWatcher) fullResync(repo, reason string) {
 	sw.verbose("%s: fullResync triggered by %s", repo, reason)
 	sw.mu.Lock()
@@ -369,8 +372,7 @@ func (sw *SiloWatcher) fullResync(repo, reason string) {
 		t.Stop()
 		delete(sw.debounce, repo)
 	}
-	// Stamp now so index events arriving during the resync are ignored.
-	// git ls-files refreshes the index stat cache as a side effect.
+	// Stamp now so HEAD events arriving during the resync are ignored.
 	sw.lastFullSync[repo] = time.Now()
 	sw.mu.Unlock()
 
@@ -411,7 +413,7 @@ func (sw *SiloWatcher) fullResync(repo, reason string) {
 			Time:      time.Now(),
 		})
 	}
-	// Record completion time so we can ignore index events caused by our own git ls-files.
+	// Record completion time so we can ignore HEAD events arriving shortly after our own resync.
 	sw.mu.Lock()
 	sw.lastFullSync[repo] = time.Now()
 	sw.mu.Unlock()
