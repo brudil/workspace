@@ -30,7 +30,8 @@ type SiloWatcher struct {
 	MainWorktree     func(name string) string
 	AfterCreateHooks map[string]string
 	DefaultBranch    string
-	OnSync           func(SyncEvent) // optional callback for sync events
+	OnSync           func(SyncEvent)       // optional callback for sync events
+	OnTargetsChanged func(map[string]string) // optional callback when targets change
 	Verbose          bool
 
 	watcher  *fsnotify.Watcher
@@ -455,10 +456,13 @@ func (sw *SiloWatcher) reloadTargets() {
 	}
 	sw.mu.Unlock()
 
+	changed := false
+
 	for repo := range oldTargets {
 		if _, ok := local.Silo[repo]; !ok {
 			sw.log.Printf("  removing watch for %s", repo)
 			sw.removeWatch(repo)
+			changed = true
 		}
 	}
 
@@ -478,7 +482,18 @@ func (sw *SiloWatcher) reloadTargets() {
 			if err := sw.addWatch(repo, capsule); err != nil {
 				sw.log.Printf("  warning: could not watch %s: %v", repo, err)
 			}
+			changed = true
 		}
+	}
+
+	if changed && sw.OnTargetsChanged != nil {
+		sw.mu.Lock()
+		snapshot := make(map[string]string, len(sw.targets))
+		for k, v := range sw.targets {
+			snapshot[k] = v
+		}
+		sw.mu.Unlock()
+		sw.OnTargetsChanged(snapshot)
 	}
 }
 
