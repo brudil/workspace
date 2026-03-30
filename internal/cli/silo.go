@@ -242,12 +242,21 @@ func newSiloWatchCmd() *cobra.Command {
 					}
 				}
 
+				targetsCh := make(chan map[string]string, 8)
+				watcher.OnTargetsChanged = func(targets map[string]string) {
+					select {
+					case targetsCh <- targets:
+					default:
+					}
+				}
+
 				go func() {
 					watcher.Watch(stop, ctx.WS.Silo)
 					close(syncCh)
+					close(targetsCh)
 				}()
 
-				m := newSiloWatchModel(ctx.WS, syncCh, watcher.FullResyncAll)
+				m := newSiloWatchModel(ctx.WS, syncCh, targetsCh, watcher.FullResyncAll)
 				p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 				if _, err := p.Run(); err != nil {
 					close(stop)

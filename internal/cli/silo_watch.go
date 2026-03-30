@@ -14,12 +14,15 @@ import (
 const maxSyncHistory = 3
 
 type siloWatchModel struct {
-	repos      []siloRepoView
-	spinner    spinner.Model
-	syncCh     <-chan workspace.SyncEvent
-	onResync   func() // triggers FullResyncAll in a goroutine
-	resyncing  bool
-	lastResync time.Time
+	repoNames      []string
+	formatRepoName func(string) string
+	repos          []siloRepoView
+	spinner        spinner.Model
+	syncCh         <-chan workspace.SyncEvent
+	targetsCh      <-chan map[string]string
+	onResync       func() // triggers FullResyncAll in a goroutine
+	resyncing      bool
+	lastResync     time.Time
 }
 
 type siloRepoView struct {
@@ -36,8 +39,9 @@ type syncEntry struct {
 
 type syncEventMsg workspace.SyncEvent
 type resyncDoneMsg struct{}
+type targetsChangedMsg map[string]string
 
-func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEvent, onResync func()) siloWatchModel {
+func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEvent, targetsCh <-chan map[string]string, onResync func()) siloWatchModel {
 	var repos []siloRepoView
 	for _, name := range ws.RepoNames {
 		capsule, ok := ws.Silo[name]
@@ -53,15 +57,18 @@ func newSiloWatchModel(ws *workspace.Workspace, syncCh <-chan workspace.SyncEven
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	return siloWatchModel{
-		repos:    repos,
-		spinner:  s,
-		syncCh:   syncCh,
-		onResync: onResync,
+		repoNames:      ws.RepoNames,
+		formatRepoName: ws.FormatRepoName,
+		repos:          repos,
+		spinner:        s,
+		syncCh:         syncCh,
+		targetsCh:      targetsCh,
+		onResync:       onResync,
 	}
 }
 
 func (m siloWatchModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.waitForSync())
+	return tea.Batch(m.spinner.Tick, m.waitForSync(), m.waitForTargetsChanged())
 }
 
 func (m siloWatchModel) waitForSync() tea.Cmd {
@@ -72,6 +79,22 @@ func (m siloWatchModel) waitForSync() tea.Cmd {
 			return tea.Quit()
 		}
 		return syncEventMsg(ev)
+	}
+}
+
+func (m siloWatchModel) waitForTargetsChanged() tea.Cmd {
+	ch := m.targetsCh
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		targets, ok := <-ch
+		if !ok {
+			// targetsCh closes alongside syncCh when Watch() returns;
+			// syncCh's close triggers tea.Quit, so we just stop listening here.
+			return nil
+		}
+		return targetsChangedMsg(targets)
 	}
 }
 
@@ -95,6 +118,34 @@ func (m siloWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resyncing = false
 		m.lastResync = time.Now()
 		return m, nil
+
+	case targetsChangedMsg:
+		oldRepos := make(map[string]siloRepoView)
+		for _, r := range m.repos {
+			oldRepos[r.name] = r
+		}
+		var newRepos []siloRepoView
+		for _, name := range m.repoNames {
+			capsule, ok := msg[name]
+			if !ok {
+				continue
+			}
+			if old, existed := oldRepos[name]; existed {
+				if old.capsule != capsule {
+					old.history = nil
+				}
+				old.capsule = capsule
+				newRepos = append(newRepos, old)
+			} else {
+				newRepos = append(newRepos, siloRepoView{
+					name:        name,
+					displayName: m.formatRepoName(name),
+					capsule:     capsule,
+				})
+			}
+		}
+		m.repos = newRepos
+		return m, m.waitForTargetsChanged()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
