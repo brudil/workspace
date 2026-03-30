@@ -16,7 +16,7 @@ func initGitRepo(t *testing.T) string {
 	return dir
 }
 
-func TestGitLsFiles(t *testing.T) {
+func TestGitSyncableFiles(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Create a tracked file
@@ -24,52 +24,77 @@ func TestGitLsFiles(t *testing.T) {
 	runGit(dir, "add", "tracked.txt")
 	runGit(dir, "commit", "-m", "add tracked")
 
-	// Create an untracked file
+	// Create an untracked file (should now be included)
 	os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("world"), 0644)
 
-	files, err := GitLsFiles(dir)
+	// Create a gitignored file (should be excluded)
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.txt\n"), 0644)
+	runGit(dir, "add", ".gitignore")
+	runGit(dir, "commit", "-m", "add gitignore")
+	os.WriteFile(filepath.Join(dir, "ignored.txt"), []byte("secret"), 0644)
+
+	files, err := GitSyncableFiles(dir)
 	if err != nil {
-		t.Fatalf("GitLsFiles() error: %v", err)
+		t.Fatalf("GitSyncableFiles() error: %v", err)
 	}
 
-	if len(files) != 1 {
-		t.Fatalf("got %d files, want 1: %v", len(files), files)
+	fileSet := make(map[string]bool)
+	for _, f := range files {
+		fileSet[f] = true
 	}
-	if files[0] != "tracked.txt" {
-		t.Errorf("files[0] = %q, want %q", files[0], "tracked.txt")
+
+	if !fileSet["tracked.txt"] {
+		t.Error("expected tracked.txt in results")
+	}
+	if !fileSet["untracked.txt"] {
+		t.Error("expected untracked.txt in results (untracked but not ignored)")
+	}
+	if !fileSet[".gitignore"] {
+		t.Error("expected .gitignore in results")
+	}
+	if fileSet["ignored.txt"] {
+		t.Error("expected ignored.txt to be excluded (gitignored)")
 	}
 }
 
-func TestGitLsFiles_EmptyRepo(t *testing.T) {
+func TestGitSyncableFiles_EmptyRepo(t *testing.T) {
 	dir := initGitRepo(t)
 
-	// Make an initial commit so HEAD exists but with no files
-	// Actually, ls-files on a repo with no commits and no staged files returns empty
-	files, err := GitLsFiles(dir)
+	files, err := GitSyncableFiles(dir)
 	if err != nil {
-		t.Fatalf("GitLsFiles() error: %v", err)
+		t.Fatalf("GitSyncableFiles() error: %v", err)
 	}
 	if files != nil {
 		t.Errorf("expected nil for empty repo, got %v", files)
 	}
 }
 
-func TestIsGitTracked(t *testing.T) {
+func TestIsGitIgnored(t *testing.T) {
 	dir := initGitRepo(t)
 
+	// Set up gitignore
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.txt\n"), 0644)
+	runGit(dir, "add", ".gitignore")
+	runGit(dir, "commit", "-m", "add gitignore")
+
+	// Create files
 	os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("hello"), 0644)
-	os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("world"), 0644)
 	runGit(dir, "add", "tracked.txt")
 	runGit(dir, "commit", "-m", "add tracked")
+	os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("world"), 0644)
+	os.WriteFile(filepath.Join(dir, "ignored.txt"), []byte("secret"), 0644)
 
-	if !IsGitTracked(dir, "tracked.txt") {
-		t.Error("expected tracked.txt to be tracked")
+	if IsGitIgnored(dir, "ignored.txt") != true {
+		t.Error("expected ignored.txt to be ignored")
 	}
-	if IsGitTracked(dir, "untracked.txt") {
-		t.Error("expected untracked.txt to not be tracked")
+	if IsGitIgnored(dir, "tracked.txt") != false {
+		t.Error("expected tracked.txt to not be ignored")
 	}
-	if IsGitTracked(dir, "nonexistent.txt") {
-		t.Error("expected nonexistent.txt to not be tracked")
+	if IsGitIgnored(dir, "untracked.txt") != false {
+		t.Error("expected untracked.txt to not be ignored")
+	}
+	if IsGitIgnored(dir, "nonexistent.txt") != false {
+		t.Error("expected nonexistent.txt to not be ignored")
 	}
 }
 
@@ -80,7 +105,11 @@ func TestFullSync(t *testing.T) {
 	os.MkdirAll(filepath.Join(srcDir, "sub"), 0755)
 	os.WriteFile(filepath.Join(srcDir, "sub", "file-b.txt"), []byte("bbb"), 0644)
 	os.WriteFile(filepath.Join(srcDir, "untracked-src.txt"), []byte("not tracked"), 0644)
-	runGit(srcDir, "add", "file-a.txt", "sub/file-b.txt")
+
+	// Create a gitignored file
+	os.WriteFile(filepath.Join(srcDir, ".gitignore"), []byte("ignored.txt\n"), 0644)
+	os.WriteFile(filepath.Join(srcDir, "ignored.txt"), []byte("secret"), 0644)
+	runGit(srcDir, "add", "file-a.txt", "sub/file-b.txt", ".gitignore")
 	runGit(srcDir, "commit", "-m", "add files")
 
 	// Destination is a plain directory (silo is a detached worktree, but for
@@ -113,20 +142,29 @@ func TestFullSync(t *testing.T) {
 		t.Errorf("sub/file-b.txt content = %q, want %q", string(data), "bbb")
 	}
 
-	// Verify node_modules preserved (untracked)
+	// Verify node_modules preserved (untracked in dest)
 	if _, err := os.Stat(filepath.Join(dstDir, "node_modules", "pkg", "index.js")); err != nil {
-		t.Error("node_modules should be preserved (untracked)")
+		t.Error("node_modules should be preserved (untracked in dest)")
 	}
 
-	// Verify untracked source file was NOT copied
-	if _, err := os.Stat(filepath.Join(dstDir, "untracked-src.txt")); !os.IsNotExist(err) {
-		t.Error("untracked-src.txt should not have been copied to dest")
+	// Verify untracked source file WAS copied (new behavior)
+	data, err = os.ReadFile(filepath.Join(dstDir, "untracked-src.txt"))
+	if err != nil {
+		t.Fatalf("untracked-src.txt should have been copied to dest: %v", err)
+	}
+	if string(data) != "not tracked" {
+		t.Errorf("untracked-src.txt content = %q, want %q", string(data), "not tracked")
 	}
 
-	// Verify manifest was written
+	// Verify gitignored file was NOT copied
+	if _, err := os.Stat(filepath.Join(dstDir, "ignored.txt")); !os.IsNotExist(err) {
+		t.Error("ignored.txt should not have been copied to dest (gitignored)")
+	}
+
+	// Verify manifest was written (file-a.txt, sub/file-b.txt, untracked-src.txt, .gitignore)
 	manifest := readManifest(dstDir)
-	if len(manifest) != 2 {
-		t.Fatalf("manifest has %d entries, want 2: %v", len(manifest), manifest)
+	if len(manifest) != 4 {
+		t.Fatalf("manifest has %d entries, want 4: %v", len(manifest), manifest)
 	}
 }
 
@@ -231,7 +269,7 @@ func TestRemoveSyncedFile(t *testing.T) {
 // Ensure initGitRepo doesn't collide with initTestRepo from git_test.go
 // (they're in the same package, but have different names so it's fine)
 
-func TestGitLsFiles_MultipleFiles(t *testing.T) {
+func TestGitSyncableFiles_MultipleFiles(t *testing.T) {
 	dir := initGitRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644)
@@ -240,9 +278,9 @@ func TestGitLsFiles_MultipleFiles(t *testing.T) {
 	runGit(dir, "add", ".")
 	runGit(dir, "commit", "-m", "add files")
 
-	files, err := GitLsFiles(dir)
+	files, err := GitSyncableFiles(dir)
 	if err != nil {
-		t.Fatalf("GitLsFiles() error: %v", err)
+		t.Fatalf("GitSyncableFiles() error: %v", err)
 	}
 	if len(files) != 3 {
 		t.Fatalf("got %d files, want 3: %v", len(files), files)

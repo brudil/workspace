@@ -10,10 +10,11 @@ import (
 
 const siloManifestName = ".silo-manifest"
 
-// GitLsFiles returns the list of git-tracked files in the given directory.
+// GitSyncableFiles returns all files eligible for silo sync in the given directory.
+// This includes both git-tracked files and untracked files that are not gitignored.
 // Uses -z for null-separated output to handle filenames with special characters.
-func GitLsFiles(dir string) ([]string, error) {
-	out, err := runGitOutput(dir, "ls-files", "-z")
+func GitSyncableFiles(dir string) ([]string, error) {
+	out, err := runGitOutput(dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, err
 	}
@@ -24,23 +25,21 @@ func GitLsFiles(dir string) ([]string, error) {
 	return strings.Split(trimmed, "\x00"), nil
 }
 
-// IsGitTracked returns true if the given relative path is tracked by git in dir.
-func IsGitTracked(dir, relPath string) bool {
-	out, err := runGitOutput(dir, "ls-files", relPath)
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(out) != ""
+// IsGitIgnored returns true if the given relative path is ignored by git in dir.
+// Uses git check-ignore which respects .gitignore, .git/info/exclude, and global excludes.
+func IsGitIgnored(dir, relPath string) bool {
+	err := runGit(dir, "check-ignore", "-q", relPath)
+	return err == nil
 }
 
-// FullSync copies all git-tracked files from srcDir to dstDir.
+// FullSync copies all syncable files (tracked + untracked non-ignored) from srcDir to dstDir.
 // Previously synced files not in the new source set are removed.
 // Non-tracked files in dstDir are left alone.
 // A manifest file tracks what was synced so cleanup doesn't depend on the
 // silo's git index (which is detached and stale).
 // Individual file errors are collected and returned but do not abort the sync.
 func FullSync(srcDir, dstDir string) (int, error) {
-	srcFiles, err := GitLsFiles(srcDir)
+	srcFiles, err := GitSyncableFiles(srcDir)
 	if err != nil {
 		return 0, fmt.Errorf("listing source files: %w", err)
 	}
@@ -50,7 +49,7 @@ func FullSync(srcDir, dstDir string) (int, error) {
 		srcSet[f] = true
 	}
 
-	// Copy all tracked source files to dest.
+	// Copy all syncable source files to dest.
 	// Continue past individual errors so one missing file doesn't block the rest.
 	var synced []string
 	var errs []string

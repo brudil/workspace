@@ -269,8 +269,8 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 			}
 		}
 
-		if !IsGitTracked(capsuleDir, relPath) {
-			sw.verbose("%s: untracked, ignoring", relPath)
+		if IsGitIgnored(capsuleDir, relPath) {
+			sw.verbose("%s: gitignored, skipping", relPath)
 			return
 		}
 
