@@ -30,7 +30,7 @@ type SiloWatcher struct {
 	MainWorktree     func(name string) string
 	AfterCreateHooks map[string]string
 	DefaultBranch    string
-	OnSync           func(SyncEvent)       // optional callback for sync events
+	OnSync           func(SyncEvent)         // optional callback for sync events
 	OnTargetsChanged func(map[string]string) // optional callback when targets change
 	Verbose          bool
 
