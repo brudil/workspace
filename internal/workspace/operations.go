@@ -155,12 +155,17 @@ func (w *Workspace) CheckRemoveWorktree(repo, branch string) (*RemovePrecheck, e
 	}, nil
 }
 
-// RemoveWorktree removes a worktree.
-func (w *Workspace) RemoveWorktree(repo, branch string) error {
+// RemoveWorktree removes a worktree. When force is true, dirty worktrees are
+// removed via `git worktree remove --force`; otherwise git refuses them.
+func (w *Workspace) RemoveWorktree(repo, branch string, force bool) error {
 	repoDir := w.RepoDir(repo)
 
 	wtPath := filepath.Join(repoDir, branch)
-	if err := GitWorktreeRemove(w.BareDir(repo), wtPath); err != nil {
+	remove := GitWorktreeRemove
+	if force {
+		remove = GitWorktreeRemoveForce
+	}
+	if err := remove(w.BareDir(repo), wtPath); err != nil {
 		return fmt.Errorf("removing worktree: %w", err)
 	}
 	return nil

@@ -98,7 +98,7 @@ func newBurnCmd() *cobra.Command {
 				}
 			}
 
-			if err := ctx.WS.RemoveWorktree(repo, capsule); err != nil {
+			if err := ctx.WS.RemoveWorktree(repo, capsule, check.IsDirty); err != nil {
 				return err
 			}
 

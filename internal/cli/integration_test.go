@@ -711,38 +711,17 @@ func TestBurn_DirtyWorktree_Confirmed(t *testing.T) {
 	}
 
 	wtDir := filepath.Join(w.Root, "repos", "repo-a", "dirty-burn")
-
-	// Stage the file so git status --porcelain detects it, but then commit
-	// it so the worktree is "clean" from git's perspective while still having
-	// gone through the dirty->confirm flow. We add an untracked file AFTER
-	// CheckRemoveWorktree runs — but actually we need the file to exist
-	// *before* CheckRemoveWorktree so IsDirty is true. The real issue is
-	// `git worktree remove` refuses dirty trees without --force.
-	//
-	// Instead: commit the file so the worktree is clean for git, then the
-	// confirm prompt won't even be triggered. Let's test the confirm flow
-	// with a tracked-but-modified file that we commit before remove:
-	//
-	// Actually, the simplest approach: write a file, add+commit it, then
-	// modify it (so it's dirty via modification, not untracked).
-	// But `git worktree remove` still rejects it.
-	//
-	// Since RemoveWorktree doesn't use --force, a confirmed dirty burn
-	// currently errors. Test that the prompt IS shown (confirm was called)
-	// and the error comes from git, not from user denial.
 	os.WriteFile(filepath.Join(wtDir, "untracked.txt"), []byte("dirty"), 0644)
 
 	testutil.StubConfirm(t, true)
 
 	result := testutil.RunCommand(t, w.Root, nil, "burn", "repo-a", "dirty-burn")
-
-	// git worktree remove fails on dirty worktrees without --force.
-	// Verify burn attempted the remove (didn't abort at confirmation).
-	if result.Err == nil {
-		t.Fatal("expected error from git worktree remove on dirty tree")
+	if result.Err != nil {
+		t.Fatalf("burn returned error: %v\nstderr: %s", result.Err, result.Stderr)
 	}
-	if !strings.Contains(result.Err.Error(), "removing worktree") {
-		t.Errorf("expected 'removing worktree' error, got: %v", result.Err)
+
+	if _, err := os.Stat(wtDir); !os.IsNotExist(err) {
+		t.Errorf("worktree dir should be removed, stat err = %v", err)
 	}
 }
 

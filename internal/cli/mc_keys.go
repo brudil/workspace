@@ -58,7 +58,7 @@ func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
 						_ = tmuxpkg.KillWindow(id)
 					}
 				}
-				err := ws.RemoveWorktree(repo, branch)
+				err := ws.RemoveWorktree(repo, branch, true)
 				return mcWorktreeDeletedMsg{rowIdx: idx, repo: repo, branch: branch, err: err}
 			}
 		case "n", "esc":
@@ -300,7 +300,7 @@ func (m mcModel) doRefresh() (mcModel, tea.Cmd) {
 				_ = m.ws.Unboard(c.Repo, c.Name)
 				boardChanged = true
 			}
-			_ = m.ws.RemoveWorktree(c.Repo, c.Name)
+			_ = m.ws.RemoveWorktree(c.Repo, c.Name, false)
 		}
 	}
 	if boardChanged {

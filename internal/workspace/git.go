@@ -118,6 +118,30 @@ func GitAheadBehind(dir string) (int, int) {
 	return ahead, behind
 }
 
+// GitCommitsSince counts commits reachable from HEAD but not from base.
+// Returns 0 if base is unknown or the command fails.
+func GitCommitsSince(dir, base string) int {
+	out, err := runGitOutput(dir, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return 0
+	}
+	var n int
+	fmt.Sscanf(strings.TrimSpace(out), "%d", &n)
+	return n
+}
+
+// GitCommitsBehindRef counts commits on ref that are not reachable from HEAD.
+// Returns 0 if ref is unknown or the command fails.
+func GitCommitsBehindRef(dir, ref string) int {
+	out, err := runGitOutput(dir, "rev-list", "--count", "HEAD.."+ref)
+	if err != nil {
+		return 0
+	}
+	var n int
+	fmt.Sscanf(strings.TrimSpace(out), "%d", &n)
+	return n
+}
+
 func RepoCloneURL(org, name, gitProtocol string) string {
 	if gitProtocol == "ssh" {
 		return fmt.Sprintf("git@github.com:%s/%s.git", org, name)

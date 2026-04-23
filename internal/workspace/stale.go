@@ -32,17 +32,17 @@ func FormatAge(t time.Time) string {
 
 // CapsuleInfo describes a capsule for debrief reporting.
 type CapsuleInfo struct {
-	Repo       string
-	Name       string
-	Branch     string
-	Dirty      bool
-	DirtyCount int
-	IsBoarded  bool
-	LastCommit time.Time
-	Merged     bool
-	Inactive   bool // true if past the inactivity threshold
-	Ahead      int
-	Behind     int
+	Repo         string
+	Name         string
+	Branch       string
+	Dirty        bool
+	DirtyCount   int
+	IsBoarded    bool
+	LastCommit   time.Time
+	Merged       bool
+	Inactive     bool // true if past the inactivity threshold
+	CommitsAhead int  // commits on this branch not on the default branch
+	BehindRemote int  // commits on origin/<branch> not on HEAD
 }
 
 // FindAllCapsules scans repos and returns info about every non-default capsule.
@@ -88,20 +88,21 @@ func (w *Workspace) FindAllCapsules(maxDays int, repoFilter string) []CapsuleInf
 			dirtyCount := GitDirtyCount(wtPath)
 			dirty := dirtyCount > 0
 
-			ahead, behind := GitAheadBehind(wtPath)
+			commitsAhead := GitCommitsSince(wtPath, w.DefaultBranch)
+			behindRemote := GitCommitsBehindRef(wtPath, "origin/"+branch)
 
 			capsules = append(capsules, CapsuleInfo{
-				Repo:       repo,
-				Name:       wt,
-				Branch:     branch,
-				Dirty:      dirty,
-				DirtyCount: dirtyCount,
-				IsBoarded:  w.IsBoarded(repo, wt),
-				LastCommit: lastCommit,
-				Merged:     merged,
-				Inactive:   inactive,
-				Ahead:      ahead,
-				Behind:     behind,
+				Repo:         repo,
+				Name:         wt,
+				Branch:       branch,
+				Dirty:        dirty,
+				DirtyCount:   dirtyCount,
+				IsBoarded:    w.IsBoarded(repo, wt),
+				LastCommit:   lastCommit,
+				Merged:       merged,
+				Inactive:     inactive,
+				CommitsAhead: commitsAhead,
+				BehindRemote: behindRemote,
 			})
 		}
 	}

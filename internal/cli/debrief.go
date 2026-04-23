@@ -17,8 +17,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const ghFetchConcurrency = 8
+
 func newDebriefCmd() *cobra.Command {
 	var days int
+	var burnDirtyLanded bool
 
 	cmd := &cobra.Command{
 		Use:   "debrief [repo]",
@@ -45,16 +48,17 @@ func newDebriefCmd() *cobra.Command {
 				repoFilter = resolved
 			}
 
-			return runDebrief(ctx, days, repoFilter)
+			return runDebrief(ctx, days, repoFilter, burnDirtyLanded)
 		},
 	}
 
 	cmd.Flags().IntVar(&days, "days", 90, "Inactivity threshold in days")
+	cmd.Flags().BoolVar(&burnDirtyLanded, "burn-dirty-landed", false, "Force-remove landed capsules even if they have uncommitted changes")
 
 	return cmd
 }
 
-func runDebrief(ctx *Context, days int, repoFilter string) error {
+func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool) error {
 	var capsules []workspace.CapsuleInfo
 	var prsByBranch map[string]*github.PR
 	var mergedBranches map[string]bool
@@ -134,7 +138,8 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 		tagPad := strings.Repeat(" ", maxTagW-lipgloss.Width(tag))
 
 		if c.Merged || c.Inactive {
-			if c.Dirty {
+			forceBurn := c.Dirty && c.Merged && burnDirtyLanded
+			if c.Dirty && !forceBurn {
 				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, but %d uncommitted files — skipped\n",
 					ui.Red.Render("✗"), repoName, repoPad, tag, tagPad,
 					debriefReason(c), c.DirtyCount,
@@ -146,7 +151,7 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 					boardChanged = true
 				}
 
-				if err := ctx.WS.RemoveWorktree(c.Repo, c.Name); err != nil {
+				if err := ctx.WS.RemoveWorktree(c.Repo, c.Name, forceBurn); err != nil {
 					fmt.Fprintf(os.Stderr, "  %s %s%s %s%s failed to remove: %v\n",
 						ui.Red.Render("✗"), repoName, repoPad, tag, tagPad, err,
 					)
@@ -167,8 +172,12 @@ func runDebrief(ctx *Context, days int, repoFilter string) error {
 					}
 				}
 
-				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, clean — removed\n",
-					ui.Green.Render("✓"), repoName, repoPad, tag, tagPad, debriefReason(c),
+				suffix := "clean — removed"
+				if forceBurn {
+					suffix = fmt.Sprintf("%s — force-removed", ui.Orange.Render(fmt.Sprintf("%d uncommitted", c.DirtyCount)))
+				}
+				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, %s\n",
+					ui.Green.Render("✓"), repoName, repoPad, tag, tagPad, debriefReason(c), suffix,
 				)
 				debriefed++
 			}
@@ -218,35 +227,35 @@ func debriefReason(c workspace.CapsuleInfo) string {
 func orbitExtra(c workspace.CapsuleInfo, prsByBranch map[string]*github.PR) string {
 	var parts []string
 
-	age := workspace.FormatAge(c.LastCommit)
-	if age != "" {
-		parts = append(parts, age)
+	if age := workspace.FormatAge(c.LastCommit); age != "" {
+		parts = append(parts, ui.Dim.Render(age))
 	}
 
-	if c.Ahead > 0 || c.Behind > 0 {
-		parts = append(parts, fmt.Sprintf("%d↑ %d↓", c.Ahead, c.Behind))
+	if !c.Dirty && c.CommitsAhead == 0 {
+		parts = append(parts, ui.Dim.Render("unchanged since lift"))
 	} else {
-		parts = append(parts, "aligned with ground")
+		if c.CommitsAhead > 0 {
+			parts = append(parts, ui.Green.Render(fmt.Sprintf("%d %s", c.CommitsAhead, pluralize(c.CommitsAhead, "commit", "commits"))))
+		}
+		if c.Dirty {
+			parts = append(parts, ui.Orange.Render(fmt.Sprintf("%d uncommitted", c.DirtyCount)))
+		}
 	}
 
 	if pr, ok := prsByBranch[c.Branch]; ok && pr != nil {
-		parts = append(parts, fmt.Sprintf("PR #%d open", pr.Number))
+		parts = append(parts, ui.Blue.Render(fmt.Sprintf("PR #%d open", pr.Number)))
+		if c.BehindRemote > 0 {
+			parts = append(parts, ui.Orange.Render(fmt.Sprintf("%d behind remote", c.BehindRemote)))
+		}
 	}
 
 	if len(parts) == 0 {
 		return ""
 	}
-	var result strings.Builder
-	result.WriteString(" (")
-	for i, p := range parts {
-		if i > 0 {
-			result.WriteString(", ")
-		}
-		result.WriteString(p)
-	}
-	result.WriteString(")")
-	return result.String()
+	sep := ui.Dim.Render(", ")
+	return ui.Dim.Render(" (") + strings.Join(parts, sep) + ui.Dim.Render(")")
 }
+
 
 // --- debrief bubbletea model ---
 
@@ -443,26 +452,58 @@ func fetchPRsByBranch(ctx *Context, capsules []workspace.CapsuleInfo) (map[strin
 	result := make(map[string]*github.PR)
 	mergedBranches := make(map[string]bool)
 
-	// Collect unique repos that have any capsules
 	allRepos := make(map[string]bool)
 	for _, c := range capsules {
 		allRepos[c.Repo] = true
 	}
 
-	for repo := range allRepos {
-		prs, err := ctx.GitHub.PRsForRepo(ctx.WS.Org, repo)
-		if err == nil {
-			for i := range prs {
-				result[prs[i].HeadRefName] = &prs[i]
-			}
-		}
+	type repoResult struct {
+		open   []github.PR
+		merged []github.PR
+	}
+	results := make(chan repoResult, len(allRepos))
 
-		// Also check for merged PRs to detect squash/rebase merges
-		merged, err := ctx.GitHub.MergedPRsForRepo(ctx.WS.Org, repo)
-		if err == nil {
-			for _, pr := range merged {
-				mergedBranches[pr.HeadRefName] = true
-			}
+	// Cap concurrent `gh` invocations. Each repo issues 2 calls, so this
+	// bounds total in-flight requests to ghFetchConcurrency.
+	sem := make(chan struct{}, ghFetchConcurrency)
+
+	var wg sync.WaitGroup
+	for repo := range allRepos {
+		wg.Add(1)
+		go func(repo string) {
+			defer wg.Done()
+			var r repoResult
+			var innerWg sync.WaitGroup
+			innerWg.Add(2)
+			go func() {
+				defer innerWg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				if prs, err := ctx.GitHub.PRsForRepo(ctx.WS.Org, repo); err == nil {
+					r.open = prs
+				}
+			}()
+			go func() {
+				defer innerWg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				if prs, err := ctx.GitHub.MergedPRsForRepo(ctx.WS.Org, repo); err == nil {
+					r.merged = prs
+				}
+			}()
+			innerWg.Wait()
+			results <- r
+		}(repo)
+	}
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		for i := range r.open {
+			result[r.open[i].HeadRefName] = &r.open[i]
+		}
+		for _, pr := range r.merged {
+			mergedBranches[pr.HeadRefName] = true
 		}
 	}
 
