@@ -262,6 +262,14 @@ func (sw *SiloWatcher) handleEvent(event fsnotify.Event, localPath string) {
 			return
 		}
 
+		// Skip attribute-only events. On macOS, kqueue reports atime updates
+		// from the watcher's own SyncFile reads as Chmod events, which would
+		// otherwise retrigger a sync of the same file forever.
+		if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
+			sw.verbose("%s: attribute-only event, skipping", relPath)
+			return
+		}
+
 		sw.verbose("event: %s %q", event.Op, relPath)
 
 		// Watch newly created directories
