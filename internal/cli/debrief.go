@@ -256,7 +256,6 @@ func orbitExtra(c workspace.CapsuleInfo, prsByBranch map[string]*github.PR) stri
 	return ui.Dim.Render(" (") + strings.Join(parts, sep) + ui.Dim.Render(")")
 }
 
-
 // --- debrief bubbletea model ---
 
 type debriefAlignMsg struct {

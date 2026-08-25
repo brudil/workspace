@@ -84,6 +84,68 @@ func TestHandleEvent_HeadSuppressedAfterResync(t *testing.T) {
 	}
 }
 
+func TestHandleEvent_ChmodIgnored(t *testing.T) {
+	sw := &SiloWatcher{
+		targets:      map[string]string{"myrepo": "capsule-a"},
+		RepoDir:      func(name string) string { return "/fake/repos/" + name },
+		gitdirToRepo: make(map[string]string),
+		gitDebounce:  make(map[string]*time.Timer),
+		lastFullSync: make(map[string]time.Time),
+		debounce:     make(map[string]*time.Timer),
+		pending:      make(map[string]map[string]bool),
+		log:          log.New(os.Stderr, "", 0),
+	}
+
+	// kqueue reports atime updates (e.g. from the watcher's own SyncFile
+	// reads) as Chmod events. They must not queue a sync.
+	event := fsnotify.Event{
+		Name: "/fake/repos/myrepo/capsule-a/src/file.ts",
+		Op:   fsnotify.Chmod,
+	}
+	sw.handleEvent(event, "/nonexistent/localpath")
+
+	sw.mu.Lock()
+	pending := len(sw.pending["myrepo"])
+	if t, ok := sw.debounce["myrepo"]; ok {
+		t.Stop()
+	}
+	sw.mu.Unlock()
+
+	if pending != 0 {
+		t.Fatalf("chmod-only events should not queue a sync, got %d pending", pending)
+	}
+}
+
+func TestHandleEvent_WriteQueued(t *testing.T) {
+	sw := &SiloWatcher{
+		targets:      map[string]string{"myrepo": "capsule-a"},
+		RepoDir:      func(name string) string { return "/fake/repos/" + name },
+		gitdirToRepo: make(map[string]string),
+		gitDebounce:  make(map[string]*time.Timer),
+		lastFullSync: make(map[string]time.Time),
+		debounce:     make(map[string]*time.Timer),
+		pending:      make(map[string]map[string]bool),
+		log:          log.New(os.Stderr, "", 0),
+	}
+
+	event := fsnotify.Event{
+		Name: "/fake/repos/myrepo/capsule-a/src/file.ts",
+		Op:   fsnotify.Write,
+	}
+	sw.handleEvent(event, "/nonexistent/localpath")
+
+	sw.mu.Lock()
+	pending := len(sw.pending["myrepo"])
+	if t, ok := sw.debounce["myrepo"]; ok {
+		t.Stop()
+	}
+	sw.mu.Unlock()
+
+	if pending != 1 {
+		t.Fatalf("write events should queue a sync, got %d pending", pending)
+	}
+}
+
 func TestReloadTargets_CallsOnTargetsChanged(t *testing.T) {
 	root := t.TempDir()
 
