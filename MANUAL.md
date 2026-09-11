@@ -95,6 +95,8 @@ When you're done, push and open a PR. You don't need to clean up — once the PR
 ws burn frontend my-feature
 ```
 
+If you're standing inside the capsule you're burning, the [shell wrapper](#the-ws-wrapper) steps you out to the workspace root before the worktree is removed, so your shell is never left in a directory that no longer exists.
+
 ---
 
 ## Concepts
@@ -350,9 +352,11 @@ Add this to your `~/.zshrc`:
 eval "$(workspace shell-init zsh)"
 ```
 
-This defines a `ws` function that wraps the `workspace` binary. For `jump`, `lift`, `dock`, and `mc`, output is evaluated in your shell. All other commands pass through directly.
+This defines a `ws` function that wraps the `workspace` binary. For `jump`, `lift`, `dock`, `init`, and `mc`, output is evaluated in your shell. All other commands pass through directly.
 
 Without this wrapper, navigation commands will print a `cd` path instead of actually navigating.
+
+`burn` is handled differently. It removes a worktree that may be the very directory your shell is standing in, and a shell whose working directory has been deleted is in a bad state — some terminals kill it outright. So the wrapper moves first: it steps out to the workspace root, runs the burn from there, and returns you to where you were if the capsule survived. The original directory is passed along in `WS_ORIGIN_PWD`, so `ws burn <capsule>` still infers the repo from where you ran it. Without the wrapper, `ws burn` still works — you're just left standing in the deleted directory and have to `cd` out yourself.
 
 ### Tab Completions
 
@@ -641,4 +645,10 @@ ws jump fe mf                 # fuzzy
 ws jump frontend              # pick a capsule
 ws jump                       # pick a repo, then a capsule
 ws jump ~                     # workspace root
+```
+
+**`ws root`** — prints the path of the workspace root, for use in scripts and shell substitutions:
+
+```bash
+cd "$(ws root)"
 ```

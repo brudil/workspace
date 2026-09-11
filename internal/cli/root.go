@@ -31,6 +31,7 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.AddCommand(newUpgradeCmd())
 	cmd.AddCommand(newDoctorCmd())
 	cmd.AddCommand(newJumpCmd())
+	cmd.AddCommand(newRootPathCmd())
 	cmd.AddCommand(newShellInitCmd())
 	cmd.AddCommand(newBoardCmd())
 	cmd.AddCommand(newUnboardCmd())

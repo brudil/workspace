@@ -138,3 +138,26 @@ func resolveJumpPath(ctx *Context, repoArg, worktreeArg string) (string, error) 
 
 	return target, nil
 }
+
+func newRootPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "root",
+		Short: "Print the workspace root path",
+		Long: `Prints the absolute path of the workspace root — the directory holding
+ws.toml — discovered by walking up from the current directory.
+
+  cd "$(ws root)"`,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		SilenceErrors:     true,
+		SilenceUsage:      true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := LoadContext()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), ctx.WS.Root)
+			return nil
+		},
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brudil/workspace/internal/cli"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/testutil"
 	"github.com/brudil/workspace/internal/workspace"
@@ -695,6 +696,106 @@ func TestBurn_RemovesCleanWorktree(t *testing.T) {
 
 	if _, err := os.Stat(wtDir); err == nil {
 		t.Error("worktree dir still exists after burn")
+	}
+}
+
+func TestBurn_ShellDirInsideCapsule_ReportsReturnToRoot(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "standing-here")
+	if liftResult.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
+	}
+
+	wtDir := filepath.Join(w.Root, "repos", "repo-a", "standing-here")
+	nested := filepath.Join(wtDir, "nested")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	t.Setenv(cli.ShellPWD, nested)
+
+	result := testutil.RunCommand(t, w.Root, nil, "burn", "repo-a", "standing-here")
+	if result.Err != nil {
+		t.Fatalf("burn failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	if !strings.Contains(result.Stderr, "Back to workspace root") {
+		t.Errorf("expected note that the shell was moved, got stderr:\n%s", result.Stderr)
+	}
+	// Positioning is the wrapper's job now; the binary must not print shell code.
+	if strings.TrimSpace(result.Stdout) != "" {
+		t.Errorf("expected empty stdout, got %q", result.Stdout)
+	}
+}
+
+func TestBurn_ShellDirOutsideCapsule_NoNote(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "elsewhere")
+	if liftResult.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
+	}
+
+	t.Setenv(cli.ShellPWD, w.Root)
+
+	result := testutil.RunCommand(t, w.Root, nil, "burn", "repo-a", "elsewhere")
+	if result.Err != nil {
+		t.Fatalf("burn failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	if strings.Contains(result.Stderr, "Back to workspace root") {
+		t.Errorf("unexpected move note when the shell was outside the capsule:\n%s", result.Stderr)
+	}
+}
+
+func TestBurn_InfersRepoFromShellDir(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	liftResult := testutil.RunCommand(t, w.Root, nil, "lift", "repo-a", "inferred")
+	if liftResult.Err != nil {
+		t.Fatalf("lift failed: %v\nstderr: %s", liftResult.Err, liftResult.Stderr)
+	}
+
+	wtDir := filepath.Join(w.Root, "repos", "repo-a", "inferred")
+	t.Setenv(cli.ShellPWD, wtDir)
+
+	// One-arg form: the repo comes from where the shell is, not from our cwd.
+	result := testutil.RunCommand(t, w.Root, nil, "burn", "inferred")
+	if result.Err != nil {
+		t.Fatalf("burn failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	if _, err := os.Stat(wtDir); !os.IsNotExist(err) {
+		t.Errorf("capsule not removed, stat err = %v", err)
+	}
+}
+
+func TestRoot_PrintsWorkspaceRoot(t *testing.T) {
+	w := testutil.SetupWorkspace(t, testutil.WorkspaceOpts{
+		Org:           "test-org",
+		DefaultBranch: "main",
+		Repos:         []testutil.RepoOpts{{Name: "repo-a"}},
+	})
+
+	result := testutil.RunCommand(t, w.Root, nil, "root")
+	if result.Err != nil {
+		t.Fatalf("root failed: %v\nstderr: %s", result.Err, result.Stderr)
+	}
+
+	if strings.TrimSpace(result.Stdout) != w.Root {
+		t.Errorf("stdout = %q, want %q", result.Stdout, w.Root)
 	}
 }
 

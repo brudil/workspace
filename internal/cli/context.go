@@ -28,12 +28,29 @@ func ClearContextOverride() {
 	ctxOverride = nil
 }
 
+// ShellPWD is the directory the shell wrapper was standing in when it invoked
+// us. The wrapper sets it for commands that step the shell out of the way
+// before running (see `workspace shell-init`), so cwd-based resolution still
+// reflects where the user actually is.
+const ShellPWD = "WS_ORIGIN_PWD"
+
+// userDir returns the directory to resolve relative to: the shell's own
+// directory when the wrapper reported one, otherwise our working directory.
+func userDir() (string, error) {
+	if dir := os.Getenv(ShellPWD); dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir, nil
+		}
+	}
+	return os.Getwd()
+}
+
 // LoadContext discovers config from the current working directory and builds a workspace.
 func LoadContext() (*Context, error) {
 	if ctxOverride != nil {
 		return ctxOverride, nil
 	}
-	cwd, err := os.Getwd()
+	cwd, err := userDir()
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +137,7 @@ func (c *Context) ResolveRepo(arg string) (string, error) {
 		}
 	}
 
-	cwd, _ := os.Getwd()
+	cwd, _ := userDir()
 	if repo, _, ok := workspace.DetectRepo(c.WS.Root, cwd); ok {
 		if _, exists := c.Config.Repos[repo]; exists {
 			return repo, nil

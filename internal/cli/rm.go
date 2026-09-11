@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
@@ -50,6 +52,13 @@ func newBurnCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Note this before removal, while the capsule still exists. The
+			// shell wrapper has already stepped the shell out to the workspace
+			// root and reported where it came from; this only decides whether
+			// to tell the user why they're no longer where they were.
+			shellDir := os.Getenv(ShellPWD)
+			burningShellDir := shellDir != "" && dirContains(filepath.Join(ctx.WS.RepoDir(repo), capsule), shellDir)
 
 			check, err := ctx.WS.CheckRemoveWorktree(repo, capsule)
 			if err != nil {
@@ -103,7 +112,34 @@ func newBurnCmd() *cobra.Command {
 			}
 
 			fmt.Fprintf(os.Stderr, "  %s Removed %s %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
+
+			if burningShellDir {
+				fmt.Fprintf(os.Stderr, "  %s Back to workspace root\n", ui.Dim.Render("·"))
+			}
 			return nil
 		},
 	}
+}
+
+// dirContains reports whether path is dir itself or nested below it. Paths are
+// also compared with symlinks resolved, so a cwd reached through a symlinked
+// workspace root still matches.
+func dirContains(dir, path string) bool {
+	if isWithin(dir, path) {
+		return true
+	}
+	realDir, dirErr := filepath.EvalSymlinks(dir)
+	realPath, pathErr := filepath.EvalSymlinks(path)
+	if dirErr != nil || pathErr != nil {
+		return false
+	}
+	return isWithin(realDir, realPath)
+}
+
+func isWithin(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

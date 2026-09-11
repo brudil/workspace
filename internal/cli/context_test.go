@@ -222,3 +222,44 @@ repo-a = {}
 		t.Error("expected error for no matching capsule")
 	}
 }
+
+func TestUserDir(t *testing.T) {
+	real, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	t.Run("falls back to cwd when unset", func(t *testing.T) {
+		t.Setenv(ShellPWD, "")
+		got, err := userDir()
+		if err != nil {
+			t.Fatalf("userDir: %v", err)
+		}
+		if got != real {
+			t.Errorf("userDir() = %q, want %q", got, real)
+		}
+	})
+
+	t.Run("prefers the shell directory", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv(ShellPWD, dir)
+		got, err := userDir()
+		if err != nil {
+			t.Fatalf("userDir: %v", err)
+		}
+		if got != dir {
+			t.Errorf("userDir() = %q, want %q", got, dir)
+		}
+	})
+
+	t.Run("ignores a directory that is gone", func(t *testing.T) {
+		t.Setenv(ShellPWD, filepath.Join(t.TempDir(), "burned"))
+		got, err := userDir()
+		if err != nil {
+			t.Fatalf("userDir: %v", err)
+		}
+		if got != real {
+			t.Errorf("userDir() = %q, want %q", got, real)
+		}
+	})
+}
