@@ -23,10 +23,42 @@ ws() {
     jump|j|lift|dock|init|mc)
       eval "$(command workspace "$@")"
       ;;
+    burn|rm)
+      __ws_burn "$@"
+      ;;
     *)
       command workspace "$@"
       ;;
   esac
+}
+
+# burn removes a worktree that may be the directory the shell is standing in.
+# Deleting the shell's cwd out from under it leaves it in a directory that no
+# longer exists — some terminals kill the shell outright — so step out to the
+# workspace root first and only come back if the capsule survived. WS_ORIGIN_PWD
+# tells the binary where the shell actually is, so "ws burn <capsule>" still
+# infers the repo from the directory the user ran it in.
+__ws_burn() {
+  setopt local_options no_auto_pushd
+
+  # Note: "status" is read-only in zsh, hence "ret".
+  local origin=$PWD root ret
+  root=$(command workspace root 2>/dev/null)
+
+  if [[ -z $root ]]; then
+    command workspace "$@"
+    return $?
+  fi
+
+  builtin cd -q -- "$root" || return $?
+  WS_ORIGIN_PWD=$origin command workspace "$@"
+  ret=$?
+
+  if [[ -d $origin ]]; then
+    builtin cd -q -- "$origin"
+  fi
+
+  return $ret
 }
 
 `

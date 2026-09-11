@@ -33,11 +33,28 @@ func TestShellInitZsh(t *testing.T) {
 		t.Error("output missing 'command workspace' invocation")
 	}
 
-	// Must contain case for eval-able commands
+	// Must contain case for eval-able commands. The label ends at mc: burn is
+	// deliberately not in it.
+	if !strings.Contains(output, "jump|j|lift|dock|init|mc)") {
+		t.Error("output missing expected eval case pattern")
+	}
 	for _, cmd := range []string{"jump", "lift", "dock", "init", "mc"} {
 		if !strings.Contains(output, cmd) {
 			t.Errorf("output missing %s in eval case", cmd)
 		}
+	}
+
+	// burn gets its own branch: it must not be run inside a command
+	// substitution, because the shell has to step out of the capsule before
+	// the worktree is removed rather than be repositioned afterwards.
+	if !strings.Contains(output, "burn|rm)") || !strings.Contains(output, "__ws_burn") {
+		t.Error("output missing burn branch calling __ws_burn")
+	}
+	if !strings.Contains(output, `builtin cd -q -- "$root"`) {
+		t.Error("burn helper does not step the shell out to the workspace root")
+	}
+	if !strings.Contains(output, `WS_ORIGIN_PWD=$origin command workspace "$@"`) {
+		t.Error("burn helper does not report the shell's directory to the binary")
 	}
 
 	// Must contain compdef linking the _workspace completer to ws
