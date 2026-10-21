@@ -1,7 +1,7 @@
 # `ws rg` — Workspace-Aware Ripgrep
 
 **Date:** 2026-10-21
-**Status:** Draft (exploration)
+**Status:** Draft — default scope decided ("where I stand")
 
 ## Problem
 
@@ -11,7 +11,18 @@ Agents (and people) working in a `ws` workspace constantly need to search code a
 - **`rg` per worktree** requires knowing the layout (`repos/<repo>/<worktree>`), mapping the names humans use (`fe`, `API`) to canonical directories, and stitching results together by hand.
 - **The scope an agent actually wants is asymmetric.** When working in a capsule, it wants *its own capsule* for the repo it is changing (the code it is about to edit) and *ground* for every other repo (the stable baseline it is integrating against). Nothing expresses that today.
 
+The real cost is context. An agent that reaches for plain `rg` in a workspace with 200 capsules gets the same match back 200 times, and that flood goes straight into its context window. `ws rg` exists so the agent never has a reason to run raw ripgrep from the workspace root: the default has to be the right scope, with no flags, and the output has to be as small as the question allows.
+
 `ws` already knows the layout, the aliases and where you are standing. `ws rg` puts that knowledge in front of ripgrep.
+
+## Principle: sensible, terse defaults
+
+Every default is chosen to return each relevant match **once**, and to add nothing of our own to the output.
+
+- The default scope is one worktree per repo. Duplicates only appear when you ask for them with `--all`.
+- `ws` prints nothing on success. No banner, no scope summary, no footer. Stdout is ripgrep's output and nothing else.
+- Ripgrep's own defaults (gitignore-aware, binary-skipping, `path:line:text` when piped) are already terse. We do not override them.
+- Errors are one line on stderr.
 
 ## Goals
 
@@ -146,15 +157,19 @@ ws rg --roots                        # show what would be searched, run nothing
 
 Roughly 250 lines plus tests.
 
+## Decisions
+
+- **Default scope is "where I stand"**: the current worktree for the repo you are in, `.ground` for every other repo. Behaviour depends on cwd, which is acceptable because every output path shows which tree it came from, and `--ground` is the explicit override.
+
 ## Open questions
 
-1. **Default scope.** "Where I stand" (capsule for the current repo, ground elsewhere) vs. plain `--ground`. The former matches what an agent in a capsule wants almost every time, and the output paths make the choice visible on every line. The cost is that behaviour depends on cwd. Leaning towards "where I stand" as the default with `--ground` as the explicit override.
-2. **Should `--all` include `.silo`?** Proposed no: it is a mirror of a capsule and only adds duplicates.
-3. **Workspace root files.** Should there be a way to include the config directory (`ws.toml`, `ws.local.toml`)? Probably `--repo ~` by analogy with `ws jump ~`, later, if anyone asks.
-4. **Scope header.** An earlier draft printed a one-line scope summary to stderr. Dropped: absolute paths already encode repo and worktree, and pure passthrough is the stronger property. Revisit if agents misread scope in practice.
+1. **Should `--all` include `.silo`?** Proposed no: it is a mirror of a capsule and only adds duplicates.
+2. **Workspace root files.** Should there be a way to include the config directory (`ws.toml`, `ws.local.toml`)? Probably `--repo ~` by analogy with `ws jump ~`, later, if anyone asks.
+3. **Scope header.** An earlier draft printed a one-line scope summary to stderr. Dropped: absolute paths already encode repo and worktree, and pure passthrough is the stronger property. Revisit if agents misread scope in practice.
 
 ## Future
 
 - **`--changed`**: search ground in full, but in each capsule only the files that differ from ground (`git diff --name-only <base>...HEAD` plus dirty files). That gives "all capsules, no duplicates", which is what `--all` users usually mean. Implementable by passing explicit file lists per capsule as extra roots.
 - **`--relative`** output paths for human use.
+- **Workspace-root `.ignore` file.** A defence for agents that run raw `rg` anyway: `ws init` / `ws doctor` could write an `.ignore` at the workspace root excluding `repos/*/.bare` and `repos/*/.silo`. It cannot express "every capsule but mine", so it only trims the flood rather than fixing it. Needs a check that ripgrep applies a parent-directory `.ignore` to searches started below it.
 - A `ws files` sibling (`rg --files` with the same scoping) if listing turns out to be a common need; today `ws rg --files` already covers it.
