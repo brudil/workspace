@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/github"
@@ -182,5 +184,61 @@ func (c *Context) ResolveCapsule(repo, arg string) (string, error) {
 		return "", fmt.Errorf("no capsule matching %q in %s", arg, repo)
 	default:
 		return ui.PickWorktree(matches)
+	}
+}
+
+// ResolveRepoStrict is ResolveRepo for non-interactive callers such as agents.
+// It accepts a canonical name, an alias, or a fuzzy pattern with exactly one
+// match. Anything ambiguous is an error naming the candidates; it never opens
+// a picker and never infers from cwd.
+func (c *Context) ResolveRepoStrict(arg string) (string, error) {
+	if arg == "" || arg == "." {
+		return "", fmt.Errorf("repo name required")
+	}
+	if canonical, ok := c.WS.ResolveAlias(arg); ok {
+		return canonical, nil
+	}
+	matches := c.WS.FuzzyMatchRepos(arg)
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("unknown repo %q (not in ws.toml)", arg)
+	default:
+		return "", fmt.Errorf("ambiguous repo %q: matches %s", arg, strings.Join(matches, ", "))
+	}
+}
+
+// ResolveWorktreeStrict resolves a worktree name within a repo without any
+// interactive fallback. An existing directory name (including .ground and
+// .silo) matches exactly; otherwise a fuzzy pattern must match exactly one
+// capsule.
+func (c *Context) ResolveWorktreeStrict(repo, arg string) (string, error) {
+	if arg == "" {
+		return "", fmt.Errorf("worktree name required")
+	}
+	if arg == "." || arg == ".." || strings.ContainsAny(arg, `/\`) {
+		return "", fmt.Errorf("invalid worktree name %q", arg)
+	}
+	if info, err := os.Stat(filepath.Join(c.WS.RepoDir(repo), arg)); err == nil && info.IsDir() {
+		return arg, nil
+	}
+	worktrees, err := workspace.ListAllWorktrees(c.WS.RepoDir(repo))
+	if err != nil {
+		return "", fmt.Errorf("listing worktrees for %s: %w", repo, err)
+	}
+	var matches []string
+	for _, name := range worktrees {
+		if workspace.FuzzyMatch(arg, name) {
+			matches = append(matches, name)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("no worktree matching %q in %s", arg, repo)
+	default:
+		return "", fmt.Errorf("ambiguous worktree %q in %s: matches %s", arg, repo, strings.Join(matches, ", "))
 	}
 }

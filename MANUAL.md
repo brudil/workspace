@@ -17,6 +17,7 @@ Work happens in **capsules**, not on the main branch. Ground is sacred.
   - [Debrief](#debrief)
   - [Mission Control](#mission-control)
   - [Repos and Aliases](#repos-and-aliases)
+  - [Searching](#searching)
 - [Configuration](#configuration)
   - [ws.toml](#wstoml)
   - [ws.local.toml](#wslocaltoml)
@@ -230,6 +231,32 @@ Every command that takes a repo argument goes through the same resolution pipeli
 5. **No argument** — interactive picker.
 
 The same fuzzy matching applies to capsule arguments (e.g. in `burn` and `jump`).
+
+### Searching
+
+`ws rg` runs [ripgrep](https://github.com/BurntSushi/ripgrep) over the right worktree of each repo. Plain `rg` from the workspace root searches `.bare/`, `.silo/`, `.ground/` and every capsule, so every match comes back once per capsule. `ws rg` returns each match once, which matters most for agents whose context fills with duplicates.
+
+```bash
+ws rg useAuth                        # where I stand: my capsule for this repo, ground elsewhere
+ws rg --repo fe,api useAuth          # restrict to repos (names, aliases, fuzzy)
+ws rg --repo fe/login-fix TODO       # one specific capsule
+ws rg --ground -t go 'func Load'     # .ground everywhere
+ws rg --all FEATURE_FLAG_X           # every worktree: who else is touching this?
+ws rg -g 'src/**/*.ts' -l needle     # globs anchored per root
+ws rg --roots                        # show what would be searched, run nothing
+```
+
+Everything that is not a `ws rg` flag is passed to ripgrep unchanged, so `-i`, `-t`, `-C`, `--json`, `--files` and friends all work. Scope flags are long-form only so they never shadow ripgrep's short flags. Parsing of scope flags stops at the first ripgrep argument or at `--`.
+
+**Scope.** With no flags, the scope is "where I stand": if you are inside a capsule or `.ground`, that worktree is searched for its repo and `.ground` is searched for every other repo. Outside any worktree, `.ground` everywhere. `--ground` forces `.ground` for every repo, `--all` adds every capsule. `.bare` and `.silo` are never searched unless you name them explicitly (`--repo fe/.silo`).
+
+`--repo` takes `name` or `name/worktree`, repeatable or comma-separated. Both halves resolve like any other repo or capsule argument, except that ambiguity is an error listing the candidates rather than an interactive picker, so the command is safe to call from scripts and agents.
+
+**Output.** Paths are absolute, so each line says which repo and worktree the match came from, and you can open it from any directory. `ws` prints nothing of its own on success. Ripgrep's exit code is passed through: `0` matches, `1` none, `2` error.
+
+**Globs.** Ripgrep matches a glob containing a `/` against the printed path, not against each search root, so a multi-root search would normally make `-g 'src/*.ts'` match nothing. `ws rg` expands such globs to one per root, keeping their anchoring. Basename globs (`-g '*.ts'`) pass through untouched. Globs from a ripgrep config file (`RIPGREP_CONFIG_PATH`) are not rewritten.
+
+Do not pass positional paths; narrow with `--repo` and `-g` instead.
 
 ---
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"runtime/debug"
 
@@ -17,6 +18,10 @@ func main() {
 	}
 	cmd := cli.NewRootCmd(version)
 	if err := cmd.Execute(); err != nil {
+		var exit *cli.ExitCodeError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		}
 		os.Exit(1)
 	}
 }
