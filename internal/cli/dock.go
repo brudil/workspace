@@ -106,6 +106,10 @@ Examples:
 				}
 			}
 
+			if err := ensureCloned(ctx.WS, repo); err != nil {
+				return err
+			}
+
 			return runCapsuleCreate(ctx, repo, branch, func() (string, error) {
 				return ctx.WS.CreateDockWorktree(repo, branch)
 			}, "Docked!")

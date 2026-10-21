@@ -38,6 +38,9 @@ func newDebriefCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := applyGroupFlag(cmd, ctx.WS); err != nil {
+				return err
+			}
 
 			var repoFilter string
 			if len(args) == 1 {
@@ -54,6 +57,7 @@ func newDebriefCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&days, "days", 90, "Inactivity threshold in days")
 	cmd.Flags().BoolVar(&burnDirtyLanded, "burn-dirty-landed", false, "Force-remove landed capsules even if they have uncommitted changes")
+	addGroupFlag(cmd)
 
 	return cmd
 }
@@ -63,7 +67,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 	var prsByBranch map[string]*github.PR
 	var mergedBranches map[string]bool
 
-	repos := ctx.WS.RepoNames
+	repos := ctx.WS.ListedRepoNames()
 	if repoFilter != "" {
 		repos = []string{repoFilter}
 	}

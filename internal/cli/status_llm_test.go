@@ -14,6 +14,7 @@ func TestFormatLLMRepoHeader(t *testing.T) {
 		canonical   string
 		displayName string
 		aliases     []string
+		group       string
 		want        string
 	}{
 		{
@@ -40,11 +41,18 @@ func TestFormatLLMRepoHeader(t *testing.T) {
 			aliases:     []string{"mr"},
 			want:        `my-repo ("My Repo" — aliases: mr)`,
 		},
+		{
+			name:      "with hidden group",
+			canonical: "infra",
+			aliases:   []string{"i"},
+			group:     "platform, hidden",
+			want:      "infra (aliases: i — group: platform, hidden)",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatLLMRepoHeader(tt.canonical, tt.displayName, tt.aliases)
+			got := formatLLMRepoHeader(tt.canonical, tt.displayName, tt.aliases, tt.group)
 			if got != tt.want {
 				t.Errorf("formatLLMRepoHeader() = %q, want %q", got, tt.want)
 			}

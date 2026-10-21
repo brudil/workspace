@@ -20,12 +20,13 @@ func (w *Workspace) EnsureReposDir() error {
 	return os.MkdirAll(w.ReposDir(), 0755)
 }
 
-// Setup clones all repos that don't already exist.
+// Setup clones the default repos that don't already exist.
 func (w *Workspace) Setup() []SetupResult {
 	w.EnsureReposDir()
 
-	results := make([]SetupResult, len(w.RepoNames))
-	for i, name := range w.RepoNames {
+	names := w.DefaultRepoNames()
+	results := make([]SetupResult, len(names))
+	for i, name := range names {
 		results[i] = w.SetupRepo(name)
 	}
 
@@ -73,12 +74,13 @@ func (w *Workspace) FetchRepo(name string) FetchResult {
 	return FetchResult{Repo: name, Err: err}
 }
 
-// FetchAll fetches all repos in parallel.
+// FetchAll fetches the listed repos in parallel.
 func (w *Workspace) FetchAll() []FetchResult {
-	results := make([]FetchResult, len(w.RepoNames))
+	names := w.ListedRepoNames()
+	results := make([]FetchResult, len(names))
 	var wg sync.WaitGroup
 
-	for i, name := range w.RepoNames {
+	for i, name := range names {
 		wg.Add(1)
 		go func(idx int, name string) {
 			defer wg.Done()

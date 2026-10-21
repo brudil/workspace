@@ -799,3 +799,115 @@ after_switch = "npm run db:migrate"
 		t.Errorf("capsule.after_create = %q, want %q", cfg.Capsule.AfterCreate, "npm install")
 	}
 }
+
+func TestLoad_Groups(t *testing.T) {
+	root := t.TempDir()
+	base := `[workspace]
+org = "test-org"
+default_branch = "main"
+
+[groups.platform]
+hidden = true
+
+[repos.app]
+group = "product"
+
+[repos.infra]
+group = "platform"
+
+[repos.mobile]
+`
+	local := `[groups.platform]
+hidden = false
+
+[groups.mine]
+hidden = true
+
+[repos.mobile]
+group = "mine"
+`
+	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(base), 0644)
+	os.WriteFile(filepath.Join(root, "ws.local.toml"), []byte(local), 0644)
+
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.IsHidden("platform") {
+		t.Error("platform hidden, want local override to show it")
+	}
+	if cfg.IsHidden("product") {
+		t.Error("product hidden, want visible (no setting)")
+	}
+	if !cfg.IsHidden("mine") {
+		t.Error("mine visible, want hidden (declared only in ws.local.toml)")
+	}
+	if got := cfg.Repos["infra"].Group; got != "platform" {
+		t.Errorf("infra group = %q, want platform", got)
+	}
+	if got := cfg.Repos["mobile"].Group; got != "mine" {
+		t.Errorf("mobile group = %q, want mine (local override)", got)
+	}
+}
+
+func TestLoad_InvalidGroupName(t *testing.T) {
+	root := t.TempDir()
+	base := `[workspace]
+org = "test-org"
+
+[repos.app]
+group = "a,b"
+`
+	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(base), 0644)
+
+	_, _, err := Load(root)
+	if err == nil || !strings.Contains(err.Error(), "invalid group name") {
+		t.Fatalf("err = %v, want invalid group name", err)
+	}
+}
+
+func TestSaveGroupVisibility_SetAndReset(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(`[workspace]
+org = "test-org"
+
+[groups.platform]
+hidden = true
+
+[repos.infra]
+group = "platform"
+`), 0644)
+	if err := SaveBoarded(root, map[string][]string{"infra": {"fix"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	shown := false
+	if err := SaveGroupVisibility(root, "platform", &shown); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.IsHidden("platform") {
+		t.Error("platform hidden after show, want visible")
+	}
+	if got := cfg.Boarded["infra"]; len(got) != 1 || got[0] != "fix" {
+		t.Errorf("boarded = %v, want preserved [fix]", got)
+	}
+
+	if err := SaveGroupVisibility(root, "platform", nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err = Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.IsHidden("platform") {
+		t.Error("platform visible after reset, want team default (hidden)")
+	}
+	data, _ := os.ReadFile(filepath.Join(root, LocalFileName))
+	if strings.Contains(string(data), "platform") {
+		t.Errorf("ws.local.toml still mentions platform after reset:\n%s", data)
+	}
+}

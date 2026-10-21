@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,13 +17,17 @@ type Workspace struct {
 	DefaultBranch    string
 	GitProtocol      string              // "ssh" or "" (defaults to https)
 	Name             string              // optional display name for the workspace
-	RepoNames        []string            // sorted canonical names
+	RepoNames        []string            // sorted canonical names, every repo including hidden ones
+	RepoGroups       map[string]string   // canonical name → group (ungrouped repos are absent)
+	HiddenGroups     map[string]bool     // groups left out of commands that cover every repo
 	AliasMap         map[string]string   // alias → canonical name
 	DisplayNames     map[string]string   // canonical name → display name
 	RepoColors       map[string]string   // canonical name → custom color (256-color or hex)
 	AfterCreateHooks map[string]string   // canonical name → shell command
 	Boarded          map[string][]string // repo → boarded capsule names (from ws.local.toml)
 	Silo             map[string]string   // repo → capsule name the silo points at (from ws.local.toml)
+
+	selectedGroups map[string]bool // set by SelectGroups; nil means "every visible group"
 }
 
 func (w *Workspace) ReposDir() string {
@@ -59,6 +64,97 @@ func (w *Workspace) ResolveAlias(input string) (string, bool) {
 		return canonical, true
 	}
 	return "", false
+}
+
+// GroupOf returns the repo's group, or "" if it has none.
+func (w *Workspace) GroupOf(repo string) string {
+	return w.RepoGroups[repo]
+}
+
+// IsHidden reports whether the repo belongs to a hidden group.
+func (w *Workspace) IsHidden(repo string) bool {
+	return w.HiddenGroups[w.RepoGroups[repo]]
+}
+
+// GroupNames returns every group that has a repo or a visibility setting, sorted.
+func (w *Workspace) GroupNames() []string {
+	seen := make(map[string]bool)
+	for _, g := range w.RepoGroups {
+		seen[g] = true
+	}
+	for g := range w.HiddenGroups {
+		seen[g] = true
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// ReposInGroup returns the repos in a group, sorted, whether or not it is hidden.
+func (w *Workspace) ReposInGroup(group string) []string {
+	var repos []string
+	for _, name := range w.RepoNames {
+		if w.RepoGroups[name] == group {
+			repos = append(repos, name)
+		}
+	}
+	return repos
+}
+
+// SelectGroups narrows DefaultRepoNames to the named groups, hidden or not.
+// It backs the --group flag. Unknown group names are an error.
+func (w *Workspace) SelectGroups(groups []string) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	known := w.GroupNames()
+	w.selectedGroups = make(map[string]bool, len(groups))
+	for _, g := range groups {
+		if !slices.Contains(known, g) {
+			if len(known) == 0 {
+				return fmt.Errorf("unknown group %q (no groups in ws.toml)", g)
+			}
+			return fmt.Errorf("unknown group %q (groups: %s)", g, strings.Join(known, ", "))
+		}
+		w.selectedGroups[g] = true
+	}
+	return nil
+}
+
+// DefaultRepoNames returns the repos a command covers when none is named:
+// every repo outside a hidden group, or exactly the --group selection.
+func (w *Workspace) DefaultRepoNames() []string {
+	var repos []string
+	for _, name := range w.RepoNames {
+		if w.selectedGroups != nil {
+			if w.selectedGroups[w.RepoGroups[name]] {
+				repos = append(repos, name)
+			}
+		} else if !w.IsHidden(name) {
+			repos = append(repos, name)
+		}
+	}
+	return repos
+}
+
+// ListedRepoNames is DefaultRepoNames plus any hidden repo that has a
+// capsule. A capsule means you're working there, so status and cleanup keep
+// showing it until it is debriefed. A --group selection is taken as is.
+func (w *Workspace) ListedRepoNames() []string {
+	if w.selectedGroups != nil {
+		return w.DefaultRepoNames()
+	}
+	var repos []string
+	for _, name := range w.RepoNames {
+		if !w.IsHidden(name) || w.HasCapsules(name) {
+			repos = append(repos, name)
+		}
+	}
+	return repos
+}
+
+// HasCapsules reports whether the repo has any worktree besides .ground.
+func (w *Workspace) HasCapsules(repo string) bool {
+	capsules, err := ListWorktrees(w.RepoDir(repo))
+	return err == nil && len(capsules) > 0
 }
 
 // FuzzyMatch returns true if every character in pattern appears in target
@@ -106,21 +202,30 @@ func FuzzyMatchPositions(pattern, target string) []int {
 
 // FuzzyMatchRepos returns canonical repo names that fuzzy-match the input.
 // Matches against both canonical names and aliases, deduplicating results.
+// Repos in hidden groups are only considered when no visible repo matches,
+// so a hidden repo never makes a short pattern ambiguous.
 func (w *Workspace) FuzzyMatchRepos(input string) []string {
 	if input == "" {
 		return nil
 	}
+	if matches := w.fuzzyMatchRepos(input, false); len(matches) > 0 {
+		return matches
+	}
+	return w.fuzzyMatchRepos(input, true)
+}
+
+func (w *Workspace) fuzzyMatchRepos(input string, hidden bool) []string {
 	seen := make(map[string]bool)
 	var matches []string
 
 	for _, name := range w.RepoNames {
-		if FuzzyMatch(input, name) && !seen[name] {
+		if w.IsHidden(name) == hidden && FuzzyMatch(input, name) && !seen[name] {
 			seen[name] = true
 			matches = append(matches, name)
 		}
 	}
 	for alias, canonical := range w.AliasMap {
-		if FuzzyMatch(input, alias) && !seen[canonical] {
+		if w.IsHidden(canonical) == hidden && FuzzyMatch(input, alias) && !seen[canonical] {
 			seen[canonical] = true
 			matches = append(matches, canonical)
 		}

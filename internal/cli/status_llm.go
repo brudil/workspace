@@ -67,12 +67,12 @@ func runStatusLLM(ws *workspace.Workspace, gh github.Client) error {
 		name := repo.outline.Name
 
 		if repo.outline.Err != nil {
-			b.WriteString(formatLLMRepoHeader(name, ws.DisplayNames[name], reverseAliases[name]))
+			b.WriteString(formatLLMRepoHeader(name, ws.DisplayNames[name], reverseAliases[name], llmGroupLabel(ws, name)))
 			b.WriteString(fmt.Sprintf(" — error: %s\n", simplifyError(repo.outline.Err)))
 			continue
 		}
 
-		b.WriteString(formatLLMRepoHeader(name, ws.DisplayNames[name], reverseAliases[name]))
+		b.WriteString(formatLLMRepoHeader(name, ws.DisplayNames[name], reverseAliases[name], llmGroupLabel(ws, name)))
 		b.WriteByte('\n')
 
 		for _, wt := range repo.worktrees {
@@ -90,7 +90,16 @@ func runStatusLLM(ws *workspace.Workspace, gh github.Client) error {
 	return err
 }
 
-func formatLLMRepoHeader(canonical, displayName string, aliases []string) string {
+// llmGroupLabel returns "platform" or "platform, hidden" for a grouped repo.
+func llmGroupLabel(ws *workspace.Workspace, repo string) string {
+	group := ws.GroupOf(repo)
+	if group != "" && ws.IsHidden(repo) {
+		group += ", hidden"
+	}
+	return group
+}
+
+func formatLLMRepoHeader(canonical, displayName string, aliases []string, group string) string {
 	var b strings.Builder
 	b.WriteString(canonical)
 
@@ -100,6 +109,9 @@ func formatLLMRepoHeader(canonical, displayName string, aliases []string) string
 	}
 	if len(aliases) > 0 {
 		meta = append(meta, "aliases: "+strings.Join(aliases, ", "))
+	}
+	if group != "" {
+		meta = append(meta, "group: "+group)
 	}
 	if len(meta) > 0 {
 		b.WriteString(" (")

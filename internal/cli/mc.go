@@ -11,13 +11,16 @@ import (
 // --- cobra command ---
 
 func newMCCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:               "mc",
 		Short:             "Mission control — interactive workspace dashboard",
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
 			if err != nil {
+				return err
+			}
+			if err := applyGroupFlag(cmd, ctx.WS); err != nil {
 				return err
 			}
 
@@ -35,4 +38,6 @@ func newMCCmd() *cobra.Command {
 			return nil
 		},
 	}
+	addGroupFlag(cmd)
+	return cmd
 }

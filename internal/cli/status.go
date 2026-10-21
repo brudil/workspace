@@ -27,6 +27,9 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := applyGroupFlag(cmd, ctx.WS); err != nil {
+				return err
+			}
 
 			switch format {
 			case "json":
@@ -46,6 +49,7 @@ func newStatusCmd() *cobra.Command {
 	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"json", "llm"}, cobra.ShellCompDirectiveNoFileComp
 	})
+	addGroupFlag(cmd)
 
 	return cmd
 }
@@ -233,6 +237,7 @@ func (m statusModel) View() string {
 		if _, ok := m.ws.DisplayNames[repo.name]; ok {
 			repoName += " " + ui.Dim.Render("("+repo.name+")")
 		}
+		repoName += formatGroupTag(m.ws, repo.name)
 		headers[i] = repoName
 		if w := lipgloss.Width(headers[i]); w > maxHeaderWidth {
 			maxHeaderWidth = w
@@ -295,4 +300,17 @@ func (m statusModel) View() string {
 	}
 
 	return b.String()
+}
+
+// formatGroupTag renders " · group" for a grouped repo, marking hidden groups
+// so it is clear why a hidden repo is showing (it has capsules).
+func formatGroupTag(ws *workspace.Workspace, repo string) string {
+	group := ws.GroupOf(repo)
+	if group == "" {
+		return ""
+	}
+	if ws.IsHidden(repo) {
+		group += " (hidden)"
+	}
+	return " " + ui.Dim.Render("· "+group)
 }
