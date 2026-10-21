@@ -42,9 +42,11 @@ func (w *Workspace) Doctor() []CheckCategory {
 	return cats
 }
 
+// checkRepos covers the default repos only: repos in hidden groups are
+// cloned on first use, so not having them is expected.
 func (w *Workspace) checkRepos() CheckCategory {
 	var checks []CheckResult
-	for _, name := range w.RepoNames {
+	for _, name := range w.DefaultRepoNames() {
 		bareDir := w.BareDir(name)
 		result := CheckResult{Name: name, Status: CheckOK}
 		if _, err := os.Stat(bareDir); err != nil {
@@ -62,7 +64,7 @@ func (w *Workspace) checkRepos() CheckCategory {
 
 func (w *Workspace) checkOrphanedWorktrees() CheckCategory {
 	var checks []CheckResult
-	for _, name := range w.RepoNames {
+	for _, name := range w.ListedRepoNames() {
 		repoDir := w.RepoDir(name)
 		worktrees, err := ListAllWorktrees(repoDir)
 		if err != nil {

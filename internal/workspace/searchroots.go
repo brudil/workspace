@@ -43,8 +43,9 @@ func (r SearchRoot) RelPath() string {
 	return "repos/" + r.Repo + "/" + r.Worktree
 }
 
-// SearchRoots resolves the directories to search. With no selectors every
-// repo in the workspace is selected. Roots come back ordered by repo name,
+// SearchRoots resolves the directories to search. With no selectors the
+// default repos are selected (see DefaultRepoNames), plus the repo the caller
+// is standing in if it is hidden. Roots come back ordered by repo name,
 // .ground before capsules within a repo, so output is stable.
 //
 // .bare and .silo are never chosen by a ScopeMode; they only appear when a
@@ -52,17 +53,21 @@ func (r SearchRoot) RelPath() string {
 // missing is skipped; an explicitly selected worktree that does not exist is
 // an error.
 func (w *Workspace) SearchRoots(cwd string, selectors []RepoSelector, mode ScopeMode) ([]SearchRoot, error) {
-	explicit := len(selectors) > 0
-	if !explicit {
-		selectors = make([]RepoSelector, 0, len(w.RepoNames))
-		for _, name := range w.RepoNames {
-			selectors = append(selectors, RepoSelector{Repo: name})
-		}
-	}
-
 	hereRepo, hereWT, _ := DetectRepo(w.Root, cwd)
 	if hereWT == ".bare" || hereWT == SiloDir {
 		hereRepo, hereWT = "", ""
+	}
+
+	explicit := len(selectors) > 0
+	if !explicit {
+		defaults := w.DefaultRepoNames()
+		if _, known := w.ResolveAlias(hereRepo); known && !slices.Contains(defaults, hereRepo) {
+			defaults = append(defaults, hereRepo)
+		}
+		selectors = make([]RepoSelector, 0, len(defaults))
+		for _, name := range defaults {
+			selectors = append(selectors, RepoSelector{Repo: name})
+		}
 	}
 
 	perRepo := make(map[string][]string)

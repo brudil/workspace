@@ -71,7 +71,7 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 
-			clonedRepos, err := cloneRepos(ctx.WS, ctx.WS.RepoNames, os.Stderr)
+			clonedRepos, err := cloneRepos(ctx.WS, ctx.WS.DefaultRepoNames(), os.Stderr)
 			if err != nil {
 				return err
 			}

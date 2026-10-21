@@ -67,12 +67,23 @@ func newUpgradeCmd() *cobra.Command {
 					return err
 				}
 
-				fmt.Fprintln(os.Stderr)
-				clonedRepos, err := cloneRepos(newCtx.WS, diff.Added, os.Stderr)
-				if err != nil {
-					return err
+				var toClone []string
+				for _, name := range diff.Added {
+					if newCtx.WS.IsHidden(name) {
+						fmt.Fprintf(os.Stderr, "    %s is in hidden group %s — it will clone on first use\n", name, newCtx.WS.GroupOf(name))
+						continue
+					}
+					toClone = append(toClone, name)
 				}
-				runAfterCreateHooks(newCtx.WS, clonedRepos, os.Stderr, os.Stderr)
+
+				if len(toClone) > 0 {
+					fmt.Fprintln(os.Stderr)
+					clonedRepos, err := cloneRepos(newCtx.WS, toClone, os.Stderr)
+					if err != nil {
+						return err
+					}
+					runAfterCreateHooks(newCtx.WS, clonedRepos, os.Stderr, os.Stderr)
+				}
 			}
 
 			// Resync IDE workspace files in case config changed

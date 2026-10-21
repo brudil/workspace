@@ -77,8 +77,19 @@ func LoadContextFromDir(dir string) (*Context, error) {
 	displayNames := make(map[string]string)
 	repoColors := make(map[string]string)
 	afterCreateHooks := make(map[string]string)
+	repoGroups := make(map[string]string)
+	hiddenGroups := make(map[string]bool)
+
+	for name := range cfg.Groups {
+		if cfg.IsHidden(name) {
+			hiddenGroups[name] = true
+		}
+	}
 
 	for name, rc := range cfg.Repos {
+		if rc.Group != "" {
+			repoGroups[name] = rc.Group
+		}
 		if rc.DisplayName != "" {
 			displayNames[name] = rc.DisplayName
 		}
@@ -106,6 +117,8 @@ func LoadContextFromDir(dir string) (*Context, error) {
 		GitProtocol:      cfg.Git,
 		Name:             cfg.Workspace.DisplayName,
 		RepoNames:        names,
+		RepoGroups:       repoGroups,
+		HiddenGroups:     hiddenGroups,
 		AliasMap:         aliasMap,
 		DisplayNames:     displayNames,
 		RepoColors:       repoColors,
@@ -150,7 +163,7 @@ func (c *Context) ResolveRepo(arg string) (string, error) {
 		return "", fmt.Errorf("not inside a known repo directory")
 	}
 
-	return ui.PickRepo(c.WS.RepoNames, c.WS.DisplayNames)
+	return ui.PickRepo(c.WS.DefaultRepoNames(), c.WS.DisplayNames)
 }
 
 // ResolveCapsule figures out which capsule the user means within a repo.

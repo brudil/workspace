@@ -45,10 +45,10 @@ type CapsuleInfo struct {
 	BehindRemote int  // commits on origin/<branch> not on HEAD
 }
 
-// FindAllCapsules scans repos and returns info about every non-default capsule.
-// If repoFilter is non-empty, only that repo is scanned.
+// FindAllCapsules scans the listed repos and returns info about every
+// non-default capsule. If repoFilter is non-empty, only that repo is scanned.
 func (w *Workspace) FindAllCapsules(maxDays int, repoFilter string) []CapsuleInfo {
-	repos := w.RepoNames
+	repos := w.ListedRepoNames()
 	if repoFilter != "" {
 		repos = []string{repoFilter}
 	}

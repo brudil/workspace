@@ -189,6 +189,7 @@ func (m mcModel) renderList(width int) string {
 		if _, ok := m.ws.DisplayNames[g.name]; ok {
 			header += " " + ui.Dim.Render("("+g.name+")")
 		}
+		header += formatGroupTag(m.ws, g.name)
 
 		var groundLabel string
 		if g.ground != nil {

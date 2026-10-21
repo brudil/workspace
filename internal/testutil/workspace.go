@@ -14,6 +14,7 @@ type WorkspaceOpts struct {
 	Org           string
 	DefaultBranch string
 	Repos         []RepoOpts
+	HiddenGroups  []string // written as [groups.<name>] hidden = true
 }
 
 // RepoOpts configures a single repo in the test workspace.
@@ -23,12 +24,29 @@ type RepoOpts struct {
 	Aliases     []string
 	DisplayName string
 	AfterCreate string
+	Group       string
+	NotCloned   bool // create the source repo but leave it uncloned; see RedirectClones
 }
 
 // Workspace holds paths to the created test workspace.
 type Workspace struct {
 	Root    string            // workspace root containing ws.toml
+	Org     string            // GitHub org from WorkspaceOpts
 	Sources map[string]string // repo name -> source repo path (the "remote")
+}
+
+// RedirectClones makes git clone each repo's GitHub URL from its local
+// source repo instead, so code paths that clone (setup, first use of a
+// hidden repo) run without the network.
+func (w *Workspace) RedirectClones(t *testing.T) {
+	t.Helper()
+	i := 0
+	for name, src := range w.Sources {
+		t.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", i), "url."+src+".insteadOf")
+		t.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", i), fmt.Sprintf("https://github.com/%s/%s.git", w.Org, name))
+		i++
+	}
+	t.Setenv("GIT_CONFIG_COUNT", fmt.Sprint(i))
 }
 
 // SetupWorkspace creates a complete workspace with real git repos in t.TempDir().
@@ -60,6 +78,10 @@ func SetupWorkspace(t *testing.T, opts WorkspaceOpts) *Workspace {
 			GitCmd(t, srcDir, "checkout", opts.DefaultBranch)
 		}
 
+		if repo.NotCloned {
+			continue
+		}
+
 		// Create repo directory structure
 		repoDir := filepath.Join(reposDir, repo.Name)
 		os.MkdirAll(repoDir, 0755)
@@ -77,7 +99,7 @@ func SetupWorkspace(t *testing.T, opts WorkspaceOpts) *Workspace {
 		GitCmd(t, bareDir, "worktree", "add", groundDir, opts.DefaultBranch)
 	}
 
-	return &Workspace{Root: root, Sources: sources}
+	return &Workspace{Root: root, Org: opts.Org, Sources: sources}
 }
 
 func writeWSToml(t *testing.T, root string, opts WorkspaceOpts) {
@@ -97,7 +119,14 @@ func writeWSToml(t *testing.T, root string, opts WorkspaceOpts) {
 		if repo.AfterCreate != "" {
 			fmt.Fprintf(&b, "after_create = %q\n", repo.AfterCreate)
 		}
+		if repo.Group != "" {
+			fmt.Fprintf(&b, "group = %q\n", repo.Group)
+		}
 		b.WriteString("\n")
+	}
+
+	for _, group := range opts.HiddenGroups {
+		fmt.Fprintf(&b, "[groups.%s]\nhidden = true\n\n", group)
 	}
 
 	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(b.String()), 0644)

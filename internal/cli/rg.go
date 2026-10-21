@@ -25,6 +25,7 @@ func (e *ExitCodeError) Error() string {
 // rgOptions are the ws-side flags of `ws rg`. Everything else goes to ripgrep.
 type rgOptions struct {
 	repos  []string // raw --repo selectors: "name" or "name/worktree"
+	groups []string // --group names; their repos are added as selectors
 	ground bool
 	all    bool
 	roots  bool
@@ -33,7 +34,7 @@ type rgOptions struct {
 
 func newRgCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rg [--repo <sel>]... [--ground|--all] [--roots] [--] <ripgrep args>",
+		Use:   "rg [--repo <sel>]... [--group <name>]... [--ground|--all] [--roots] [--] <ripgrep args>",
 		Short: "Run ripgrep across the workspace with sensible scope",
 		Long: `Runs ripgrep over the right worktree of each repo, so every match comes
 back once instead of once per capsule. Every ripgrep flag works unchanged.
@@ -42,11 +43,15 @@ Scope (default is "where I stand"):
   Inside a capsule or .ground, that worktree is searched for its repo and
   .ground is searched for every other repo. Outside any worktree, .ground
   everywhere. .bare and .silo are never searched unless named explicitly.
+  Repos in hidden groups are skipped unless named, selected with --group, or
+  the one you are standing in.
 
 Scope flags (long form only; ripgrep owns the short flags):
   --repo <sel>    restrict to these repos; repeatable or comma-separated.
                   <sel> is a name, alias, or unambiguous fuzzy match, with
                   an optional /worktree (e.g. fe, fe/login-fix, fe/.ground).
+  --group <name>  add every repo in these groups, hidden or not; repeatable
+                  or comma-separated. Combines with --repo.
   --ground        search .ground for every selected repo
   --all           search .ground and every capsule (expect duplicates)
   --roots         print the directories that would be searched and exit
@@ -61,6 +66,7 @@ Examples:
   ws rg useAuth                        # my capsule for this repo, ground elsewhere
   ws rg --repo fe,api useAuth          # two repos by alias
   ws rg --repo fe/login-fix TODO       # one specific capsule
+  ws rg --group platform Ingress       # a whole group, hidden or not
   ws rg --ground -t go 'func Load'     # baseline only
   ws rg --all FEATURE_FLAG_X           # every worktree
   ws rg -g 'src/**/*.ts' -l needle     # globs anchored per root
@@ -99,6 +105,11 @@ func runRg(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	groupSelectors, err := resolveRgGroups(ctx, opts.groups)
+	if err != nil {
+		return err
+	}
+	selectors = append(selectors, groupSelectors...)
 
 	mode := workspace.ScopeHere
 	switch {
@@ -188,6 +199,15 @@ func parseRgArgs(args []string) (rgOptions, []string, error) {
 		case strings.HasPrefix(arg, "--repo="):
 			opts.repos = append(opts.repos, splitRepoList(strings.TrimPrefix(arg, "--repo="))...)
 			i++
+		case arg == "--group":
+			if i+1 >= len(args) {
+				return opts, nil, fmt.Errorf("--group requires a value")
+			}
+			opts.groups = append(opts.groups, splitRepoList(args[i+1])...)
+			i += 2
+		case strings.HasPrefix(arg, "--group="):
+			opts.groups = append(opts.groups, splitRepoList(strings.TrimPrefix(arg, "--group="))...)
+			i++
 		case arg == "--ground":
 			opts.ground = true
 			i++
@@ -233,6 +253,9 @@ func resolveRgSelectors(ctx *Context, raw []string) ([]workspace.RepoSelector, e
 		if err != nil {
 			return nil, err
 		}
+		if err := ensureCloned(ctx.WS, repo); err != nil {
+			return nil, err
+		}
 		sel := workspace.RepoSelector{Repo: repo}
 		if hasWT {
 			wt, err := ctx.ResolveWorktreeStrict(repo, wtArg)
@@ -242,6 +265,28 @@ func resolveRgSelectors(ctx *Context, raw []string) ([]workspace.RepoSelector, e
 			sel.Worktree = wt
 		}
 		selectors = append(selectors, sel)
+	}
+	return selectors, nil
+}
+
+// resolveRgGroups turns --group names into one selector per repo in those
+// groups, cloning any that are missing: naming a group asks for its repos.
+func resolveRgGroups(ctx *Context, groups []string) ([]workspace.RepoSelector, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	if err := ctx.WS.SelectGroups(groups); err != nil {
+		return nil, err
+	}
+	var selectors []workspace.RepoSelector
+	for _, repo := range ctx.WS.DefaultRepoNames() {
+		if err := ensureCloned(ctx.WS, repo); err != nil {
+			return nil, err
+		}
+		selectors = append(selectors, workspace.RepoSelector{Repo: repo})
+	}
+	if len(selectors) == 0 {
+		return nil, fmt.Errorf("no repos in group %s", strings.Join(groups, ", "))
 	}
 	return selectors, nil
 }
@@ -311,7 +356,17 @@ func expandGlob(glob string, prefixes []string) []string {
 // completeRgArgs completes --repo values (names, aliases, repo/worktree) and
 // the ws flags themselves. Ripgrep's own flags are not completed.
 func completeRgArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	wsFlags := []string{"--repo", "--ground", "--all", "--roots"}
+	wsFlags := []string{"--repo", "--group", "--ground", "--all", "--roots"}
+
+	if (len(args) > 0 && args[len(args)-1] == "--group") || strings.HasPrefix(toComplete, "--group=") {
+		groups, _ := completeGroupNames(cmd, args, toComplete)
+		if strings.HasPrefix(toComplete, "--group=") {
+			for i := range groups {
+				groups[i] = "--group=" + groups[i]
+			}
+		}
+		return groups, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	prevIsRepo := len(args) > 0 && args[len(args)-1] == "--repo"
 	value := toComplete

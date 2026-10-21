@@ -25,10 +25,11 @@ type WorktreeStatus struct {
 	Behind int
 }
 
-// Status gathers full status for all repos synchronously.
+// Status gathers full status for the listed repos synchronously.
 func (w *Workspace) Status() []RepoStatus {
-	statuses := make([]RepoStatus, len(w.RepoNames))
-	for i, name := range w.RepoNames {
+	names := w.ListedRepoNames()
+	statuses := make([]RepoStatus, len(names))
+	for i, name := range names {
 		statuses[i] = w.repoStatus(name)
 	}
 	return statuses
@@ -66,9 +67,11 @@ type RepoOutline struct {
 // StatusOutline returns the repo structure without any git queries.
 // This is instant — just filesystem reads. When recentFirst is true,
 // repos and worktrees are sorted most-recent-first; otherwise most-recent-last.
+// Covers ListedRepoNames.
 func (w *Workspace) StatusOutline(recentFirst bool) []RepoOutline {
-	outlines := make([]RepoOutline, len(w.RepoNames))
-	for i, name := range w.RepoNames {
+	names := w.ListedRepoNames()
+	outlines := make([]RepoOutline, len(names))
+	for i, name := range names {
 		repoDir := w.RepoDir(name)
 		worktrees, err := ListAllWorktrees(repoDir)
 

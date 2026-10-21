@@ -32,6 +32,9 @@ Examples:
 			if err != nil {
 				return err
 			}
+			if err := ensureCloned(ctx.WS, repo); err != nil {
+				return err
+			}
 
 			branch := args[1]
 

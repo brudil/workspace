@@ -83,6 +83,9 @@ func resolveJumpPath(ctx *Context, repoArg, worktreeArg string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	if err := ensureCloned(ctx.WS, repo); err != nil {
+		return "", err
+	}
 
 	// Resolve worktree
 	worktree := worktreeArg

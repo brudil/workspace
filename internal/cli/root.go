@@ -17,6 +17,7 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return newStatusCmd().RunE(cmd, args)
 	}
+	addGroupFlag(cmd)
 
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newSetupCmd())
@@ -37,6 +38,7 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.AddCommand(newUnboardCmd())
 	cmd.AddCommand(newSiloCmd())
 	cmd.AddCommand(newRgCmd())
+	cmd.AddCommand(newGroupCmd())
 
 	return cmd
 }

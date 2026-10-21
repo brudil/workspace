@@ -17,6 +17,7 @@ Work happens in **capsules**, not on the main branch. Ground is sacred.
   - [Debrief](#debrief)
   - [Mission Control](#mission-control)
   - [Repos and Aliases](#repos-and-aliases)
+  - [Groups](#groups)
   - [Searching](#searching)
 - [Configuration](#configuration)
   - [ws.toml](#wstoml)
@@ -232,6 +233,43 @@ Every command that takes a repo argument goes through the same resolution pipeli
 
 The same fuzzy matching applies to capsule arguments (e.g. in `burn` and `jump`).
 
+Repos in hidden [groups](#groups) are always found by exact name or alias. Fuzzy matching only considers them when no visible repo matches, and the picker leaves them out.
+
+### Groups
+
+A repo can belong to one group. Groups let you keep repos in the workspace that you mostly read, such as another team's platform repos, without them crowding everything else. They also let you work with a slice of the workspace (`ws --group product`).
+
+```toml
+[groups.platform]
+hidden = true
+
+[repos.frontend]
+group = "product"
+
+[repos.platform-infra]
+group = "platform"
+aliases = ["infra"]
+```
+
+**Hidden groups** are left out of commands that cover every repo: `ws`/`status`, `mc`, `rg`, `debrief`, `setup`, `init`, `upgrade` and mission control's fetch-all. Naming a hidden repo always works (`ws jump infra`, `ws lift infra fix-alerts`, `ws rg --repo infra`), and shell completions include hidden repos.
+
+- **Cloned on first use.** `init`, `setup` and `upgrade` don't clone hidden repos. The first `jump`, `lift`, `dock` or `rg` that needs one clones it.
+- **Shown while you're working there.** A hidden repo with a capsule appears in status, mission control and debrief, marked `· platform (hidden)`. Once its capsules are debriefed, it drops out of view again.
+- **Standing in one.** `ws rg` searches the hidden repo you're standing in, as well as the visible ones.
+
+**`--group <name>`** limits a command to those groups, hidden or not. It is repeatable and comma-separated, and works on `ws`/`status`, `mc`, `rg`, `debrief` and `setup`. `ws rg --group` adds the group's repos to any `--repo` selection. `ws setup --group platform` clones a whole group up front.
+
+**Your own choice.** The team sets defaults in `ws.toml`. Each person can override them in `ws.local.toml`:
+
+```bash
+ws group                  # list groups, whether each is shown, and their repos
+ws group show platform    # show it for you, and clone its repos
+ws group hide product     # hide it for you
+ws group reset platform   # go back to the team default
+```
+
+To hide a single repo for yourself, put it in a group locally (`[repos.mobile] group = "mine"`) and hide that group.
+
 ### Searching
 
 `ws rg` runs [ripgrep](https://github.com/BurntSushi/ripgrep) over the right worktree of each repo. Plain `rg` from the workspace root searches `.bare/`, `.silo/`, `.ground/` and every capsule, so every match comes back once per capsule. `ws rg` returns each match once, which matters most for agents whose context fills with duplicates.
@@ -240,6 +278,7 @@ The same fuzzy matching applies to capsule arguments (e.g. in `burn` and `jump`)
 ws rg useAuth                        # where I stand: my capsule for this repo, ground elsewhere
 ws rg --repo fe,api useAuth          # restrict to repos (names, aliases, fuzzy)
 ws rg --repo fe/login-fix TODO       # one specific capsule
+ws rg --group platform Ingress       # a whole group, hidden or not
 ws rg --ground -t go 'func Load'     # .ground everywhere
 ws rg --all FEATURE_FLAG_X           # every worktree: who else is touching this?
 ws rg -g 'src/**/*.ts' -l needle     # globs anchored per root
@@ -303,6 +342,13 @@ aliases = ["infra"]
 | `aliases` | Short names for the repo (e.g. `fe` for `frontend`). Used in commands and completions. |
 | `color` | Terminal colour for this repo. Accepts hex (`#FF6B9D`) or 256-colour codes. |
 | `after_create` | Shell command run in the worktree after `lift` or `dock`. Failures are logged but non-fatal. |
+| `group` | The repo's [group](#groups). Ungrouped repos are always visible. |
+
+**Group fields** (`[groups.<name>]`):
+
+| Field | Description |
+|---|---|
+| `hidden` | Leave the group's repos out of commands that cover every repo. Default `false`. |
 
 ### ws.local.toml
 
@@ -328,7 +374,11 @@ backend = [".ground"]
 
 **Repo overrides:**
 
-You can override `display_name`, `color`, `after_create`, and `aliases` per repo. Aliases are appended to the shared list; other fields replace the shared value.
+You can override `display_name`, `color`, `after_create`, `group`, and `aliases` per repo. Aliases are appended to the shared list; other fields replace the shared value.
+
+**Group overrides:**
+
+`[groups.<name>] hidden = true|false` replaces the team's setting for you. `ws group show`, `hide` and `reset` write this for you.
 
 **Boarded section:**
 

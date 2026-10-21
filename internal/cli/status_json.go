@@ -17,6 +17,8 @@ type statusJSON struct {
 
 type repoJSON struct {
 	Name       string         `json:"name"`
+	Group      string         `json:"group,omitempty"`
+	Hidden     bool           `json:"hidden,omitempty"`
 	Boarded    []string       `json:"boarded"`
 	Error      string         `json:"error,omitempty"`
 	SiloTarget string         `json:"silo_target,omitempty"`
@@ -52,6 +54,8 @@ func runStatusJSON(ws *workspace.Workspace, gh github.Client) error {
 	for i, o := range outlines {
 		rj := repoJSON{
 			Name:       o.Name,
+			Group:      ws.GroupOf(o.Name),
+			Hidden:     ws.IsHidden(o.Name),
 			Boarded:    o.Boarded,
 			SiloTarget: ws.Silo[o.Name],
 		}
