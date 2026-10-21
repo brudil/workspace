@@ -1,7 +1,7 @@
 # `ws rg` — Workspace-Aware Ripgrep
 
 **Date:** 2026-10-21
-**Status:** Draft — default scope decided ("where I stand")
+**Status:** Approved — implemented
 
 ## Problem
 
@@ -161,11 +161,9 @@ Roughly 250 lines plus tests.
 
 - **Default scope is "where I stand"**: the current worktree for the repo you are in, `.ground` for every other repo. Behaviour depends on cwd, which is acceptable because every output path shows which tree it came from, and `--ground` is the explicit override.
 
-## Open questions
-
-1. **Should `--all` include `.silo`?** Proposed no: it is a mirror of a capsule and only adds duplicates.
-2. **Workspace root files.** Should there be a way to include the config directory (`ws.toml`, `ws.local.toml`)? Probably `--repo ~` by analogy with `ws jump ~`, later, if anyone asks.
-3. **Scope header.** An earlier draft printed a one-line scope summary to stderr. Dropped: absolute paths already encode repo and worktree, and pure passthrough is the stronger property. Revisit if agents misread scope in practice.
+- **`--all` excludes `.silo`.** It is a mirror of a capsule and only adds duplicates. `--repo fe/.silo` still works as an explicit selection.
+- **Workspace root files are not searched.** `--repo ~` by analogy with `ws jump ~` can be added later if anyone asks.
+- **No scope header.** Absolute paths already encode repo and worktree, and pure passthrough is the stronger property.
 
 ## Future
 

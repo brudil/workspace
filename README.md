@@ -46,6 +46,7 @@ Then use capsules (worktrees) to work on branches without ever switching:
 ws lift frontend my-feature    # create a new capsule
 ws dock frontend 1234          # check out a PR by number
 ws jump fe                     # fuzzy-navigate between capsules
+ws rg useAuth                  # ripgrep across repos, one worktree each
 ws debrief                     # clean up anything that's landed
 ```
 
@@ -58,6 +59,7 @@ ws debrief                     # clean up anything that's landed
 | `ws lift` | Create a new capsule from a base branch |
 | `ws dock` | Check out an existing branch or PR |
 | `ws jump` | Navigate to any capsule with fuzzy matching |
+| `ws rg` | Ripgrep across repos, searching one worktree per repo |
 | `ws debrief` | Remove landed and stale capsules |
 | `ws open` | Open workspace in Cursor, VS Code, or IntelliJ |
 | `ws board` | Add a capsule to your IDE workspace |

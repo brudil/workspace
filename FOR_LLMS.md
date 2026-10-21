@@ -56,6 +56,25 @@ Run `ws status -f llm` to get live state for all repos. The output includes:
 
 Use this to orient yourself before starting work.
 
+## Searching code
+
+Use `ws rg` instead of `rg` or `grep` whenever a search goes beyond your current directory. Plain `rg` from the workspace root walks `.bare/`, `.silo/`, `.ground/` and every capsule, so each match comes back once per capsule and floods your context.
+
+`ws rg` is ripgrep with the right scope. Every ripgrep flag works unchanged.
+
+```
+ws rg <pattern>                    # default scope, see below
+ws rg --repo fe,api <pattern>      # only these repos (names or aliases)
+ws rg --repo fe/my-feature TODO    # one specific capsule
+ws rg --ground <pattern>           # .ground of every repo (the baseline)
+ws rg --all <pattern>              # every worktree, duplicates expected
+ws rg --roots                      # print the directories it would search
+```
+
+**Default scope is "where I stand":** inside a capsule, that capsule is searched for its repo and `.ground` is searched for every other repo. Outside any worktree, `.ground` everywhere. Each match comes back once, and the absolute path on every line tells you which repo and worktree it came from.
+
+Narrow with `--repo` and `-g`, not with positional paths. Globs containing a slash (`-g 'src/**/*.ts'`) are anchored to each searched root, as in a single-repo search.
+
 ## Key commands
 
 ```
@@ -64,6 +83,7 @@ ws lift <repo> <name> [base]       # create a new capsule (branch + worktree) fr
 ws dock <repo> <branch|PR#|PR-URL> # check out an existing branch or PR into a capsule
 ws burn [repo] <capsule>           # remove a capsule (alias: ws rm)
 ws jump [repo] [capsule]           # navigate to a capsule (alias: ws j)
+ws rg [--repo <sel>] <pattern>     # ripgrep across repos, one worktree per repo
 ```
 
 Also available: `ws debrief` (batch cleanup), `ws mc` (TUI), `ws board`/`ws unboard` (IDE workspace management).
