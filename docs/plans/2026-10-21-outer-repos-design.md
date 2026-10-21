@@ -94,6 +94,11 @@ Small. The work is mostly at the one place repos are listed, not spread across t
 
 Tests follow the existing patterns: config parse/merge tests, `SearchRoots` tests for the rg defaults, status golden tests covering an active and an inactive outer repo, and a resolution test showing the fuzzy fallback.
 
+## Decisions
+
+- **Read-only enforcement is out of scope.** `ws lift` on an outer repo behaves normally. A `lift = false` knob can be a separate change if a team wants a hard stop.
+- **The flag is a fixed `--outer`, not `--<tier>` or `--tier <name>`.** Tiers are a closed set of two values defined by `ws`, not by users, so there is exactly one thing to opt into. `--outer` is also the exact word in the config, which makes it easy to find. If user-defined groups arrive later, they get their own `--group <name>` and `--outer` stays as is.
+
 ## Alternatives considered
 
 - **Boolean `outer = true`.** Simpler, but `tier` leaves room for a third class later without a schema change. The cost is the same either way.
@@ -103,7 +108,5 @@ Tests follow the existing patterns: config parse/merge tests, `SearchRoots` test
 
 ## Open questions
 
-1. **Read-only enforcement.** Should `ws lift` on an outer repo warn or refuse? Proposal: neither. The point of "almost" read-only is that PRs to platform repos sometimes happen, and lazy clone plus hidden-by-default already captures the "lesser" status. A separate `lift = false` can be added if a team really wants a hard stop.
-2. **Naming.** `tier = "outer"` vs `visibility = "hidden"` vs the space theme (`orbit = "outer"`, "satellite repos"). "Outer" reads well in commands (`--outer`) and says *where* the repo is without implying it's less important.
-3. **Fetch for active outer repos.** Should status refresh fetch an active outer repo? Probably yes, since you have a branch there, but it's worth checking against how big platform repos are.
-4. **`ws upgrade`.** When a repo moves from core to outer, should upgrade offer to remove its clone? Proposal: no. Report the tier change in the diff summary and leave files on disk alone.
+1. **Fetch for active outer repos.** Should status refresh fetch an active outer repo? Probably yes, since you have a branch there, but it's worth checking against how big platform repos are.
+2. **`ws upgrade`.** When a repo moves from core to outer, should upgrade offer to remove its clone? Proposal: no. Report the tier change in the diff summary and leave files on disk alone.
