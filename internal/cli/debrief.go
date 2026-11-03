@@ -155,6 +155,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 					boardChanged = true
 				}
 
+				owner := rememberMissionBranch(ctx, c.Repo, c.Name)
 				if err := ctx.WS.RemoveWorktree(c.Repo, c.Name, forceBurn); err != nil {
 					fmt.Fprintf(ui.Stderr, "  %s %s%s %s%s failed to remove: %v\n",
 						ui.Red.Render("✗"), repoName, repoPad, tag, tagPad, err,
@@ -162,6 +163,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 					skipped++
 					continue
 				}
+				logMissionBurn(ctx, owner, c.Repo, c.Name)
 
 				// If this capsule was a silo target, repoint to .ground
 				if target, ok := ctx.WS.Silo[c.Repo]; ok && target == c.Name {

@@ -58,6 +58,16 @@ Run `ws status -f llm` to get live state for all repos. The output includes:
 
 Use this to orient yourself before starting work.
 
+## Missions
+
+**If `WS_MISSION` is set, you are crew on a mission.** Run `ws mission show -f llm` first: it gives the brief, the mission's capsules (with paths) and recent log.
+
+- A mission can span several capsules across repos. You may work in any capsule of your mission, but don't touch capsules outside it.
+- Create new capsules with `ws lift`. With `WS_MISSION` set, they join the mission automatically.
+- Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
+
+If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.
+
 ## Searching code
 
 Use `ws rg` instead of `rg` or `grep` whenever a search goes beyond your current directory. Plain `rg` from the workspace root walks `.bare/`, `.silo/`, `.ground/` and every capsule, so each match comes back once per capsule and floods your context.

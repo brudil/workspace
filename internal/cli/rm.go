@@ -107,9 +107,13 @@ func newBurnCmd() *cobra.Command {
 				}
 			}
 
+			owner := rememberMissionBranch(ctx, repo, capsule)
+
 			if err := ctx.WS.RemoveWorktree(repo, capsule, check.IsDirty); err != nil {
 				return err
 			}
+
+			logMissionBurn(ctx, owner, repo, capsule)
 
 			fmt.Fprintf(ui.Stderr, "  %s Removed %s %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 

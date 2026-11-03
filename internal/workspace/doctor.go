@@ -5,7 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+
+	"github.com/brudil/workspace/internal/mission"
 )
 
 type CheckStatus int
@@ -38,6 +41,9 @@ func (w *Workspace) Doctor() []CheckCategory {
 	}
 	if siloChecks := w.checkSilos(); len(siloChecks.Checks) > 0 {
 		cats = append(cats, siloChecks)
+	}
+	if missionChecks := w.checkMissions(); len(missionChecks.Checks) > 0 {
+		cats = append(cats, missionChecks)
 	}
 	return cats
 }
@@ -217,4 +223,43 @@ func gitWorktreeListBranches(mainWT string) map[string]bool {
 		}
 	}
 	return result
+}
+
+// checkMissions only runs once missions exist, so workspaces that never use
+// them see no change in doctor output.
+func (w *Workspace) checkMissions() CheckCategory {
+	store := mission.Store{Root: w.Root}
+	if _, err := os.Stat(store.Dir()); err != nil {
+		return CheckCategory{Name: "Missions"}
+	}
+
+	excluded := CheckResult{Name: ".ws/ ignored by config repo", Status: CheckOK}
+	if !mission.IsExcluded(w.Root) {
+		excluded.Status = CheckWarn
+		excluded.Detail = "mission files would show up in the config repo's git status"
+		root := w.Root
+		excluded.Fix = func() error {
+			mission.EnsureExcluded(root)
+			if !mission.IsExcluded(root) {
+				return fmt.Errorf("could not add .ws/ to info/exclude")
+			}
+			return nil
+		}
+	}
+	checks := []CheckResult{excluded}
+
+	missions, _ := store.List()
+	for _, m := range missions {
+		for _, c := range m.Capsules {
+			if !slices.Contains(w.RepoNames, c.Repo) {
+				checks = append(checks, CheckResult{
+					Name:    fmt.Sprintf("%s: %s/%s", m.Slug, c.Repo, c.Name),
+					Status:  CheckWarn,
+					Detail:  "repo is not in ws.toml",
+					FixHint: fmt.Sprintf("ws mission detach -m %s %s %s", m.Slug, c.Repo, c.Name),
+				})
+			}
+		}
+	}
+	return CheckCategory{Name: "Missions", Checks: checks}
 }

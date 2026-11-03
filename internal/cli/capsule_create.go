@@ -118,6 +118,7 @@ func runCapsuleCreate(ctx *Context, repo string, branch string, createWorktree c
 	}
 
 	fmt.Fprintf(ui.Stderr, "\n%s %s %s is ready for work.\n", successMsg, ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
+	attachToEnvMission(ctx, repo, capsule)
 	fmt.Printf("cd %s\n", shellQuote(wtPath))
 	return nil
 }

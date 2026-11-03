@@ -19,6 +19,7 @@ Work happens in **capsules**, not on the main branch. Ground is sacred.
   - [Repos and Aliases](#repos-and-aliases)
   - [Groups](#groups)
   - [Searching](#searching)
+  - [Missions](#missions)
 - [Configuration](#configuration)
   - [ws.toml](#wstoml)
   - [ws.local.toml](#wslocaltoml)
@@ -296,6 +297,29 @@ Everything that is not a `ws rg` flag is passed to ripgrep unchanged, so `-i`, `
 **Globs.** Ripgrep matches a glob containing a `/` against the printed path, not against each search root, so a multi-root search would normally make `-g 'src/*.ts'` match nothing. `ws rg` expands such globs to one per root, keeping their anchoring. Basename globs (`-g '*.ts'`) pass through untouched. Globs from a ripgrep config file (`RIPGREP_CONFIG_PATH`) are not rewritten.
 
 Do not pass positional paths; narrow with `--repo` and `-g` instead.
+
+### Missions
+
+A mission is a unit of work that the workspace owns: a brief, the capsules that carry it out (possibly across several repos), and a log of what happened. Capsules are still the building block. A mission just says which capsules belong to one piece of work, and remembers it after the agents and terminals that did the work are gone.
+
+```bash
+ws mission new "Fix token refresh race"     # creates it and opens the brief in $EDITOR
+ws mission                                   # list missions (alias: ws mission list)
+ws mission show fix-token-refresh-race       # brief, capsules, PRs, recent log
+WS_MISSION=fix-token-refresh-race ws lift fe token-race   # new capsule joins the mission
+ws mission attach -m fix-token-refresh-race api token-race   # add an existing capsule
+ws mission note "Went with a mutex, not a channel"
+```
+
+**Which mission.** Commands that act on a mission take it from the slug argument or `-m/--mission`, then `$WS_MISSION`, then the mission owning the capsule you are standing in.
+
+**`WS_MISSION`.** With it set, `ws lift` and `ws dock` attach the new capsule to that mission and print one extra `→ mission <slug>` line. `ws status -f llm` gains a short mission header. Without it, those commands behave exactly as they always have. Burning or debriefing a capsule that belongs to a mission logs the burn there. The capsule stays listed (as burned) so its PR still counts.
+
+**State.** `draft` (nothing live yet), `active`, `review` (every capsule has a PR), and `landed` (every PR merged) are worked out from git and GitHub each time, so they never drift. `ws mission park`, `ws mission archive` and `ws mission reopen` set the two manual states. Archived missions are hidden from the list unless you pass `--all`.
+
+**Brief.** `brief.md` is yours. `ws mission new --brief "..."` or `--brief-file path|-` writes it without an editor. Agents add to the log with `ws mission note` rather than editing the brief.
+
+**Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 
 ---
 
