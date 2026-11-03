@@ -48,7 +48,7 @@ func newUpgradeCmd() *cobra.Command {
 			diff := config.Diff(oldCfg, newCfg)
 
 			if diff.IsEmpty() {
-				fmt.Fprintln(os.Stderr, "Already up to date.")
+				fmt.Fprintln(ui.Stderr, "Already up to date.")
 				return nil
 			}
 
@@ -70,14 +70,14 @@ func newUpgradeCmd() *cobra.Command {
 				var toClone []string
 				for _, name := range diff.Added {
 					if newCtx.WS.IsHidden(name) {
-						fmt.Fprintf(os.Stderr, "    %s is in hidden group %s — it will clone on first use\n", name, newCtx.WS.GroupOf(name))
+						fmt.Fprintf(ui.Stderr, "    %s is in hidden group %s — it will clone on first use\n", name, newCtx.WS.GroupOf(name))
 						continue
 					}
 					toClone = append(toClone, name)
 				}
 
 				if len(toClone) > 0 {
-					fmt.Fprintln(os.Stderr)
+					fmt.Fprintln(ui.Stderr)
 					clonedRepos, err := cloneRepos(newCtx.WS, toClone, os.Stderr)
 					if err != nil {
 						return err
@@ -90,11 +90,11 @@ func newUpgradeCmd() *cobra.Command {
 			refreshCtx, err := LoadContextFromDir(root)
 			if err == nil {
 				if err := ide.Regenerate(refreshCtx.WS.Root, refreshCtx.WS.Boarded, refreshCtx.WS.DisplayNames, refreshCtx.WS.Org); err != nil {
-					fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+					fmt.Fprintf(ui.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 				}
 			}
 
-			fmt.Fprintln(os.Stderr, "\nUpgrade complete.")
+			fmt.Fprintln(ui.Stderr, "\nUpgrade complete.")
 			return nil
 		},
 	}
@@ -120,20 +120,20 @@ func pullAndParse(root, configPath string) (*config.Config, error) {
 
 func printDiffSummary(diff config.ConfigDiff) {
 	if len(diff.Added) > 0 {
-		fmt.Fprintf(os.Stderr, "  %s %d new %s (%s)\n",
+		fmt.Fprintf(ui.Stderr, "  %s %d new %s (%s)\n",
 			ui.Green.Render("+"),
 			len(diff.Added),
 			pluralize(len(diff.Added), "repo", "repos"),
 			strings.Join(diff.Added, ", "))
 	}
 	if len(diff.Removed) > 0 {
-		fmt.Fprintf(os.Stderr, "  %s %d removed %s (%s)\n",
+		fmt.Fprintf(ui.Stderr, "  %s %d removed %s (%s)\n",
 			ui.Orange.Render("-"),
 			len(diff.Removed),
 			pluralize(len(diff.Removed), "repo", "repos"),
 			strings.Join(diff.Removed, ", "))
 		for _, name := range diff.Removed {
-			fmt.Fprintf(os.Stderr, "    %s is now orphaned — remove when ready\n", name)
+			fmt.Fprintf(ui.Stderr, "    %s is now orphaned — remove when ready\n", name)
 		}
 	}
 }

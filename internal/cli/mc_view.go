@@ -2,18 +2,20 @@ package cli
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/styles"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
 
+	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
 )
 
@@ -71,7 +73,15 @@ func (m mcModel) renderHeader() string {
 	return header + "\n" + border
 }
 
-func (m mcModel) View() string {
+func (m mcModel) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "Mission Control"
+	return v
+}
+
+func (m mcModel) render() string {
 	if m.width == 0 {
 		return "loading..."
 	}
@@ -96,16 +106,16 @@ func (m mcModel) View() string {
 	}
 	contentHeight := m.height - 3 - footerHeight // header(1) + border(1) + footer newline(1)
 
-	if m.listVP.Height != contentHeight {
-		m.listVP = viewport.New(listWidth, contentHeight)
-		m.detailVP = viewport.New(detailWidth, contentHeight)
+	if m.listVP.Height() != contentHeight {
+		m.listVP = viewport.New(viewport.WithWidth(listWidth), viewport.WithHeight(contentHeight))
+		m.detailVP = viewport.New(viewport.WithWidth(detailWidth), viewport.WithHeight(contentHeight))
 	}
 
 	leftContent := m.renderList(listWidth)
 	m.listVP.SetContent(leftContent)
 
 	rightContent := m.renderDetail(detailWidth)
-	savedYOffset := m.detailVP.YOffset
+	savedYOffset := m.detailVP.YOffset()
 	m.detailVP.SetContent(rightContent)
 	m.detailVP.SetYOffset(savedYOffset)
 
@@ -136,7 +146,7 @@ func (m mcModel) renderList(width int) string {
 
 	type repoGroup struct {
 		name      string
-		color     lipgloss.Color
+		color     color.Color
 		ground    *mcRow
 		groundIdx int
 		rows      []mcRow
@@ -152,15 +162,15 @@ func (m mcModel) renderList(width int) string {
 			if current != nil {
 				groups = append(groups, *current)
 			}
-			color := repoPalette[paletteIdx%len(repoPalette)]
+			groupColor := repoPalette[paletteIdx%len(repoPalette)]
 			if c, ok := m.ws.RepoColors[row.repo]; ok {
-				color = lipgloss.Color(c)
+				groupColor = lipgloss.Color(c)
 			} else {
 				paletteIdx++
 			}
 			current = &repoGroup{
 				name:  row.repo,
-				color: color,
+				color: groupColor,
 			}
 		} else if current != nil {
 			if row.kind == rowWorktree && row.wt == workspace.GroundDir {

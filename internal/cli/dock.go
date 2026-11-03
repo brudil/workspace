@@ -2,11 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 
 	"github.com/brudil/workspace/internal/github"
+	"github.com/brudil/workspace/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +40,7 @@ func resolveFromPR(gh github.Client, org, repo string, number int) (string, erro
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintf(os.Stderr, "  PR #%d: %s\n", pr.Number, pr.Title)
+	fmt.Fprintf(ui.Stderr, "  PR #%d: %s\n", pr.Number, pr.Title)
 	return pr.HeadRefName, nil
 }
 

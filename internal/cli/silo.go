@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"syscall"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +67,7 @@ func newSiloPointCmd() *cobra.Command {
 
 			// Create .silo/ worktree if doesn't exist (detached HEAD to avoid branch conflicts)
 			if _, err := os.Stat(siloDir); os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "  Creating silo for %s...\n", ctx.WS.FormatRepoName(repo))
+				fmt.Fprintf(ui.Stderr, "  Creating silo for %s...\n", ctx.WS.FormatRepoName(repo))
 				bareDir := ctx.WS.BareDir(repo)
 				if err := workspace.GitWorktreeAddDetached(bareDir, siloDir, ctx.WS.DefaultBranch); err != nil {
 					return fmt.Errorf("creating silo worktree: %w", err)
@@ -84,7 +84,7 @@ func newSiloPointCmd() *cobra.Command {
 			}
 
 			// Full sync
-			fmt.Fprintf(os.Stderr, "  Syncing %s -> .silo...\n", capsule)
+			fmt.Fprintf(ui.Stderr, "  Syncing %s -> .silo...\n", capsule)
 			if _, err := workspace.FullSync(capsuleDir, siloDir); err != nil {
 				return fmt.Errorf("syncing: %w", err)
 			}
@@ -101,21 +101,21 @@ func newSiloPointCmd() *cobra.Command {
 				hasHook = true
 			}
 			if hasHook {
-				fmt.Fprintf(os.Stderr, "  Running after_create hook...\n")
+				fmt.Fprintf(ui.Stderr, "  Running after_create hook...\n")
 				if err := workspace.RunHook(siloDir, hook, os.Stderr, os.Stderr); err != nil {
-					fmt.Fprintf(os.Stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
+					fmt.Fprintf(ui.Stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
 				}
 			}
 
 			// Run after_switch hook from ws.repo.toml
 			if repoCfg != nil && repoCfg.Silo.AfterSwitch != "" {
-				fmt.Fprintf(os.Stderr, "  Running after_switch hook...\n")
+				fmt.Fprintf(ui.Stderr, "  Running after_switch hook...\n")
 				if err := workspace.RunHook(siloDir, repoCfg.Silo.AfterSwitch, os.Stderr, os.Stderr); err != nil {
-					fmt.Fprintf(os.Stderr, "  %s after_switch hook failed: %v\n", ui.Orange.Render("⚠"), err)
+					fmt.Fprintf(ui.Stderr, "  %s after_switch hook failed: %v\n", ui.Orange.Render("⚠"), err)
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "  %s Silo for %s now points at %s\n",
+			fmt.Fprintf(ui.Stderr, "  %s Silo for %s now points at %s\n",
 				ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 			return nil
 		},
@@ -155,7 +155,7 @@ func newSiloStopCmd() *cobra.Command {
 			if err := config.SaveSilo(ctx.WS.Root, ctx.WS.Silo); err != nil {
 				return fmt.Errorf("saving silo state: %w", err)
 			}
-			fmt.Fprintf(os.Stderr, "  %s Removed silo for %s\n",
+			fmt.Fprintf(ui.Stderr, "  %s Removed silo for %s\n",
 				ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo))
 			return nil
 		},
@@ -173,7 +173,7 @@ func newSiloStatusCmd() *cobra.Command {
 				return err
 			}
 			if len(ctx.WS.Silo) == 0 {
-				fmt.Fprintf(os.Stderr, "No active silos.\n")
+				fmt.Fprintf(ui.Stderr, "No active silos.\n")
 				return nil
 			}
 			lockPath := filepath.Join(ctx.WS.Root, ".silo.lock")
@@ -191,7 +191,7 @@ func newSiloStatusCmd() *cobra.Command {
 				if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 					status = "target missing"
 				}
-				fmt.Fprintf(os.Stderr, "  %-20s %-20s (%s)\n",
+				fmt.Fprintf(ui.Stderr, "  %-20s %-20s (%s)\n",
 					ctx.WS.FormatRepoName(repo), target, status)
 			}
 			return nil

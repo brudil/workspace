@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // lineWriter is an io.Writer that splits written bytes into lines and sends
@@ -176,7 +176,7 @@ func (m capsuleCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.op.spinner = m.spinner
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -199,9 +199,11 @@ func (m capsuleCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m capsuleCreateModel) View() string {
+func (m capsuleCreateModel) View() tea.View { return tea.NewView(m.render()) }
+
+func (m capsuleCreateModel) render() string {
 	var b strings.Builder
-	b.WriteString(m.op.View())
+	b.WriteString(m.op.render())
 
 	if m.hasHook {
 		if m.phase == 0 {

@@ -1,6 +1,6 @@
 package cli
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // isQuitCmd returns true if cmd produces a tea.QuitMsg when invoked.
 func isQuitCmd(cmd tea.Cmd) bool {

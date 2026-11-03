@@ -6,14 +6,14 @@ import (
 	"strings"
 	"sync"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -107,7 +107,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 	}
 
 	if len(capsules) == 0 {
-		fmt.Fprintln(os.Stderr, "\nAll clear — no capsules in orbit.")
+		fmt.Fprintln(ui.Stderr, "\nAll clear — no capsules in orbit.")
 		return nil
 	}
 
@@ -118,7 +118,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(ui.Stderr)
 
 	// Compute column widths for aligned output.
 	var maxRepoW, maxTagW int
@@ -144,7 +144,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 		if c.Merged || c.Inactive {
 			forceBurn := c.Dirty && c.Merged && burnDirtyLanded
 			if c.Dirty && !forceBurn {
-				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, but %d uncommitted files — skipped\n",
+				fmt.Fprintf(ui.Stderr, "  %s %s%s %s%s %s, but %d uncommitted files — skipped\n",
 					ui.Red.Render("✗"), repoName, repoPad, tag, tagPad,
 					debriefReason(c), c.DirtyCount,
 				)
@@ -156,7 +156,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 				}
 
 				if err := ctx.WS.RemoveWorktree(c.Repo, c.Name, forceBurn); err != nil {
-					fmt.Fprintf(os.Stderr, "  %s %s%s %s%s failed to remove: %v\n",
+					fmt.Fprintf(ui.Stderr, "  %s %s%s %s%s failed to remove: %v\n",
 						ui.Red.Render("✗"), repoName, repoPad, tag, tagPad, err,
 					)
 					skipped++
@@ -169,10 +169,10 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 					siloDir := ctx.WS.SiloWorktree(c.Repo)
 					groundDir := ctx.WS.MainWorktree(c.Repo)
 					if _, err := workspace.FullSync(groundDir, siloDir); err != nil {
-						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
+						fmt.Fprintf(ui.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
 					} else {
 						siloChanged = true
-						fmt.Fprintf(os.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
+						fmt.Fprintf(ui.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
 					}
 				}
 
@@ -180,14 +180,14 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 				if forceBurn {
 					suffix = fmt.Sprintf("%s — force-removed", ui.Orange.Render(fmt.Sprintf("%d uncommitted", c.DirtyCount)))
 				}
-				fmt.Fprintf(os.Stderr, "  %s %s%s %s%s %s, %s\n",
+				fmt.Fprintf(ui.Stderr, "  %s %s%s %s%s %s, %s\n",
 					ui.Green.Render("✓"), repoName, repoPad, tag, tagPad, debriefReason(c), suffix,
 				)
 				debriefed++
 			}
 		} else {
 			extra := orbitExtra(c, prsByBranch)
-			fmt.Fprintf(os.Stderr, "  %s %s%s %s%s still in orbit%s\n",
+			fmt.Fprintf(ui.Stderr, "  %s %s%s %s%s still in orbit%s\n",
 				ui.Dim.Render("-"), repoName, repoPad, tag, tagPad, extra,
 			)
 			inOrbit++
@@ -197,14 +197,14 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 	if boardChanged {
 		config.SaveBoarded(ctx.WS.Root, ctx.WS.Boarded)
 		if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+			fmt.Fprintf(ui.Stderr, "\n  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 		}
 	}
 	if siloChanged {
 		config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(ui.Stderr)
 	summary := fmt.Sprintf("Debriefed %d capsule", debriefed)
 	if debriefed != 1 {
 		summary += "s"
@@ -216,7 +216,7 @@ func runDebrief(ctx *Context, days int, repoFilter string, burnDirtyLanded bool)
 	if inOrbit > 0 {
 		summary += fmt.Sprintf(" %d still in orbit.", inOrbit)
 	}
-	fmt.Fprintln(os.Stderr, summary)
+	fmt.Fprintln(ui.Stderr, summary)
 
 	return nil
 }
@@ -376,7 +376,7 @@ func (m debriefModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -402,7 +402,9 @@ func (m debriefModel) runFetchPRs() tea.Cmd {
 	}
 }
 
-func (m debriefModel) View() string {
+func (m debriefModel) View() tea.View { return tea.NewView(m.render()) }
+
+func (m debriefModel) render() string {
 	var b strings.Builder
 
 	// Aligning ground

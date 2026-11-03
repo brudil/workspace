@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
@@ -56,10 +55,10 @@ func newBoardToggleCmd(use, short, verb string, op func(*Context, string, string
 			}
 
 			if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
-				fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+				fmt.Fprintf(ui.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 			}
 
-			fmt.Fprintf(os.Stderr, "  %s %s %s %s\n", ui.Green.Render("✓"), verb, ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
+			fmt.Fprintf(ui.Stderr, "  %s %s %s %s\n", ui.Green.Render("✓"), verb, ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 			return nil
 		},
 	}

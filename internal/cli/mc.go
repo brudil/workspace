@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +26,7 @@ func newMCCmd() *cobra.Command {
 
 			cwd, _ := os.Getwd()
 			m := newMCModel(ctx.WS, ctx.GitHub, cwd)
-			p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(os.Stderr))
+			p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 			finalModel, err := p.Run()
 			if err != nil {
 				return err

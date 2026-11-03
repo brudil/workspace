@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/brudil/workspace/internal/config"
+	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,7 @@ func newInitCmd() *cobra.Command {
 			}
 
 			// Clone the workspace config repo
-			fmt.Fprintf(os.Stderr, "Cloning workspace config into %s...\n", dirName)
+			fmt.Fprintf(ui.Stderr, "Cloning workspace config into %s...\n", dirName)
 			if err := workspace.GitClone(repoURL, absDir); err != nil {
 				return fmt.Errorf("failed to clone config repo: %w", err)
 			}
@@ -79,7 +80,7 @@ func newInitCmd() *cobra.Command {
 			workspace.DisableWorkspaceGit(ctx.WS.Root)
 			runAfterCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
 
-			fmt.Fprintf(os.Stderr, "\nWorkspace ready. %d repos cloned.\n", len(clonedRepos))
+			fmt.Fprintf(ui.Stderr, "\nWorkspace ready. %d repos cloned.\n", len(clonedRepos))
 
 			// Print the workspace path to stdout for shell integration: cd $(ws init ...)
 			fmt.Printf("cd %s\n", shellQuote(absDir))

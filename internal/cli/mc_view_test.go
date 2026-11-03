@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textinput"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/textinput"
 )
 
 func viewMCModel() mcModel {
@@ -68,7 +68,7 @@ func TestView_ZeroWidth(t *testing.T) {
 	m := viewMCModel()
 	m.width = 0
 
-	got := m.View()
+	got := plainView(m)
 	if got != "loading..." {
 		t.Errorf("View() = %q, want %q", got, "loading...")
 	}
@@ -101,7 +101,7 @@ func TestView_ShowHelp(t *testing.T) {
 	m := viewMCModel()
 	m.showHelp = true
 
-	got := m.View()
+	got := plainView(m)
 	if !strings.Contains(got, "Mission Control") {
 		t.Error("help overlay should contain 'Mission Control'")
 	}

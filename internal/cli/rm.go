@@ -66,19 +66,19 @@ func newBurnCmd() *cobra.Command {
 			}
 
 			if check.IsDirty {
-				fmt.Fprintf(os.Stderr, "  %s Worktree %s/%s has uncommitted changes\n", ui.Orange.Render("⚠"), ctx.WS.FormatRepoName(repo), capsule)
+				fmt.Fprintf(ui.Stderr, "  %s Worktree %s/%s has uncommitted changes\n", ui.Orange.Render("⚠"), ctx.WS.FormatRepoName(repo), capsule)
 				confirmed, err := ui.Confirm("Remove anyway?")
 				if err != nil {
 					return err
 				}
 				if !confirmed {
-					fmt.Fprintf(os.Stderr, "  %s Aborted\n", ui.Dim.Render("·"))
+					fmt.Fprintf(ui.Stderr, "  %s Aborted\n", ui.Dim.Render("·"))
 					return nil
 				}
 			}
 
 			if target, ok := ctx.WS.Silo[repo]; ok && target == capsule {
-				fmt.Fprintf(os.Stderr, "  %s Capsule %s/%s is an active silo target\n",
+				fmt.Fprintf(ui.Stderr, "  %s Capsule %s/%s is an active silo target\n",
 					ui.Orange.Render("⚠"), ctx.WS.FormatRepoName(repo), capsule)
 				repoint, err := ui.Confirm("Repoint silo to .ground?")
 				if err != nil {
@@ -89,10 +89,10 @@ func newBurnCmd() *cobra.Command {
 					siloDir := ctx.WS.SiloWorktree(repo)
 					groundDir := ctx.WS.MainWorktree(repo)
 					if _, err := workspace.FullSync(groundDir, siloDir); err != nil {
-						fmt.Fprintf(os.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
+						fmt.Fprintf(ui.Stderr, "  %s silo re-sync failed: %v\n", ui.Orange.Render("⚠"), err)
 					}
 					config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
-					fmt.Fprintf(os.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
+					fmt.Fprintf(ui.Stderr, "  %s Silo repointed to .ground\n", ui.Green.Render("✓"))
 				} else {
 					delete(ctx.WS.Silo, repo)
 					config.SaveSilo(ctx.WS.Root, ctx.WS.Silo)
@@ -103,7 +103,7 @@ func newBurnCmd() *cobra.Command {
 				ctx.WS.Unboard(repo, capsule)
 				config.SaveBoarded(ctx.WS.Root, ctx.WS.Boarded)
 				if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
-					fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+					fmt.Fprintf(ui.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 				}
 			}
 
@@ -111,10 +111,10 @@ func newBurnCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(os.Stderr, "  %s Removed %s %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
+			fmt.Fprintf(ui.Stderr, "  %s Removed %s %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 
 			if burningShellDir {
-				fmt.Fprintf(os.Stderr, "  %s Back to workspace root\n", ui.Dim.Render("·"))
+				fmt.Fprintf(ui.Stderr, "  %s Back to workspace root\n", ui.Dim.Render("·"))
 			}
 			return nil
 		},

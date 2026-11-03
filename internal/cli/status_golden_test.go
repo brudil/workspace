@@ -38,7 +38,7 @@ func goldenStatusModel() statusModel {
 
 func TestGolden_Status_BasicView(t *testing.T) {
 	m := goldenStatusModel()
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_Status_WithPRs(t *testing.T) {
@@ -55,7 +55,7 @@ func TestGolden_Status_WithPRs(t *testing.T) {
 		},
 	}
 	m.repos[0].prsLoaded = true
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_Status_RepoError(t *testing.T) {
@@ -65,7 +65,7 @@ func TestGolden_Status_RepoError(t *testing.T) {
 		name: "backend",
 		err:  fmt.Errorf("permission denied: repos/backend"),
 	})
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_Status_MultipleRepos(t *testing.T) {
@@ -81,7 +81,7 @@ func TestGolden_Status_MultipleRepos(t *testing.T) {
 	})
 	m.total = 6
 	m.done = 6
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_Status_Loading(t *testing.T) {
@@ -91,5 +91,5 @@ func TestGolden_Status_Loading(t *testing.T) {
 	for i := range m.repos[0].worktrees {
 		m.repos[0].worktrees[i].loaded = false
 	}
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }

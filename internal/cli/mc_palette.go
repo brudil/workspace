@@ -6,15 +6,15 @@ import (
 	"sort"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // --- palette styles ---
 
-const paletteSelBg = lipgloss.Color("236")
+var paletteSelBg = lipgloss.Color("236")
 
 var (
 	paletteBg         lipgloss.Style
@@ -169,7 +169,7 @@ func (m mcModel) availableCommands() []paletteCommand {
 
 // --- key handling ---
 
-func (m mcModel) handlePaletteKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
+func (m mcModel) handlePaletteKey(msg tea.KeyPressMsg) (mcModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.paletteInput.SetValue("")

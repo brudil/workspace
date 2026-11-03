@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type repoState int
@@ -148,7 +148,7 @@ func (m operationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -157,7 +157,9 @@ func (m operationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m operationModel) View() string {
+func (m operationModel) View() tea.View { return tea.NewView(m.render()) }
+
+func (m operationModel) render() string {
 	var b strings.Builder
 
 	for _, r := range m.repos {
@@ -211,6 +213,7 @@ func runOperationSync(repoNames []string, displayNames map[string]string, op ope
 
 // fprintResults prints sync results to the given writer.
 func fprintResults(w io.Writer, results []repoEntry) {
+	w = ui.Writer(w)
 	for _, r := range results {
 		switch r.state {
 		case repoDone:
@@ -255,11 +258,12 @@ func cloneRepos(ws *workspace.Workspace, repoNames []string, output io.Writer) (
 
 // runAfterCreateHooks runs after_create hooks for the given repos.
 func runAfterCreateHooks(ws *workspace.Workspace, repos []string, stdout, stderr io.Writer) {
+	msgs := ui.Writer(stderr)
 	for _, repo := range repos {
 		if hook, ok := ws.AfterCreateHooks[repo]; ok {
-			fmt.Fprintf(stderr, "\n  Running after_create hook for %s...\n", ws.FormatRepoName(repo))
+			fmt.Fprintf(msgs, "\n  Running after_create hook for %s...\n", ws.FormatRepoName(repo))
 			if err := workspace.RunHook(ws.MainWorktree(repo), hook, stdout, stderr); err != nil {
-				fmt.Fprintf(stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
+				fmt.Fprintf(msgs, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), err)
 			}
 		}
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/spinner"
+	"charm.land/bubbles/v2/spinner"
 )
 
 func TestLineWriter_MultiLine(t *testing.T) {
@@ -182,7 +182,7 @@ func TestCapsuleCreateModel_ViewShowsPendingHook(t *testing.T) {
 	}
 
 	m := newCapsuleCreateModel(op, true, func() string { return "/tmp" }, "echo hi")
-	v := m.View()
+	v := plainView(m)
 
 	if !strings.Contains(v, "Running hooks") {
 		t.Error("should show pending 'Running hooks'")

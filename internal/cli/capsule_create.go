@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type createCapsuleFn func() (string, error)
@@ -86,7 +86,7 @@ func runCapsuleCreate(ctx *Context, repo string, branch string, createWorktree c
 		}
 	} else {
 		results := runOperationSync(stepNames, nil, op, true)
-		fprintResults(os.Stderr, results)
+		fprintResults(ui.Stderr, results)
 		if hasHook && capsule != "" {
 			wtPath := filepath.Join(ctx.WS.RepoDir(repo), capsule)
 			if err := workspace.RunHook(wtPath, hook, os.Stderr, os.Stderr); err != nil {
@@ -102,22 +102,22 @@ func runCapsuleCreate(ctx *Context, repo string, branch string, createWorktree c
 	wtPath := filepath.Join(ctx.WS.RepoDir(repo), capsule)
 
 	if hookErr != nil {
-		fmt.Fprintf(os.Stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), hookErr)
+		fmt.Fprintf(ui.Stderr, "  %s after_create hook failed: %v\n", ui.Orange.Render("⚠"), hookErr)
 	}
 
 	if len(copySkipped) > 0 {
-		fmt.Fprintf(os.Stderr, "  %s copy_from_ground: skipped missing files: %s\n",
+		fmt.Fprintf(ui.Stderr, "  %s copy_from_ground: skipped missing files: %s\n",
 			ui.Orange.Render("⚠"), strings.Join(copySkipped, ", "))
 	}
 
 	if err := ctx.WS.Board(repo, capsule); err == nil {
 		config.SaveBoarded(ctx.WS.Root, ctx.WS.Boarded)
 		if err := ide.Regenerate(ctx.WS.Root, ctx.WS.Boarded, ctx.WS.DisplayNames, ctx.WS.Org); err != nil {
-			fmt.Fprintf(os.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
+			fmt.Fprintf(ui.Stderr, "  %s workspace files: %v\n", ui.Orange.Render("⚠"), err)
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\n%s %s %s is ready for work.\n", successMsg, ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
+	fmt.Fprintf(ui.Stderr, "\n%s %s %s is ready for work.\n", successMsg, ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule))
 	fmt.Printf("cd %s\n", shellQuote(wtPath))
 	return nil
 }

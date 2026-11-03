@@ -4,14 +4,14 @@ import (
 	"os"
 	"os/exec"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/ide"
 	tmuxpkg "github.com/brudil/workspace/internal/tmux"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
+func (m mcModel) handleKey(msg tea.KeyPressMsg) (mcModel, tea.Cmd) {
 	// Filter mode: route keys to textinput
 	if m.filterActive {
 		switch msg.String() {
@@ -110,10 +110,10 @@ func (m mcModel) handleKey(msg tea.KeyMsg) (mcModel, tea.Cmd) {
 
 	case "J", "shift+down":
 		m.syncDetailContent()
-		m.detailVP.LineDown(3)
+		m.detailVP.ScrollDown(3)
 	case "K", "shift+up":
 		m.syncDetailContent()
-		m.detailVP.LineUp(3)
+		m.detailVP.ScrollUp(3)
 
 	case "left", "h":
 		if m.isOnGround() {
