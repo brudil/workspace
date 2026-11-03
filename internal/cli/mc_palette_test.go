@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestAvailableCommands_ScopeWorktree(t *testing.T) {
@@ -117,7 +117,7 @@ func TestHandlePaletteKey_Esc(t *testing.T) {
 	}
 	m.paletteInput.SetValue("test")
 
-	m, _ = m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = m.handlePaletteKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 
 	if m.paletteActive {
 		t.Error("palette should be deactivated on esc")
@@ -141,19 +141,19 @@ func TestHandlePaletteKey_Navigation(t *testing.T) {
 	}
 
 	// Down moves cursor
-	m, _ = m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = m.handlePaletteKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.paletteCursor != 1 {
 		t.Errorf("expected paletteCursor=1 after down, got %d", m.paletteCursor)
 	}
 
 	// Up moves cursor back
-	m, _ = m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyUp})
+	m, _ = m.handlePaletteKey(tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.paletteCursor != 0 {
 		t.Errorf("expected paletteCursor=0 after up, got %d", m.paletteCursor)
 	}
 
 	// Up at 0 stays at 0
-	m, _ = m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyUp})
+	m, _ = m.handlePaletteKey(tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.paletteCursor != 0 {
 		t.Errorf("expected paletteCursor=0 at top boundary, got %d", m.paletteCursor)
 	}

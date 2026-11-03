@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func baseMCModel() mcModel {

@@ -1,10 +1,11 @@
 package cli
 
 import (
+	"image/color"
 	"path/filepath"
 
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m mcModel) isOnGround() bool {
@@ -132,14 +133,14 @@ func (m *mcModel) ensureCursorVisible() {
 		lineIdx++
 	}
 
-	if lineIdx < m.listVP.YOffset {
+	if lineIdx < m.listVP.YOffset() {
 		m.listVP.SetYOffset(lineIdx)
-	} else if lineIdx >= m.listVP.YOffset+m.listVP.Height {
-		m.listVP.SetYOffset(lineIdx - m.listVP.Height + 1)
+	} else if lineIdx >= m.listVP.YOffset()+m.listVP.Height() {
+		m.listVP.SetYOffset(lineIdx - m.listVP.Height() + 1)
 	}
 }
 
-func (m mcModel) repoColorFor(repoName string) lipgloss.Color {
+func (m mcModel) repoColorFor(repoName string) color.Color {
 	if c, ok := m.ws.RepoColors[repoName]; ok {
 		return lipgloss.Color(c)
 	}

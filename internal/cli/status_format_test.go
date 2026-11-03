@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ui"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func TestComputeColumns(t *testing.T) {

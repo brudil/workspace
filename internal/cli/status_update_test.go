@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func baseStatusModel() statusModel {
@@ -153,7 +153,7 @@ func TestStatusUpdate_RepoPRsMsg_Error(t *testing.T) {
 
 func TestStatusUpdate_KeyQ(t *testing.T) {
 	m := baseStatusModel()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if !isQuitCmd(cmd) {
 		t.Error("expected tea.Quit on 'q'")
 	}
@@ -161,7 +161,7 @@ func TestStatusUpdate_KeyQ(t *testing.T) {
 
 func TestStatusUpdate_KeyCtrlC(t *testing.T) {
 	m := baseStatusModel()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !isQuitCmd(cmd) {
 		t.Error("expected tea.Quit on ctrl+c")
 	}

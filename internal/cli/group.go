@@ -48,7 +48,7 @@ func ensureCloned(ws *workspace.Workspace, repo string) error {
 	if err := ws.EnsureReposDir(); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s is not cloned yet, cloning it now.\n", ws.FormatRepoName(repo))
+	fmt.Fprintf(ui.Stderr, "%s is not cloned yet, cloning it now.\n", ws.FormatRepoName(repo))
 	cloned, err := cloneRepos(ws, []string{repo}, os.Stderr)
 	if err != nil {
 		return err
@@ -93,7 +93,7 @@ reset change visibility for you only, in ws.local.toml.`,
 func runGroupList(ctx *Context) error {
 	groups := ctx.WS.GroupNames()
 	if len(groups) == 0 {
-		fmt.Fprintln(os.Stderr, "No groups. Add group = \"<name>\" to repos in ws.toml.")
+		fmt.Fprintln(ui.Stderr, "No groups. Add group = \"<name>\" to repos in ws.toml.")
 		return nil
 	}
 	width := 0
@@ -110,7 +110,7 @@ func runGroupList(ctx *Context) error {
 		if len(repos) > 0 {
 			list = strings.Join(repos, ", ")
 		}
-		fmt.Fprintf(os.Stderr, "  %-*s  %s  %s\n", width, g, state, list)
+		fmt.Fprintf(ui.Stderr, "  %-*s  %s  %s\n", width, g, state, list)
 	}
 	return nil
 }
@@ -134,10 +134,10 @@ func newGroupVisibilityCmd(use, short string, hidden bool) *cobra.Command {
 				return fmt.Errorf("saving group visibility: %w", err)
 			}
 			if hidden {
-				fmt.Fprintf(os.Stderr, "Hid %s.\n", group)
+				fmt.Fprintf(ui.Stderr, "Hid %s.\n", group)
 				return nil
 			}
-			fmt.Fprintf(os.Stderr, "Showing %s.\n", group)
+			fmt.Fprintf(ui.Stderr, "Showing %s.\n", group)
 			return cloneGroup(ctx.WS, group)
 		},
 	}
@@ -166,10 +166,10 @@ func newGroupResetCmd() *cobra.Command {
 				return err
 			}
 			if reloaded.WS.HiddenGroups[group] {
-				fmt.Fprintf(os.Stderr, "Reset %s to the team default: hidden.\n", group)
+				fmt.Fprintf(ui.Stderr, "Reset %s to the team default: hidden.\n", group)
 				return nil
 			}
-			fmt.Fprintf(os.Stderr, "Reset %s to the team default: shown.\n", group)
+			fmt.Fprintf(ui.Stderr, "Reset %s to the team default: shown.\n", group)
 			return cloneGroup(reloaded.WS, group)
 		},
 	}
@@ -204,7 +204,7 @@ func cloneGroup(ws *workspace.Workspace, group string) error {
 	if err := ws.EnsureReposDir(); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(ui.Stderr)
 	cloned, err := cloneRepos(ws, missing, os.Stderr)
 	if err != nil {
 		return err

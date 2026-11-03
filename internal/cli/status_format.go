@@ -2,11 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ui"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // wtColumns holds precomputed column widths for aligning worktree indicators.
@@ -119,7 +120,7 @@ func formatWorktreeLine(wt worktreeView, isBoarded bool, cols wtColumns, pr *git
 }
 
 // Palette of colors for repo left borders — each repo gets a unique color.
-var repoPalette = []lipgloss.Color{
+var repoPalette = []color.Color{
 	lipgloss.Color("63"),  // purple-blue
 	lipgloss.Color("43"),  // teal
 	lipgloss.Color("168"), // pink
@@ -130,7 +131,7 @@ var repoPalette = []lipgloss.Color{
 
 // renderRepoBlock renders content lines with a colored left border.
 // The line at ruleIdx gets a ├─ connector instead of │ .
-func renderRepoBlock(contentLines []string, ruleIdx int, borderColor lipgloss.Color) string {
+func renderRepoBlock(contentLines []string, ruleIdx int, borderColor color.Color) string {
 	bStyle := lipgloss.NewStyle().Foreground(borderColor)
 	var out []string
 	for i, line := range contentLines {

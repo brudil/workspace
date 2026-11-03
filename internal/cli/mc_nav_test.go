@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func TestFilteredRowCount(t *testing.T) {

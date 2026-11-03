@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
@@ -41,9 +40,9 @@ func printDoctorResults(categories []workspace.CheckCategory, fix bool) bool {
 
 	for i, cat := range categories {
 		if i > 0 {
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(ui.Stderr)
 		}
-		fmt.Fprintln(os.Stderr, ui.Bold.Render(cat.Name))
+		fmt.Fprintln(ui.Stderr, ui.Bold.Render(cat.Name))
 
 		for _, check := range cat.Checks {
 			// Attempt fix if --fix and a Fix function exists
@@ -75,11 +74,11 @@ func printDoctorResults(categories []workspace.CheckCategory, fix bool) bool {
 					detail = " — " + check.Detail
 				}
 			}
-			fmt.Fprintf(os.Stderr, "  %s %s%s\n", icon, check.Name, detail)
+			fmt.Fprintf(ui.Stderr, "  %s %s%s\n", icon, check.Name, detail)
 
 			// Print hint if --fix and a hint exists
 			if fix && check.FixHint != "" && check.Status != workspace.CheckOK {
-				fmt.Fprintf(os.Stderr, "    %s %s\n", ui.Dim.Render("hint:"), check.FixHint)
+				fmt.Fprintf(ui.Stderr, "    %s %s\n", ui.Dim.Render("hint:"), check.FixHint)
 			}
 		}
 	}

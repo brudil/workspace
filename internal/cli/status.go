@@ -2,16 +2,17 @@ package cli
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -205,7 +206,7 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -214,7 +215,9 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m statusModel) View() string {
+func (m statusModel) View() tea.View { return tea.NewView(m.render()) }
+
+func (m statusModel) render() string {
 	var b strings.Builder
 
 	// Header
@@ -222,7 +225,7 @@ func (m statusModel) View() string {
 
 	// First pass: build headers and find max width for consistent underlines
 	headers := make([]string, len(m.repos))
-	repoColors := make([]lipgloss.Color, len(m.repos))
+	repoColors := make([]color.Color, len(m.repos))
 	maxHeaderWidth := 0
 	paletteIdx := 0
 	for i, repo := range m.repos {

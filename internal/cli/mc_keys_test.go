@@ -5,23 +5,24 @@ import (
 	"path/filepath"
 	"testing"
 
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-// keyMsg builds a tea.KeyMsg from a string like "q", "ctrl+c", "esc", etc.
-func keyMsg(key string) tea.KeyMsg {
+// keyMsg builds a tea.KeyPressMsg from a string like "q", "ctrl+c", "esc", etc.
+func keyMsg(key string) tea.KeyPressMsg {
 	switch key {
 	case "ctrl+c":
-		return tea.KeyMsg{Type: tea.KeyCtrlC}
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	default:
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		r := []rune(key)[0]
+		return tea.KeyPressMsg{Code: r, Text: key}
 	}
 }
 

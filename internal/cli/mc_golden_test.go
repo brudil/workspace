@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	"github.com/brudil/workspace/internal/github"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/x/exp/golden"
 )
 
@@ -69,7 +69,7 @@ func goldenMCModel() mcModel {
 func TestGolden_MC_BasicTwoRepo(t *testing.T) {
 	pinClock(t)
 	m := goldenMCModel()
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_WithPR(t *testing.T) {
@@ -85,7 +85,7 @@ func TestGolden_MC_WithPR(t *testing.T) {
 		URL:            "https://github.com/acme/frontend/pull/42",
 		Author:         "alice",
 	}
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_GhostPRRow(t *testing.T) {
@@ -108,7 +108,7 @@ func TestGolden_MC_GhostPRRow(t *testing.T) {
 		},
 	}
 	m.rows = append(m.rows[:5], append([]mcRow{ghost}, m.rows[5:]...)...)
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_FilterActive(t *testing.T) {
@@ -116,21 +116,21 @@ func TestGolden_MC_FilterActive(t *testing.T) {
 	m := goldenMCModel()
 	m.activeFilters = filterLocal | filterDirty
 	m.ensureCursorOnVisible()
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_ConfirmDialog(t *testing.T) {
 	pinClock(t)
 	m := goldenMCModel()
 	m.confirmIdx = 2 // feat-auth row
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_HelpOverlay(t *testing.T) {
 	pinClock(t)
 	m := goldenMCModel()
 	m.showHelp = true
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_DetailLoaded(t *testing.T) {
@@ -147,7 +147,7 @@ func TestGolden_MC_DetailLoaded(t *testing.T) {
 		diffStat:   " 5 files changed, 142 insertions(+), 23 deletions(-)",
 		stashCount: 1,
 	}
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_DetailWithPRAndChecks(t *testing.T) {
@@ -180,7 +180,7 @@ func TestGolden_MC_DetailWithPRAndChecks(t *testing.T) {
 			{Name: "test-e2e", Conclusion: "SUCCESS"},
 		},
 	}
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_GroundDetail(t *testing.T) {
@@ -201,7 +201,7 @@ func TestGolden_MC_GroundDetail(t *testing.T) {
 			{Name: "Nightly", Status: "in_progress", Conclusion: "", CreatedAt: "2020-01-15T11:00:00Z"},
 		},
 	}
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_MergedRow(t *testing.T) {
@@ -209,7 +209,7 @@ func TestGolden_MC_MergedRow(t *testing.T) {
 	m := goldenMCModel()
 	m.rows[3].merged = true // fix-styles is merged
 	m.cursor = 3
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_BoardedRow(t *testing.T) {
@@ -217,7 +217,7 @@ func TestGolden_MC_BoardedRow(t *testing.T) {
 	m := goldenMCModel()
 	// feat-auth is already boarded; move cursor there to see detail
 	m.cursor = 2
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }
 
 func TestGolden_MC_PaletteOpen(t *testing.T) {
@@ -225,5 +225,5 @@ func TestGolden_MC_PaletteOpen(t *testing.T) {
 	m := goldenMCModel()
 	m.paletteActive = true
 	m.paletteInput.Focus()
-	golden.RequireEqual(t, m.View())
+	golden.RequireEqual(t, plainView(m))
 }

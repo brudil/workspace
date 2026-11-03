@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
 	tmuxpkg "github.com/brudil/workspace/internal/tmux"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
 	gh "github.com/cli/go-gh/v2"
 )
 
@@ -29,7 +29,6 @@ func (m mcModel) Init() tea.Cmd {
 	}
 	cmds = append(cmds, m.scheduleDetailFetch())
 	cmds = append(cmds, fetchGhUser())
-	cmds = append(cmds, tea.SetWindowTitle("Mission Control"))
 	if tmuxpkg.InTmux() {
 		cmds = append(cmds, queryTmuxWindows())
 	}
@@ -120,8 +119,8 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 			footerHeight = m.paletteHeight()
 		}
 		contentHeight := m.height - 3 - footerHeight // header(1) + border(1) + footer newline(1)
-		m.listVP = viewport.New(listWidth, contentHeight)
-		m.detailVP = viewport.New(detailWidth, contentHeight)
+		m.listVP = viewport.New(viewport.WithWidth(listWidth), viewport.WithHeight(contentHeight))
+		m.detailVP = viewport.New(viewport.WithWidth(detailWidth), viewport.WithHeight(contentHeight))
 		return m, nil
 
 	case mcWtStatusMsg:
@@ -267,12 +266,13 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 		return m.rebuildModel()
 
 	case tea.MouseMsg:
+		mouse := msg.Mouse()
 		listWidth := m.width * 2 / 5
-		if msg.X < listWidth {
+		if mouse.X < listWidth {
 			// Left click on a row moves the cursor
-			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if _, isClick := msg.(tea.MouseClickMsg); isClick && mouse.Button == tea.MouseLeft {
 				headerLines := 2 // header + border
-				contentLine := msg.Y - headerLines + m.listVP.YOffset
+				contentLine := mouse.Y - headerLines + m.listVP.YOffset()
 				if rowIdx := m.lineToRowIndex(contentLine); rowIdx >= 0 {
 					m.cursor = rowIdx
 					return m, nil
@@ -288,7 +288,7 @@ func (m mcModel) handleMsg(msg tea.Msg) (mcModel, tea.Cmd) {
 		m.detailVP, cmd = m.detailVP.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 

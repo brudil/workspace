@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 )
 
 func baseOperationModel(parallel bool) operationModel {
@@ -106,7 +106,7 @@ func TestOperationUpdate_Sequential_StartsNext(t *testing.T) {
 func TestOperationUpdate_KeyCtrlC(t *testing.T) {
 	m := baseOperationModel(true)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !isQuitCmd(cmd) {
 		t.Error("expected tea.Quit on ctrl+c")
 	}

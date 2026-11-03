@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -80,7 +81,7 @@ Examples:
 		err := runRg(cmd, args)
 		var exit *ExitCodeError
 		if err != nil && !errors.As(err, &exit) {
-			fmt.Fprintf(os.Stderr, "ws rg: %v\n", err)
+			fmt.Fprintf(ui.Stderr, "ws rg: %v\n", err)
 		}
 		return err
 	}

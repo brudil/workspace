@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +38,7 @@ are skipped (they clone on first use); pass --group to clone a group.`,
 			workspace.DisableWorkspaceGit(ctx.WS.Root)
 			runAfterCreateHooks(ctx.WS, clonedRepos, os.Stderr, os.Stderr)
 
-			fmt.Fprintln(os.Stderr, "\nSetup complete. Run 'ws open' to open in your editor.")
+			fmt.Fprintln(ui.Stderr, "\nSetup complete. Run 'ws open' to open in your editor.")
 			return nil
 		},
 	}

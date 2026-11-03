@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 const maxSyncHistory = 3
@@ -152,7 +152,7 @@ func (m siloWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -170,7 +170,9 @@ func (m siloWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m siloWatchModel) View() string {
+func (m siloWatchModel) View() tea.View { return tea.NewView(m.render()) }
+
+func (m siloWatchModel) render() string {
 	var b strings.Builder
 
 	header := fmt.Sprintf("  %s Watching", m.spinner.View())
