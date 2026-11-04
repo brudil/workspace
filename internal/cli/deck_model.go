@@ -23,6 +23,7 @@ const (
 	deckRowCapsule
 	deckRowLooseHeader
 	deckRowLoose
+	deckRowCrew
 )
 
 // deckRow is one selectable line of the sidebar.
@@ -30,6 +31,7 @@ type deckRow struct {
 	kind    deckRowKind
 	mission int // index into data.Missions (mission and capsule rows)
 	capsule int // index into the mission's Capsules, or into data.Loose
+	run     *deckCrewRun
 }
 
 // key identifies a row across reloads so the cursor stays put.
@@ -42,6 +44,8 @@ func (r deckRow) key(d deckData) string {
 		return "c:" + d.Missions[r.mission].M.Slug + ":" + c.Repo + "/" + c.Name
 	case deckRowLooseHeader:
 		return "loose"
+	case deckRowCrew:
+		return r.run.key()
 	default:
 		c := d.Loose[r.capsule]
 		return "l:" + c.Repo + "/" + c.Name
@@ -99,12 +103,14 @@ type deckModel struct {
 
 	flash string
 
-	// Crew the deck launched, by mission slug, and launches in progress.
-	crew      map[string]*deckCrewRun
-	launching map[string]bool
-	focusTerm bool // keys go to the selected mission's crew terminal
-	prefix    bool // the prefix key was pressed; next key is a deck command
-	stopping  bool // quitting: stopAll records crew ends
+	// Crew: where they run, every run so far, and launches in progress.
+	host       crewHost
+	reg        *crewRegistry
+	launching  map[string]bool
+	focusTerm  bool // keys go to the selected crew's terminal
+	prefix     bool // the prefix key was pressed; next key is a deck command
+	scrollMode bool // keys move through the focused crew's history
+	stopping   bool // quitting: stopAll records crew ends
 
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes
@@ -123,7 +129,8 @@ func newDeckModel(ws *workspace.Workspace, gh github.Client, focus string) deckM
 		input:     ti,
 		mainVP:    viewport.New(),
 		md:        newMarkdownCache(),
-		crew:      map[string]*deckCrewRun{},
+		host:      localHost{},
+		reg:       &crewRegistry{},
 		launching: map[string]bool{},
 	}
 	if focus != "" {
@@ -144,7 +151,8 @@ func deckTick() tea.Cmd {
 }
 
 func (m deckModel) Init() tea.Cmd {
-	return tea.Batch(loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh), deckTick())
+	cmds := []tea.Cmd{loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh), deckTick()}
+	return tea.Batch(append(cmds, m.adoptHosted()...)...)
 }
 
 // setData swaps in a new snapshot, keeping the cursor on the same row. The
@@ -173,6 +181,9 @@ func (m *deckModel) rebuildRows() {
 		m.rows = append(m.rows, deckRow{kind: deckRowMission, mission: i})
 		for j := range dm.Capsules {
 			m.rows = append(m.rows, deckRow{kind: deckRowCapsule, mission: i, capsule: j})
+		}
+		for _, r := range m.reg.live(dm.M.Slug) {
+			m.rows = append(m.rows, deckRow{kind: deckRowCrew, mission: i, run: r})
 		}
 	}
 	if len(m.data.Loose) > 0 {
@@ -206,7 +217,7 @@ func (m deckModel) selected() (deckRow, bool) {
 // of its capsules).
 func (m deckModel) selectedMission() (*deckMission, bool) {
 	r, ok := m.selected()
-	if !ok || (r.kind != deckRowMission && r.kind != deckRowCapsule) {
+	if !ok || (r.kind != deckRowMission && r.kind != deckRowCapsule && r.kind != deckRowCrew) {
 		return nil, false
 	}
 	return &m.data.Missions[r.mission], true

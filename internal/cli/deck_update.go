@@ -23,6 +23,11 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deckLaunchWithMsg:
 		return m.startCrew(msg.harness)
 
+	case deckLaunchNowMsg:
+		m.launching[msg.slug] = true
+		m.flash = "launching " + msg.harness + " on " + msg.slug + "…"
+		return m, msg.launch
+
 	case deckPaneMsg:
 		return m.handlePaneMsg(msg)
 
@@ -33,12 +38,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case tea.PasteMsg:
-		if m.focusTerm && m.mode == deckModeNormal {
-			if dm, ok := m.selectedMission(); ok {
-				if r, live := m.liveRun(dm.M.Slug); live {
-					r.pane.Paste(msg.Content)
-				}
-			}
+		if r, ok := m.focusedRun(); ok && m.mode == deckModeNormal {
+			r.scroll = 0
+			r.term.Paste(msg.Content)
 			return m, nil
 		}
 
@@ -68,10 +70,7 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseWheelMsg:
-		m.syncMain()
-		var cmd tea.Cmd
-		m.mainVP, cmd = m.mainVP.Update(msg)
-		return m, cmd
+		return m.handleWheel(msg)
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft && m.mode == deckModeNormal {
@@ -150,15 +149,23 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if ok && r.kind == deckRowLooseHeader {
 			m.looseOpen = !m.looseOpen
 			m.rebuildRows()
+		} else if ok && r.kind == deckRowCrew {
+			m.focusTerm = true
 		} else if ok && (r.kind == deckRowMission || r.kind == deckRowCapsule) && msg.String() == "enter" {
 			return m.startCrew(harness.Default())
 		}
 	case "tab", "l", "right":
-		if dm, ok := m.selectedMission(); ok {
-			if _, live := m.liveRun(dm.M.Slug); live {
-				m.focusTerm = true
+		if r, ok := m.selectedRun(); ok {
+			m.focusRun(r)
+		} else if dm, ok := m.selectedMission(); ok {
+			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
+				m.focusRun(runs[len(runs)-1])
 			}
 		}
+	case "]":
+		return m.cycleRun(1)
+	case "[":
+		return m.cycleRun(-1)
 	case "L":
 		return m.chooseHarness()
 	case "R":

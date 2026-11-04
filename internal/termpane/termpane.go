@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -35,6 +36,11 @@ type Pane struct {
 	cmd   *exec.Cmd
 
 	toPty chan []byte // encoded input waiting to be written to the program
+
+	// mirror, when set, also receives the program's raw output (for handing
+	// the real terminal to the program, see SetMirror).
+	mirrorMu sync.Mutex
+	mirror   io.Writer
 
 	updates chan struct{} // signalled (coalesced) when the screen changes
 	done    chan struct{} // closed when the program exits
@@ -90,6 +96,11 @@ func (p *Pane) pumpOutput() {
 			p.emuMu.Lock()
 			p.emu.Write(buf[:n])
 			p.emuMu.Unlock()
+			p.mirrorMu.Lock()
+			if p.mirror != nil {
+				p.mirror.Write(buf[:n])
+			}
+			p.mirrorMu.Unlock()
 			p.notify()
 		}
 		if err != nil {
@@ -254,6 +265,81 @@ func (p *Pane) Render() string {
 	p.emuMu.Lock()
 	defer p.emuMu.Unlock()
 	return p.emu.Render()
+}
+
+// RenderScrolled is Render looking back offset lines into the scrollback:
+// offset 0 is the live screen. It is clamped to the scrollback length.
+func (p *Pane) RenderScrolled(offset int) string {
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	screen := p.emu.Render()
+	sb := p.emu.Scrollback()
+	if offset <= 0 || p.emu.IsAltScreen() || sb == nil || sb.Len() == 0 {
+		return screen
+	}
+	offset = min(offset, sb.Len())
+	h := p.emu.Height()
+	lines := make([]string, 0, h)
+	// The view starts offset lines above the top of the live screen.
+	for i := sb.Len() - offset; i < sb.Len() && len(lines) < h; i++ {
+		lines = append(lines, sb.Line(i).Render())
+	}
+	for _, l := range strings.Split(screen, "\n") {
+		if len(lines) == h {
+			break
+		}
+		lines = append(lines, l)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ScrollbackLen is how many lines of history are above the screen. It is 0
+// while the program is on the alternate screen, which has no history.
+func (p *Pane) ScrollbackLen() int {
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	if p.emu.IsAltScreen() {
+		return 0
+	}
+	return p.emu.ScrollbackLen()
+}
+
+// AltScreen reports whether the program is using the alternate screen (as
+// full-screen programs do).
+func (p *Pane) AltScreen() bool {
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	return p.emu.IsAltScreen()
+}
+
+// SendMouse forwards a mouse event, encoded for the mouse mode the program
+// asked for. It does nothing if the program didn't ask for mouse events.
+func (p *Pane) SendMouse(m uv.MouseEvent) {
+	if p.Exited() {
+		return
+	}
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	p.emu.SendMouse(m)
+}
+
+// SetMirror copies the program's raw output to w as well as the emulator, or
+// stops copying when w is nil. With WriteRaw this lets a host hand its real
+// terminal to the program and take it back with the emulated screen intact.
+func (p *Pane) SetMirror(w io.Writer) {
+	p.mirrorMu.Lock()
+	defer p.mirrorMu.Unlock()
+	p.mirror = w
+}
+
+// WriteRaw sends bytes to the program unmodified, as if typed on a real
+// terminal.
+func (p *Pane) WriteRaw(b []byte) {
+	if p.Exited() || len(b) == 0 {
+		return
+	}
+	defer func() { recover() }() // toPty closed as the program exits
+	p.toPty <- append([]byte(nil), b...)
 }
 
 // Text returns the screen's plain text, trailing blanks trimmed. Useful for

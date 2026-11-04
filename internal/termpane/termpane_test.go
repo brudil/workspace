@@ -3,6 +3,7 @@ package termpane
 import (
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,4 +130,76 @@ func TestPane_TitleFromOSC(t *testing.T) {
 	if p.Title() != "my agent" {
 		t.Errorf("title = %q", p.Title())
 	}
+}
+
+func TestPane_ScrollbackRender(t *testing.T) {
+	p := start(t, 20, 5, "sh", "-c", `i=1; while [ $i -le 30 ]; do printf 'line%02d\r\n' $i; i=$((i+1)); done; sleep 5`)
+	waitFor(t, p, "all lines", func(s string) bool { return strings.Contains(s, "line30") })
+
+	if n := p.ScrollbackLen(); n < 25 {
+		t.Fatalf("scrollback = %d lines, want ≥ 25", n)
+	}
+	live := p.RenderScrolled(0)
+	if !strings.Contains(live, "line30") || strings.Contains(live, "line20") {
+		t.Errorf("live view = %q", live)
+	}
+	back := p.RenderScrolled(10)
+	if lines := strings.Split(back, "\n"); len(lines) != 5 {
+		t.Errorf("scrolled view has %d lines", len(lines))
+	}
+	if !strings.Contains(back, "line21") || strings.Contains(back, "line30") {
+		t.Errorf("scrolled 10 = %q", back)
+	}
+	// Past the top clamps to the oldest lines.
+	if top := p.RenderScrolled(1000); !strings.Contains(top, "line01") {
+		t.Errorf("scrolled to top = %q", top)
+	}
+}
+
+func TestPane_AltScreenHasNoScrollback(t *testing.T) {
+	p := start(t, 20, 5, "sh", "-c", `i=1; while [ $i -le 20 ]; do printf 'x%d\r\n' $i; i=$((i+1)); done; printf '\033[?1049hALT'; sleep 5`)
+	waitFor(t, p, "alt screen", func(s string) bool { return strings.Contains(s, "ALT") })
+	if !p.AltScreen() {
+		t.Error("AltScreen = false")
+	}
+	if p.ScrollbackLen() != 0 {
+		t.Errorf("scrollback on alt screen = %d", p.ScrollbackLen())
+	}
+	if got := p.RenderScrolled(5); !strings.Contains(got, "ALT") {
+		t.Errorf("scrolling the alt screen should show it unchanged: %q", got)
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func TestPane_MirrorAndRawInput(t *testing.T) {
+	p := start(t, 30, 5, "sh", "-c", `stty raw -echo; printf ready; c=$(dd bs=1 count=3 2>/dev/null); stty sane; printf '\r\nraw:%s\033[1mB' "$c"; sleep 5`)
+	waitFor(t, p, "ready", func(s string) bool { return strings.Contains(s, "ready") })
+	var mirror syncBuf
+	p.SetMirror(&mirror)
+	p.WriteRaw([]byte("xyz"))
+	waitFor(t, p, "raw input", func(s string) bool { return strings.Contains(s, "raw:xyz") })
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(mirror.String(), "\x1b[1mB") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := mirror.String(); !strings.Contains(got, "raw:xyz\x1b[1mB") {
+		t.Errorf("mirror got %q, want raw bytes including escapes", got)
+	}
+	p.SetMirror(nil)
 }

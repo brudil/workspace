@@ -33,37 +33,12 @@ func (m deckModel) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "Deck"
 	// With a crew terminal focused, put the real cursor where the agent's is.
-	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal {
-		if x, y, visible := r.pane.Cursor(); visible {
+	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal && r.scroll == 0 {
+		if x, y, visible := r.term.Cursor(); visible {
 			v.Cursor = tea.NewCursor(x, y+2) // below header and rule
 		}
 	}
 	return v
-}
-
-// focusedRun is the live crew whose terminal has focus, if any.
-func (m deckModel) focusedRun() (*deckCrewRun, bool) {
-	if !m.focusTerm {
-		return nil, false
-	}
-	dm, ok := m.selectedMission()
-	if !ok {
-		return nil, false
-	}
-	return m.liveRun(dm.M.Slug)
-}
-
-// shownRun is the live crew whose terminal the main pane shows: the selected
-// mission's, unless a picker is open.
-func (m deckModel) shownRun() (*deckCrewRun, bool) {
-	if m.mode == deckModePick {
-		return nil, false
-	}
-	dm, ok := m.selectedMission()
-	if !ok {
-		return nil, false
-	}
-	return m.liveRun(dm.M.Slug)
 }
 
 func (m deckModel) sidebarShown() bool {
@@ -92,7 +67,7 @@ func (m deckModel) render() string {
 
 	var main string
 	if r, ok := m.shownRun(); ok {
-		main = renderPane(r.pane, m.mainWidth(), bodyH)
+		main = renderTerm(r.term, r.scroll, m.mainWidth(), bodyH)
 	} else {
 		m.syncMain()
 		main = m.mainVP.View()
@@ -111,8 +86,11 @@ func (m deckModel) renderHeader() string {
 	title := " " + ui.Bold.Render(m.ws.Title()) + ui.Dim.Render(" deck")
 	if r, ok := m.shownRun(); ok {
 		label := fmt.Sprintf("  %s · crew %s · %s", r.slug, r.crewID, r.harness)
-		if t := r.pane.Title(); t != "" {
+		if t := r.term.Title(); t != "" {
 			label += " · " + t
+		}
+		if r.scroll > 0 {
+			label += fmt.Sprintf(" · ↑%d lines", r.scroll)
 		}
 		if m.focusTerm {
 			title += ui.Green.Render(label)
@@ -138,8 +116,11 @@ func (m deckModel) renderFooter() string {
 		return ui.Dim.Render(" j/k move  ⏎ choose  esc cancel")
 	}
 	if m.focusTerm {
+		if m.scrollMode {
+			return " " + ui.Orange.Render("history") + ui.Dim.Render(ansi.Truncate(" k/j line · ctrl+u/d half page · g top · G/esc back to live", m.width-9, "…"))
+		}
 		if m.prefix {
-			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(" then: tab sidebar · s hide sidebar · S stop crew · q quit · ? help · "+deckPrefixKey+" send "+deckPrefixKey)
+			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(ansi.Truncate(" then: tab sidebar · [ history · z zoom · n/p next/prev crew · s sidebar · S stop · q quit · ? help · "+deckPrefixKey+" send it", m.width-len(deckPrefixKey)-2, "…"))
 		}
 		if m.flash != "" {
 			return " " + m.flash
@@ -353,8 +334,8 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 				marker = ui.Orange.Render("▸ ")
 			}
 			state := stateStyle(dm.State).Render(string(dm.State))
-			if r, live := m.liveRun(dm.M.Slug); live {
-				state = ui.Green.Render("●"+r.crewID) + " " + state
+			if n := len(m.reg.live(dm.M.Slug)); n > 0 {
+				state = ui.Green.Render(fmt.Sprintf("●%d", n)) + " " + state
 			} else if m.launching[dm.M.Slug] {
 				state = ui.Dim.Render("…") + " " + state
 			}
@@ -369,6 +350,12 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			if badges := deckBadges(dm.Git[mission.Capsule{Repo: c.Repo, Name: c.Name}], c.Exists, c.PR, c.PRS); badges != "" {
 				line += " " + badges
 			}
+		case deckRowCrew:
+			marker := "   "
+			if selected && m.focusTerm {
+				marker = ui.Green.Render(" ▸ ")
+			}
+			line = "  " + marker + ui.Green.Render("●"+r.run.crewID) + " " + r.run.harness + ui.Dim.Render(" "+r.run.capsule)
 		case deckRowLooseHeader:
 			add("", -1)
 			arrow := "▸"
