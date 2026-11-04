@@ -80,7 +80,7 @@ ws mission artifact add <url> "label".`,
 			if err := missionStore(ctx).SetCrewStatus(m.Slug, c.ID, mission.CrewDone, summary); err != nil {
 				return err
 			}
-			reviewSpawner(ctx.WS.Root, m.Slug, c.ID, "done")
+			orchestrateSpawner(ctx.WS.Root, m.Slug, c.ID, "done")
 			fmt.Fprintf(ui.Stderr, "  %s done; the user has been notified\n", ui.Green.Render("✓"))
 			return nil
 		},
@@ -121,14 +121,17 @@ func newMissionArtifactCmd() *cobra.Command {
 	return cmd
 }
 
-// EnvRole names a special role a process plays for a mission; the reviewer
-// sets it to "reviewer".
+// EnvRole names a special role a process plays for a mission; the orchestrator
+// sets it to "orchestrator".
 const EnvRole = "WS_ROLE"
 
-// raisedBy is who a proposal comes from: the reviewer, crew, or the user.
+// roleOrchestrator is WS_ROLE for the orchestrator.
+const roleOrchestrator = "orchestrator"
+
+// raisedBy is who a proposal comes from: the orchestrator, crew, or the user.
 func raisedBy() string {
-	if os.Getenv(EnvRole) == "reviewer" {
-		return "reviewer"
+	if os.Getenv(EnvRole) == roleOrchestrator {
+		return roleOrchestrator
 	}
 	if c := os.Getenv(mission.EnvCrew); c != "" {
 		return c

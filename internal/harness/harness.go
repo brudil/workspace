@@ -27,6 +27,9 @@ type Brief struct {
 	// turning a request into a brief and capsules.
 	Role    string
 	Request string // what the user asked for (briefing)
+	// Handoff is what this crew was dispatched to do: its part of the
+	// mission, and what earlier crew left for it.
+	Handoff string
 	Org     string // GitHub org the workspace's repos live in
 }
 
@@ -105,6 +108,13 @@ func InitialPrompt(b Brief) string {
 	s.WriteString("Before starting, run `ws mission show -f llm` to see the mission's capsules (worktrees, possibly across repos) and log. ")
 	s.WriteString("Work only in this mission's capsules; create new ones with `ws lift <repo> <name>` and they join the mission automatically. ")
 	s.WriteString("Record significant decisions and progress with `ws mission note \"...\"`. Don't edit the brief.\n\n")
+	if h := strings.TrimSpace(b.Handoff); h != "" {
+		s.WriteString("You were dispatched for one part of this mission. Your handoff:\n\n")
+		s.WriteString(h)
+		s.WriteString("\n\nDo that part, then report done; ws's orchestrator decides what follows and dispatches it.\n\n")
+	} else {
+		s.WriteString("If the brief describes the work in stages for separate crew, do only the first stage not yet done, then report done; ws's orchestrator dispatches the next.\n\n")
+	}
 	s.WriteString("If you notice something worth doing outside this mission, don't do it: run `ws mission new \"<what it is and why>\"` (plain text; it waits for the user to brief it) and mention it in one line.\n\n")
 	s.WriteString("Tell the user's deck where you are, so they know when you need them:\n")
 	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`.\n")
@@ -135,6 +145,7 @@ func briefingPrompt(b Brief) string {
 	s.WriteString("2. Ask the user about anything ambiguous: which repos, scope, what done looks like.\n")
 	s.WriteString("3. Write the brief, replacing it whole:\n\n")
 	s.WriteString("   ws mission brief --set - <<'EOF'\n   ## Goal\n   ...\n   ## Context\n   (links to issues/PRs, relevant files)\n   ## Constraints\n   ...\n   ## Acceptance\n   ...\n   EOF\n\n")
+	s.WriteString("   If the work falls into stages that separate crew should do one after another (a proposal, then its implementation), list them in order under `## Stages`, saying where each one's output goes and where the user wants to check in before the next. ws's orchestrator reads the brief and dispatches crew stage by stage.\n")
 	s.WriteString("4. Give it a short title: `ws mission title \"...\"`.\n")
 	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name.\n")
 	s.WriteString("6. Show the user the brief and capsules (`ws mission show -f llm`) and check they're right.\n")
@@ -142,8 +153,8 @@ func briefingPrompt(b Brief) string {
 	return s.String()
 }
 
-// Reviewer is a harness that can run a one-shot, headless review: a prompt
-// in, the agent acts with its tools, and exits.
-type Reviewer interface {
-	Review(prompt, dir, model string) (Launch, error)
+// Orchestrator is a harness that can run a one-shot, headless agent: a
+// prompt in, its final message out, using tools (shell) along the way.
+type Orchestrator interface {
+	Orchestrate(prompt, dir, model string) (Launch, error)
 }

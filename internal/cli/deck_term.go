@@ -4,6 +4,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brudil/workspace/internal/termpane"
@@ -59,8 +60,10 @@ type hostedCrew struct {
 // crewHost runs crew processes for the deck.
 type crewHost interface {
 	Launch(crewSpec) (crewTerm, error)
-	// Running lists crew the host was already running when the deck opened.
-	Running() []hostedCrew
+	// Running attaches to crew the host is running that skip doesn't name
+	// (by slug/crew key): crew running when the deck opened, and crew
+	// launched since from elsewhere (the orchestrator's dispatches).
+	Running(skip func(key string) bool) []hostedCrew
 	// OwnsLifecycle is true when crew live and die with this deck, so the
 	// deck must record their ends and stop them when it quits. A server host
 	// keeps crew running after the deck detaches and records ends itself.
@@ -79,9 +82,9 @@ func (localHost) Launch(s crewSpec) (crewTerm, error) {
 	return termpane.Start(cmd, s.Width, s.Height)
 }
 
-func (localHost) Running() []hostedCrew { return nil }
-func (localHost) OwnsLifecycle() bool   { return true }
-func (localHost) Detach()               {}
+func (localHost) Running(func(string) bool) []hostedCrew { return nil }
+func (localHost) OwnsLifecycle() bool                    { return true }
+func (localHost) Detach()                                {}
 
 // crewRegistry holds every crew run the deck knows about. It is shared by
 // all copies of the (value-typed) model, so code running after the program
@@ -89,6 +92,18 @@ func (localHost) Detach()               {}
 type crewRegistry struct {
 	mu   sync.Mutex
 	runs []*deckCrewRun
+	// adopting is set while a look for crew launched elsewhere is in flight.
+	adopting atomic.Bool
+}
+
+// liveKey reports whether a live run has the slug/crew key.
+func (g *crewRegistry) liveKey(key string) bool {
+	for _, r := range g.live("") {
+		if r.slug+"/"+r.crewID == key {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *crewRegistry) add(r *deckCrewRun) {

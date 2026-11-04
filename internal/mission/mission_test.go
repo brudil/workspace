@@ -551,15 +551,15 @@ func TestProposalsAndReviewMarks(t *testing.T) {
 	m, _ := s.Create("Proposals")
 	s.StartCrew(m.Slug, "cursor", "conv")
 
-	if err := s.SetFlag(m.Slug, "needs a decision", "reviewer"); err != nil {
+	if err := s.SetFlag(m.Slug, "needs a decision", "orchestrator"); err != nil {
 		t.Fatal(err)
 	}
-	s.SetConclude(m.Slug, "all done", "reviewer")
+	s.SetConclude(m.Slug, "all done", "orchestrator")
 	if err := s.SetResumeWith(m.Slug, "c1", "add tests"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Load(m.Slug)
-	if got.Flag.Text != "needs a decision" || got.Flag.By != "reviewer" || got.Conclude.Text != "all done" || got.Crew[0].ResumeWith != "add tests" {
+	if got.Flag.Text != "needs a decision" || got.Flag.By != "orchestrator" || got.Conclude.Text != "all done" || got.Crew[0].ResumeWith != "add tests" {
 		t.Errorf("proposals = %+v %+v %q", got.Flag, got.Conclude, got.Crew[0].ResumeWith)
 	}
 	s.SetFlag(m.Slug, "", "")
@@ -572,7 +572,7 @@ func TestProposalsAndReviewMarks(t *testing.T) {
 
 	mark := func() bool {
 		t.Helper()
-		fresh, err := s.MarkReviewed(m.Slug, "c1")
+		fresh, err := s.MarkOrchestrated(m.Slug, "c1")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -862,40 +862,40 @@ func TestDeck_CrewHyperlinksSurvive(t *testing.T) {
 
 type spawned struct{ slug, crew, trigger string }
 
-func captureReviews(t *testing.T) *[]spawned {
+func captureOrchestrations(t *testing.T) *[]spawned {
 	t.Helper()
 	var calls []spawned
-	old := reviewSpawner
-	reviewSpawner = func(root, slug, crewID, trigger string) { calls = append(calls, spawned{slug, crewID, trigger}) }
-	t.Cleanup(func() { reviewSpawner = old })
+	old := orchestrateSpawner
+	orchestrateSpawner = func(root, slug, crewID, trigger string) { calls = append(calls, spawned{slug, crewID, trigger}) }
+	t.Cleanup(func() { orchestrateSpawner = old })
 	return &calls
 }
 
-func TestReviewTrigger_OnlyForCrewEndingByThemselves(t *testing.T) {
-	calls := captureReviews(t)
+func TestOrchestrateTrigger_OnlyForCrewEndingByThemselves(t *testing.T) {
+	calls := captureOrchestrations(t)
 	m, slug := shellCrewDeck(t)
 	store := m.store
 
-	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", "", true) // stopped
-	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", mission.RoleBriefing, false)
+	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", "", true) // stopped
+	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", mission.RoleBriefing, false)
 	if len(*calls) != 0 {
 		t.Fatalf("reviewed a stopped or briefing crew: %v", *calls)
 	}
 	store.StartCrew(slug, "cursor", "conv")
 	store.SetCrewStatus(slug, "c1", mission.CrewDone, "x")
-	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", "", false)
+	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", "", false)
 	if len(*calls) != 0 {
 		t.Fatalf("reviewed again after done: %v", *calls)
 	}
 	store.StartCrew(slug, "cursor", "conv2")
-	maybeReviewAfterEnd(m.ws.Root, store, slug, "c2", "", false)
+	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c2", "", false)
 	if len(*calls) != 1 || (*calls)[0] != (spawned{slug, "c2", "ended"}) {
 		t.Errorf("calls = %v", *calls)
 	}
 }
 
-func TestDeckCrew_ExitSavesTranscriptAndTriggersReview(t *testing.T) {
-	calls := captureReviews(t)
+func TestDeckCrew_ExitSavesTranscriptAndTriggersOrchestrator(t *testing.T) {
+	calls := captureOrchestrations(t)
 	m, slug := shellCrewDeck(t)
 	m = launch(t, m)
 	r, _ := liveRun(m, slug)
@@ -913,8 +913,8 @@ func TestDeckCrew_ExitSavesTranscriptAndTriggersReview(t *testing.T) {
 	}
 }
 
-func TestDeckCrew_StoppedCrewNotReviewed(t *testing.T) {
-	calls := captureReviews(t)
+func TestDeckCrew_StoppedCrewNotOrchestrated(t *testing.T) {
+	calls := captureOrchestrations(t)
 	m, slug := shellCrewDeck(t)
 	m = launch(t, m)
 	r, _ := liveRun(m, slug)
@@ -930,13 +930,13 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	r1, _ := liveRun(m, slug)
 	m = stopRun(t, m, r1)
 
-	// The reviewer's proposals.
+	// The orchestrator's proposals.
 	m.store.SetResumeWith(slug, "c1", "add a test for the error path")
-	m.store.SetFlag(slug, "CI is red", "reviewer")
+	m.store.SetFlag(slug, "CI is red", "orchestrator")
 	m, _ = reloadRecords(m)
 	m, _ = press(t, m, "g")
 	view := plainView(m)
-	for _, want := range []string{"! Needs you: CI is red (reviewer)", "Suggested: resume c1 with: add a test for the error path"} {
+	for _, want := range []string{"! Needs you: CI is red (orchestrator)", "Suggested: resume c1 with: add a test for the error path"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q:\n%s", want, view)
 		}
@@ -956,7 +956,7 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	m = next.(deckModel)
 
 	// F dismisses a flag.
-	m.store.SetFlag(slug, "look at this", "reviewer")
+	m.store.SetFlag(slug, "look at this", "orchestrator")
 	m, _ = reloadRecords(m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m, _ = press(t, m, "g")
@@ -965,4 +965,95 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	if got, _ := m.store.Load(slug); got.Flag != nil {
 		t.Error("F didn't dismiss the flag")
 	}
+}
+
+func TestDeckDispatch_QueuedLaunchesOnEnter(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "implement the proposal", Capsule: "frontend/work", By: "orchestrator"})
+	m.store.CountDispatch(slug, 3)
+	m, _ = reloadRecords(m)
+	m, _ = press(t, m, "g")
+	view := plainView(m)
+	if !strings.Contains(view, "→ Next in frontend/work: implement the proposal (orchestrator)") || !strings.Contains(view, "⏎ launch the queued crew") {
+		t.Errorf("view doesn't show the queued dispatch:\n%s", view)
+	}
+
+	m = launch(t, m)
+	r, ok := liveRun(m, slug)
+	if !ok || r.capsule != "frontend/work" {
+		t.Fatalf("launched %+v", r)
+	}
+	got, _ := m.store.Load(slug)
+	if got.Dispatch != nil || got.Dispatches != 0 || got.Crew[0].Handoff != "implement the proposal" {
+		t.Errorf("after launch: dispatch %+v, count %d, handoff %q", got.Dispatch, got.Dispatches, got.Crew[0].Handoff)
+	}
+}
+
+func TestDeckDispatch_FDismissesQueued(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "x", By: "orchestrator"})
+	m, _ = reloadRecords(m)
+	m, _ = press(t, m, "g")
+	m, cmd := press(t, m, "F")
+	if cmd == nil {
+		t.Fatal("F did nothing")
+	}
+	cmd()
+	if got, _ := m.store.Load(slug); got.Dispatch != nil {
+		t.Error("queued dispatch not dismissed")
+	}
+}
+
+func TestDeckAdoptsCrewLaunchedElsewhere(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	term := &fakeTerm{done: make(chan struct{})}
+	m.host = fakeHost{running: []hostedCrew{{Spec: crewSpec{Slug: slug, CrewID: "c1", Capsule: "frontend/work"}, Term: term}}}
+
+	// Nothing recorded as running: no need to ask the server.
+	if _, cmd := reloadRecords(m); cmd != nil {
+		if msg, ok := findMsg[deckAdoptMsg](cmd); ok {
+			t.Fatalf("asked the server with nothing missing: %+v", msg)
+		}
+	}
+	// The orchestrator dispatched c1: the record says it's running.
+	m.store.StartCrew(slug, "shell", "")
+	m.store.SetCrewProcess(slug, "c1", 4242, "frontend/work")
+	m, cmd := reloadRecords(m)
+	msg, ok := findMsg[deckAdoptMsg](cmd)
+	if !ok {
+		t.Fatal("deck didn't look for the dispatched crew")
+	}
+	next, _ := m.Update(msg)
+	m = next.(deckModel)
+	if _, ok := liveRun(m, slug); !ok || !strings.Contains(m.flash, "c1 on "+slug+" joined (dispatched)") {
+		t.Fatalf("not adopted; flash %q", m.flash)
+	}
+	// Adopted once.
+	next, _ = m.Update(msg)
+	if n := len(next.(deckModel).reg.live(slug)); n != 1 {
+		t.Errorf("adopted %d times", n)
+	}
+}
+
+// findMsg runs a (possibly batched) command and returns the first message
+// of type T it produces, without running commands that block.
+func findMsg[T any](cmd tea.Cmd) (T, bool) {
+	var zero T
+	if cmd == nil {
+		return zero, false
+	}
+	switch msg := cmd().(type) {
+	case T:
+		return msg, true
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if c == nil {
+				continue
+			}
+			if got, ok := findMsg[T](c); ok {
+				return got, true
+			}
+		}
+	}
+	return zero, false
 }

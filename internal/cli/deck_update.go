@@ -72,6 +72,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deckRecordsMsg:
 		return m.handleRecords(msg)
 
+	case deckAdoptMsg:
+		return m.handleAdopt(msg)
+
 	case deckTickMsg:
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), deckTick())
 
@@ -191,11 +194,17 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "M":
 		return m.toggleMouse(), nil
 	case "F":
-		if dm, ok := m.selectedMission(); ok && dm.M.Flag != nil {
+		if dm, ok := m.selectedMission(); ok && (dm.M.Flag != nil || dm.M.Dispatch != nil) {
 			store, slug := m.store, dm.M.Slug
+			what := "flag"
+			if dm.M.Flag == nil {
+				what = "queued dispatch"
+			}
 			return m, func() tea.Msg {
 				store.SetFlag(slug, "", "")
-				return deckReloadMsg{flash: "flag dismissed"}
+				store.QueueDispatch(slug, nil)
+				store.UserActed(slug)
+				return deckReloadMsg{flash: what + " dismissed"}
 			}
 		}
 	case "s":

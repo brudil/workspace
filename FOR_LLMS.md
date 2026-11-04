@@ -67,11 +67,12 @@ Use this to orient yourself before starting work.
 - Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
 - When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it.
 - If you notice something worth doing that's outside your mission, don't do it: run `ws mission new "<what it is and why>"` (plain text) and mention it in one line. It waits for the user to brief it, and records that it came from your mission.
+- If you were dispatched with a handoff, do that part only. If the brief describes stages for separate crew, do only the first one not yet done.
 - When your part is finished, run `ws mission done "<one-line summary>"`. ws finds PRs from the mission's capsules; record other outputs with `ws mission artifact add <url> "<label>"`.
 
 If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
 
-If `WS_ROLE=reviewer` is set, you are reviewing a mission: follow the instructions you were given, act only through `ws mission note/flag/resume-with/new/conclude`, and don't change code.
+If `WS_ROLE=orchestrator` is set, you are a mission's orchestrator: follow the instructions you were given, act only through `ws mission note/dispatch/resume-with/flag/new/conclude` (and `ws lift` for a capsule the next crew needs), and don't change code.
 
 If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.
 

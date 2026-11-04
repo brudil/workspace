@@ -116,17 +116,17 @@ func (c *Cursor) createChat(bin string) string {
 // every tool, --output-format text (the default) prints the final message,
 // --force runs commands unless explicitly denied, --trust skips the
 // workspace-trust prompt nobody is there to answer, and --model picks the
-// model. GUESS: the reviewer's default model name is one Cursor accepts
+// model. GUESS: the orchestrator's default model name is one Cursor accepts
 // (cursor-agent --list-models lists them).
-var cursorReviewArgs = []string{"-p", "--force", "--trust", "--output-format", "text"}
+var cursorPrintArgs = []string{"-p", "--force", "--trust", "--output-format", "text"}
 
-// Review runs a headless review with Cursor's print mode.
-func (c *Cursor) Review(prompt, dir, model string) (Launch, error) {
+// Orchestrate runs a headless orchestrator with Cursor's print mode.
+func (c *Cursor) Orchestrate(prompt, dir, model string) (Launch, error) {
 	bin, err := c.bin()
 	if err != nil {
 		return Launch{}, err
 	}
-	args := append([]string{bin}, cursorReviewArgs...)
+	args := append([]string{bin}, cursorPrintArgs...)
 	if model != "" {
 		args = append(args, "--model", model)
 	}

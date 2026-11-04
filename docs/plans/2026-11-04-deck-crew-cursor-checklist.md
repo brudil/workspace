@@ -109,21 +109,26 @@ If the briefing agent tries to run `ws mission ready` before it has written a br
 | Done | Let it finish | It runs `ws mission done "…"`; row shows `✓c2 done`, mission view shows the summary |
 | Artifacts | After it opens a PR | Mission view's **Artifacts** lists the capsule's PR; anything it recorded with `ws mission artifact add` too |
 
-## 5d. Reviewer
+## 5d. Orchestrator
 
-We run `cursor-agent -p --force --trust --output-format text --model <model> "<prompt>"` (flags confirmed from `cursor-agent --help`). Still to confirm: paste `cursor-agent --list-models`, so we know `claude-haiku-5-5-medium` is a name it accepts (it may want the `name[effort=…]` form instead).
+We run `cursor-agent -p --force --trust --output-format text --model <model> "<prompt>"` (flags confirmed from `cursor-agent --help`). Still to confirm: paste `cursor-agent --list-models`, so we know `claude-haiku-5-5-medium` is a name it accepts (it may want the `name[effort=…]` form). If it isn't, set `[orchestrator] model` in `ws.local.toml` to one that is.
+
+Try it on a staged mission: `n`, and ask for something like *find the note about X in the docs repo, write a proposal and commit it to docs; then a new agent implements it*.
 
 | Check | How | Expected |
 |---|---|---|
-| Prompt | `./bin/workspace mission review -m crew-trial --print-prompt` | The brief, capsules with diffs, log and the command it would run. Anything missing or wrong? |
-| By hand | `./bin/workspace mission review -m crew-trial` | Prints *reviewing…*, then the reviewer's summary. `ws mission show crew-trial` has a `Review:` note |
-| After done | Let crew finish and run `ws mission done` | Within a minute or so the log has a review, and maybe a flag, suggestion or follow-up mission. `cat .ws/missions/crew-trial/review.log` if not |
-| Resume suggestion | If it ran `resume-with`, press `R` | Resumes that crew and types the suggestion in |
-| Flag | If it flagged | `!` on the mission row, *Needs you* in the view; `F` dismisses |
-| Stopped crew | Stop crew with `ctrl+g S` | No review runs |
-| Off | `[review] enabled = false` in `ws.local.toml` | Automatic reviews stop; `ws mission review` still works |
+| Stages | Briefing | The brief has a `## Stages` section, and the briefing agent lifted at least the first stage's capsule |
+| First stage | `⏎`, let the crew work | It does the proposal only, commits it and runs `ws mission done` |
+| Dispatch | Wait (up to a minute or so) | The log has an *Orchestrator:* note, the mission gains `c2` (*joined (dispatched)*, a notification), and c2's first message includes the handoff. If c2 needs a backend capsule, the orchestrator lifted it |
+| No deck | Repeat with the deck closed after the first stage starts | c2 still starts; `ws deck` shows it running |
+| Conclude | Let c2 finish | *Suggested conclusion* in the mission view |
+| Prompt | `./bin/workspace mission orchestrate -m <slug> --print-prompt` | The brief, capsules with diffs, log, crew list and the command. Anything missing or wrong? |
+| Ask mode | `[orchestrator] dispatch = "ask"` in `ws.local.toml` | Instead of launching, `→` on the mission row and *→ Next…* in the view; `⏎` launches it, `F` dismisses |
+| Limit | Say whether it ever hit the three-dispatches limit | It should flag you instead of dispatching a fourth |
+| Stopped crew | Stop crew with `ctrl+g S` | The orchestrator doesn't run |
+| Logs | `cat .ws/missions/<slug>/orchestrator.log` | Each run's output, nothing alarming |
 
-Say whether its verdicts were sensible, and whether it ever did something it shouldn't (edited code, pushed).
+Say whether its decisions were sensible, and whether it ever did something it shouldn't (edited code, pushed).
 
 ## 6. Detach and reattach
 

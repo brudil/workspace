@@ -732,8 +732,6 @@ func (s Store) SetResumeWith(slug, id, message string) error {
 	return s.AppendLog(slug, Event{Kind: EventResumeWith, Crew: id, Text: message})
 }
 
-// MarkReviewed records that crew's latest event is being reviewed. It
-// reports false if that event was already reviewed.
 // eventKey names a crew's latest state: its run, status and end.
 func (c Crew) eventKey() string {
 	key := c.Started.Format(time.RFC3339)
@@ -746,7 +744,9 @@ func (c Crew) eventKey() string {
 	return key
 }
 
-func (s Store) MarkReviewed(slug, id string) (bool, error) {
+// MarkOrchestrated records that the orchestrator is handling crew's latest
+// event. It reports false if that event was already handled.
+func (s Store) MarkOrchestrated(slug, id string) (bool, error) {
 	fresh := false
 	_, err := s.Update(slug, func(m *Mission) error {
 		for i := range m.Crew {
@@ -755,12 +755,71 @@ func (s Store) MarkReviewed(slug, id string) (bool, error) {
 				continue
 			}
 			key := c.eventKey()
-			if c.Reviewed == key {
+			if c.Orchestrated == key {
 				return nil
 			}
-			c.Reviewed, fresh = key, true
+			c.Orchestrated, fresh = key, true
 		}
 		return nil
 	})
 	return fresh, err
+}
+
+// ErrDispatchLimit is returned when the orchestrator has dispatched as many
+// crew in a row as it may without the user.
+var ErrDispatchLimit = errors.New("dispatch limit reached")
+
+// CountDispatch counts one more crew dispatched without the user, refusing
+// past max.
+func (s Store) CountDispatch(slug string, max int) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		if m.Dispatches >= max {
+			return fmt.Errorf("%w: %d crew dispatched without the user", ErrDispatchLimit, m.Dispatches)
+		}
+		m.Dispatches++
+		return nil
+	})
+	return err
+}
+
+// UserActed records that the user stepped in (launched crew, dismissed a
+// flag): the orchestrator's dispatch count starts again.
+func (s Store) UserActed(slug string) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		m.Dispatches = 0
+		return nil
+	})
+	return err
+}
+
+// QueueDispatch stores a dispatch for the user to launch (nil clears it).
+func (s Store) QueueDispatch(slug string, d *Dispatch) error {
+	if _, err := s.Update(slug, func(m *Mission) error {
+		if d != nil && d.At.IsZero() {
+			d.At = now()
+		}
+		m.Dispatch = d
+		return nil
+	}); err != nil {
+		return err
+	}
+	if d == nil {
+		return nil
+	}
+	return s.AppendLog(slug, Event{Kind: EventDispatchQueued, Crew: d.By, Text: d.Text})
+}
+
+// SetHandoff records the handoff crew was dispatched with.
+func (s Store) SetHandoff(slug, id, by, text string) error {
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				m.Crew[i].Handoff = strings.TrimSpace(text)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return s.AppendLog(slug, Event{Kind: EventDispatch, Crew: id, Text: "by " + by + ": " + text})
 }

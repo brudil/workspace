@@ -45,7 +45,7 @@ With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
 	cmd.AddCommand(newMissionFlagCmd())
 	cmd.AddCommand(newMissionResumeWithCmd())
 	cmd.AddCommand(newMissionConcludeCmd())
-	cmd.AddCommand(newMissionReviewCmd())
+	cmd.AddCommand(newMissionOrchestrateCmd(), newMissionDispatchCmd())
 	cmd.AddCommand(newMissionAttachCmd())
 	cmd.AddCommand(newMissionDetachCmd())
 	cmd.AddCommand(newMissionStateCmd("park", mission.Parked, "Park a mission (paused work)"))
@@ -381,6 +381,9 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 			fmt.Fprintf(&b, "Suggested: resume %s with: %s\n", c.ID, c.ResumeWith)
 		}
 	}
+	if d := v.M.Dispatch; d != nil {
+		fmt.Fprintf(&b, "Queued dispatch (%s, waiting for the user): %s\n", d.By, d.Text)
+	}
 	fmt.Fprintf(&b, "Brief file: %s\n", briefPath)
 	if len(v.Capsules) == 0 {
 		b.WriteString("Capsules: none yet. Create one with `ws lift <repo> <name>`; with WS_MISSION set it joins this mission.\n")
@@ -410,6 +413,9 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 	for _, c := range v.M.Crew {
 		if c.Status != "" && c.Ended == nil {
 			fmt.Fprintf(&b, "Crew %s %s: %s\n", c.ID, c.Status, c.Note)
+		}
+		if c.Handoff != "" {
+			fmt.Fprintf(&b, "Crew %s was dispatched with: %s\n", c.ID, c.Handoff)
 		}
 	}
 	b.WriteString("\n## Brief\n\n")

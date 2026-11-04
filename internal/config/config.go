@@ -14,46 +14,69 @@ const FileName = "ws.toml"
 const LocalFileName = "ws.local.toml"
 
 type Config struct {
-	Workspace WorkspaceConfig        `toml:"workspace"`
-	Repos     map[string]RepoConfig  `toml:"repos"`
-	Groups    map[string]GroupConfig `toml:"groups"`
-	Review    ReviewConfig           `toml:"review"`
-	Boarded   map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
-	Git       string                 `toml:"-"` // from ws.local.toml only
-	Silo      map[string]string      `toml:"-"` // from ws.local.toml [silo] section
+	Workspace    WorkspaceConfig        `toml:"workspace"`
+	Repos        map[string]RepoConfig  `toml:"repos"`
+	Groups       map[string]GroupConfig `toml:"groups"`
+	Orchestrator OrchestratorConfig     `toml:"orchestrator"`
+	Boarded      map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
+	Git          string                 `toml:"-"` // from ws.local.toml only
+	Silo         map[string]string      `toml:"-"` // from ws.local.toml [silo] section
 }
 
 type LocalConfig struct {
-	Git     string                 `toml:"git"`
-	Repos   map[string]RepoConfig  `toml:"repos"`
-	Groups  map[string]GroupConfig `toml:"groups,omitempty"`
-	Boarded map[string][]string    `toml:"boarded"`
-	Silo    map[string]string      `toml:"silo"`
-	Review  ReviewConfig           `toml:"review,omitempty"`
+	Git          string                 `toml:"git"`
+	Repos        map[string]RepoConfig  `toml:"repos"`
+	Groups       map[string]GroupConfig `toml:"groups,omitempty"`
+	Boarded      map[string][]string    `toml:"boarded"`
+	Silo         map[string]string      `toml:"silo"`
+	Orchestrator OrchestratorConfig     `toml:"orchestrator,omitempty"`
 }
 
-// ReviewConfig controls the reviewer: a headless agent run when crew report
-// done or end, which reads what happened and proposes what's next.
+// OrchestratorConfig controls the orchestrator: a headless agent run when
+// crew report done or end, which reads the brief and what happened and
+// decides what's next (dispatch crew, flag the user, conclude…).
 // ws.local.toml settings override ws.toml's.
-type ReviewConfig struct {
+type OrchestratorConfig struct {
 	Model   string `toml:"model,omitempty"`
 	Enabled *bool  `toml:"enabled,omitempty"`
+	// Dispatch is "auto" (launch dispatched crew at once, the default) or
+	// "ask" (queue them for the user to launch from the deck).
+	Dispatch string `toml:"dispatch,omitempty"`
+	// MaxDispatches is how many crew it may dispatch in a row without the
+	// user stepping in, before it has to flag them instead.
+	MaxDispatches int `toml:"max_dispatches,omitempty"`
 }
 
-// DefaultReviewModel is the reviewer's model when none is configured.
-const DefaultReviewModel = "claude-haiku-5-5-medium"
+// Orchestrator defaults.
+const (
+	DefaultOrchestratorModel         = "claude-haiku-5-5-medium"
+	DefaultOrchestratorMaxDispatches = 3
+)
 
-// ReviewModel is the configured reviewer model, or the default.
-func (c *Config) ReviewModel() string {
-	if c.Review.Model != "" {
-		return c.Review.Model
+// OrchestratorModel is the configured model, or the default.
+func (c *Config) OrchestratorModel() string {
+	if c.Orchestrator.Model != "" {
+		return c.Orchestrator.Model
 	}
-	return DefaultReviewModel
+	return DefaultOrchestratorModel
 }
 
-// ReviewEnabled reports whether crew are reviewed automatically (default on).
-func (c *Config) ReviewEnabled() bool {
-	return c.Review.Enabled == nil || *c.Review.Enabled
+// OrchestratorEnabled reports whether the orchestrator runs automatically
+// (default on).
+func (c *Config) OrchestratorEnabled() bool {
+	return c.Orchestrator.Enabled == nil || *c.Orchestrator.Enabled
+}
+
+// OrchestratorAutoDispatch reports whether dispatched crew launch at once
+// (default) rather than waiting for the user.
+func (c *Config) OrchestratorAutoDispatch() bool { return c.Orchestrator.Dispatch != "ask" }
+
+// OrchestratorMaxDispatches is the limit on dispatches without the user.
+func (c *Config) OrchestratorMaxDispatches() int {
+	if c.Orchestrator.MaxDispatches > 0 {
+		return c.Orchestrator.MaxDispatches
+	}
+	return DefaultOrchestratorMaxDispatches
 }
 
 // GroupConfig controls a repo group. Hidden groups are left out of commands
@@ -140,10 +163,10 @@ func Discover(startDir string) (string, error) {
 // new, so a repo can be moved into a group the team config never declared.
 func Merge(base, local *Config) *Config {
 	merged := &Config{
-		Workspace: base.Workspace,
-		Review:    base.Review,
-		Repos:     make(map[string]RepoConfig, len(base.Repos)),
-		Groups:    make(map[string]GroupConfig, len(base.Groups)),
+		Workspace:    base.Workspace,
+		Orchestrator: base.Orchestrator,
+		Repos:        make(map[string]RepoConfig, len(base.Repos)),
+		Groups:       make(map[string]GroupConfig, len(base.Groups)),
 	}
 	maps.Copy(merged.Repos, base.Repos)
 	maps.Copy(merged.Groups, base.Groups)
@@ -213,14 +236,23 @@ func Load(startDir string) (*Config, string, error) {
 		if local.Git != "" {
 			cfg.Git = local.Git
 		}
-		if local.Review.Model != "" {
-			cfg.Review.Model = local.Review.Model
+		if local.Orchestrator.Model != "" {
+			cfg.Orchestrator.Model = local.Orchestrator.Model
 		}
-		if local.Review.Enabled != nil {
-			cfg.Review.Enabled = local.Review.Enabled
+		if local.Orchestrator.Enabled != nil {
+			cfg.Orchestrator.Enabled = local.Orchestrator.Enabled
+		}
+		if local.Orchestrator.Dispatch != "" {
+			cfg.Orchestrator.Dispatch = local.Orchestrator.Dispatch
+		}
+		if local.Orchestrator.MaxDispatches != 0 {
+			cfg.Orchestrator.MaxDispatches = local.Orchestrator.MaxDispatches
 		}
 	}
 
+	if d := cfg.Orchestrator.Dispatch; d != "" && d != "auto" && d != "ask" {
+		return nil, "", fmt.Errorf("invalid [orchestrator] dispatch %q: must be \"auto\" or \"ask\"", d)
+	}
 	if cfg.Git != "" && cfg.Git != "ssh" && cfg.Git != "https" {
 		return nil, "", fmt.Errorf("invalid git protocol %q in %s: must be \"ssh\" or \"https\"", cfg.Git, LocalFileName)
 	}

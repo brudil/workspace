@@ -111,6 +111,9 @@ func spawn(root string) error {
 	}
 	defer logf.Close()
 	cmd := exec.Command(self, "deck", "server", "run", "--root", root)
+	// The server outlives whoever started it (a deck in a capsule, or the
+	// orchestrator): none of their mission identity applies to it.
+	cmd.Env = append(os.Environ(), "WS_MISSION=", "WS_CREW=", "WS_ROLE=", "WS_ORIGIN_PWD=")
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

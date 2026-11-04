@@ -160,6 +160,23 @@ func (m deckModel) crewPlaceFor(dm *deckMission) (crewPlace, bool) {
 // startCrew launches crew with the named harness on the selected mission,
 // asking first if every capsule already has crew working in it.
 func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
+	return m.startCrewWith(harnessName, "", "")
+}
+
+// startDispatch launches the crew the orchestrator queued on the selected
+// mission, in the capsule it chose if that still exists.
+func (m deckModel) startDispatch() (tea.Model, tea.Cmd) {
+	dm, ok := m.selectedMission()
+	if !ok || dm.M.Dispatch == nil {
+		return m, nil
+	}
+	d := dm.M.Dispatch
+	return m.startCrewWith(firstNonEmpty(d.Harness, harness.Default()), d.Capsule, d.Text)
+}
+
+// startCrewWith launches crew, in capsule (repo/name) if given and it
+// exists, else wherever crewPlaceFor picks, with a handoff if given.
+func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Model, tea.Cmd) {
 	dm, ok := m.selectedMission()
 	if !ok {
 		m.flash = "select a mission to launch crew on"
@@ -173,6 +190,11 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 		return m.launchBriefing(dm.M, dm.Brief, harnessName)
 	}
 	place, ok := m.crewPlaceFor(dm)
+	for _, c := range dm.Capsules {
+		if capsule != "" && c.Exists && c.Repo+"/"+c.Name == capsule {
+			place, ok = crewPlace{dir: c.Path, capsule: capsule}, true
+		}
+	}
 	if !ok {
 		m.flash = "no capsule to work in yet: a attaches one, or WS_MISSION=" + slug + " ws lift <repo> <name>"
 		return m, nil
@@ -185,8 +207,8 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 		m.flash = err.Error()
 		return m, nil
 	}
-	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.dir}
-	launch := m.launchCmd(slug, harnessName, place.capsule, "", "", func() (harness.Launch, error) { return h.Start(b) })
+	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.dir, Handoff: handoff}
+	launch := m.launchCmd(slug, harnessName, place.capsule, "", "", handoff, func() (harness.Launch, error) { return h.Start(b) })
 
 	if place.sharedWith != nil {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.sharedWith.crewID, place.capsule),
@@ -211,7 +233,7 @@ func (m deckModel) resumableCrew(dm *deckMission) (mission.Crew, bool) {
 	for _, r := range m.reg.live(dm.M.Slug) {
 		live[r.crewID] = true
 	}
-	// A crew the reviewer suggested resuming comes first.
+	// A crew the orchestrator suggested resuming comes first.
 	for i := len(dm.M.Crew) - 1; i >= 0; i-- {
 		if c := dm.M.Crew[i]; c.ResumeWith != "" && c.Conversation != "" && !live[c.ID] && !c.Done(dm.M) {
 			return c, true
@@ -259,7 +281,7 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	}
 	m.launching[slug] = true
 	m.flash = "resuming " + last.ID + " on " + slug + "…"
-	return m, m.launchCmd(slug, last.Harness, place.capsule, last.ID, last.Role, func() (harness.Launch, error) {
+	return m, m.launchCmd(slug, last.Harness, place.capsule, last.ID, last.Role, "", func() (harness.Launch, error) {
 		return h.Resume(place.dir, last.Conversation)
 	})
 }
@@ -275,6 +297,10 @@ func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 	if runs := m.reg.live(dm.M.Slug); dm.M.State == mission.Briefing && len(runs) > 0 {
 		m.focusRun(runs[len(runs)-1])
 		return m, nil
+	}
+	// The orchestrator queued crew for you to launch: ⏎ launches it.
+	if dm.M.Dispatch != nil {
+		return m.startDispatch()
 	}
 	last, ok := m.resumableCrew(dm)
 	if !ok {
@@ -338,7 +364,7 @@ func crewRecord(m *mission.Mission, id string) (mission.Crew, bool) {
 // mislead it, plus the mission and crew ids, a capable TERM, and a PATH on
 // which ws and workspace are this deck's own binary.
 func crewEnv(root, slug, crewID string) []string {
-	drop := map[string]bool{mission.EnvMission: true, mission.EnvCrew: true, ShellPWD: true, "TERM": true, "COLORTERM": true}
+	drop := map[string]bool{mission.EnvMission: true, mission.EnvCrew: true, EnvRole: true, ShellPWD: true, "TERM": true, "COLORTERM": true}
 	var env []string
 	path := os.Getenv("PATH")
 	for _, kv := range os.Environ() {
@@ -413,8 +439,8 @@ func prependPath(dir, path string) string {
 // agent for a chat id, and a server host may have to start the server.
 //
 // resumeID, when set, continues that crew (same id) instead of recording new
-// crew.
-func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, prepare func() (harness.Launch, error)) tea.Cmd {
+// crew. handoff, when set, is a queued dispatch being launched.
+func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role, handoff string, prepare func() (harness.Launch, error)) tea.Cmd {
 	store, host, root := m.store, m.host, m.ws.Root
 	w, h := m.mainWidth(), m.bodyHeight()
 	return func() tea.Msg {
@@ -452,9 +478,16 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, 
 			return msg
 		}
 		store.SetCrewProcess(slug, crew.ID, term.Pid(), capsule)
-		if mm, err := store.Load(slug); err == nil && mm.Flag != nil {
-			store.SetFlag(slug, "", "") // you're acting on it
+		if handoff != "" {
+			store.SetHandoff(slug, crew.ID, "you", handoff)
+			store.QueueDispatch(slug, nil)
 		}
+		// You're acting on the mission: a flag is answered, and the
+		// orchestrator's run of dispatches without you starts again.
+		if mm, err := store.Load(slug); err == nil && mm.Flag != nil {
+			store.SetFlag(slug, "", "")
+		}
+		store.UserActed(slug)
 		msg.term = term
 		return msg
 	}
@@ -487,35 +520,51 @@ func deliverPrompt(r *deckCrewRun, prompt string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		deadline := time.Now().Add(promptMaxWait)
-		last, changed, drawn := "", time.Now(), false
-		for time.Now().Before(deadline) {
-			if r.term.Exited() {
-				return nil
-			}
-			if text := r.term.Text(); text != last {
-				last, changed = text, time.Now()
-				drawn = drawn || strings.TrimSpace(text) != ""
-			}
-			if drawn && time.Since(changed) >= promptSettle {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		if r.term.Exited() {
+		if !typePrompt(r.term, prompt) {
 			return nil
 		}
-		r.term.Paste(prompt)
-		time.Sleep(300 * time.Millisecond)
-		r.term.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
 		return deckFlashMsg("sent the opening prompt to " + r.crewID)
 	}
 }
 
+// typePrompt waits for an agent's screen to draw and settle, then pastes the
+// prompt and submits it. It reports false if the agent exited first.
+func typePrompt(t crewTerm, prompt string) bool {
+	deadline := time.Now().Add(promptMaxWait)
+	last, changed, drawn := "", time.Now(), false
+	for time.Now().Before(deadline) {
+		if t.Exited() {
+			return false
+		}
+		if text := t.Text(); text != last {
+			last, changed = text, time.Now()
+			drawn = drawn || strings.TrimSpace(text) != ""
+		}
+		if drawn && time.Since(changed) >= promptSettle {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if t.Exited() {
+		return false
+	}
+	t.Paste(prompt)
+	time.Sleep(300 * time.Millisecond)
+	t.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
+	return true
+}
+
 // adoptHosted takes over crew a server host was already running.
 func (m *deckModel) adoptHosted() []tea.Cmd {
+	return m.adopt(m.host.Running(m.reg.liveKey))
+}
+
+func (m *deckModel) adopt(hosted []hostedCrew) []tea.Cmd {
 	var cmds []tea.Cmd
-	for _, h := range m.host.Running() {
+	for _, h := range hosted {
+		if m.reg.liveKey(h.Spec.Slug + "/" + h.Spec.CrewID) {
+			continue
+		}
 		r := &deckCrewRun{slug: h.Spec.Slug, crewID: h.Spec.CrewID, harness: h.Spec.Harness, capsule: h.Spec.Capsule, dir: h.Spec.Dir, role: h.Spec.Role, term: h.Term}
 		m.reg.add(r)
 		// Before the first WindowSizeMsg the deck has no size; resizing now
@@ -526,6 +575,53 @@ func (m *deckModel) adoptHosted() []tea.Cmd {
 		cmds = append(cmds, waitPane(r))
 	}
 	return cmds
+}
+
+// deckAdoptMsg is crew found running on the server that the deck didn't
+// launch: dispatched by the orchestrator, or from another deck.
+type deckAdoptMsg struct{ hosted []hostedCrew }
+
+// adoptNewCmd looks for crew the mission records say are running but the
+// deck doesn't have, and attaches to them.
+func (m deckModel) adoptNewCmd(missions map[string]*mission.Mission) tea.Cmd {
+	if m.host.OwnsLifecycle() {
+		return nil
+	}
+	missing := false
+	for slug, mm := range missions {
+		if m.launching[slug] {
+			continue // our own launch, still on its way
+		}
+		for _, c := range mm.Crew {
+			if c.Ended == nil && c.PID != 0 && !m.reg.liveKey(slug+"/"+c.ID) {
+				missing = true
+			}
+		}
+	}
+	if !missing || !m.reg.adopting.CompareAndSwap(false, true) {
+		return nil
+	}
+	host, reg := m.host, m.reg
+	return func() tea.Msg {
+		defer reg.adopting.Store(false)
+		return deckAdoptMsg{hosted: host.Running(reg.liveKey)}
+	}
+}
+
+func (m deckModel) handleAdopt(msg deckAdoptMsg) (tea.Model, tea.Cmd) {
+	before := len(m.reg.live(""))
+	cmds := m.adopt(msg.hosted)
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	runs := m.reg.live("")
+	var names []string
+	for _, r := range runs[before:] {
+		names = append(names, r.crewID+" on "+r.slug)
+	}
+	text := strings.Join(names, ", ") + " joined (dispatched)"
+	m.flash = text
+	return m, tea.Batch(append(cmds, loadDeckCmd(m.ws, m.prs), notifyCmd(text))...)
 }
 
 // waitPane blocks until the crew's terminal changes or exits.
@@ -555,7 +651,7 @@ func (m deckModel) handlePaneMsg(msg deckPaneMsg) (tea.Model, tea.Cmd) {
 	if m.host.OwnsLifecycle() {
 		saveTranscript(m.store, r, r.exit)
 		r.record(m.store, r.exit)
-		maybeReviewAfterEnd(m.ws.Root, m.store, r.slug, r.crewID, r.role, r.stopped.Load())
+		maybeOrchestrateAfterEnd(m.ws.Root, m.store, r.slug, r.crewID, r.role, r.stopped.Load())
 	}
 	if sel, ok := m.selected(); ok && sel.kind == deckRowCrew && sel.run == r {
 		m.focusTerm = false
@@ -883,6 +979,9 @@ func (m deckModel) crewSummary(dm deckMission) string {
 			lines = append(lines, ui.Orange.Render("↻ ")+fmt.Sprintf("Suggested: resume %s with: %s", c.ID, c.ResumeWith)+ui.Dim.Render(" · R"))
 		}
 	}
+	if dm.M.Dispatch != nil {
+		hint = "⏎ launch the queued crew · F dismiss it · L choose harness"
+	}
 	briefedLast := last != nil && last.role == mission.RoleBriefing && dm.M.State != mission.Briefing
 	switch {
 	case last != nil && !briefedLast:
@@ -945,7 +1044,7 @@ func (m deckModel) launchBriefing(mm *mission.Mission, brief, harnessName string
 	}
 	m.launching[mm.Slug] = true
 	m.flash = "briefing " + mm.Slug + " with " + harnessName + "…"
-	return m, m.launchCmd(mm.Slug, harnessName, briefingPlace, "", mission.RoleBriefing,
+	return m, m.launchCmd(mm.Slug, harnessName, briefingPlace, "", mission.RoleBriefing, "",
 		func() (harness.Launch, error) { return h.Start(b) })
 }
 
@@ -1049,7 +1148,7 @@ func (m deckModel) handleRecords(msg deckRecordsMsg) (tea.Model, tea.Cmd) {
 			m.data.Missions[i].M = mm
 		}
 	}
-	return m, m.announceSignals()
+	return m, tea.Batch(m.announceSignals(), m.adoptNewCmd(msg.missions))
 }
 
 // crewStatus is what a crew last said about itself (asking/done), per its

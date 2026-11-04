@@ -66,7 +66,7 @@ func (h *serverHost) Launch(s crewSpec) (crewTerm, error) {
 	})
 }
 
-func (h *serverHost) Running() []hostedCrew {
+func (h *serverHost) Running(skip func(key string) bool) []hostedCrew {
 	c, err := h.connect(false)
 	if err != nil {
 		return nil // no server running: nothing to reattach
@@ -77,6 +77,9 @@ func (h *serverHost) Running() []hostedCrew {
 	}
 	var out []hostedCrew
 	for _, info := range infos {
+		if skip != nil && skip(info.Spec.Key()) {
+			continue
+		}
 		t, err := c.Attach(info)
 		if err != nil {
 			continue
@@ -91,6 +94,14 @@ func (h *serverHost) Running() []hostedCrew {
 }
 
 func (h *serverHost) OwnsLifecycle() bool { return false }
+
+// Flush waits until everything sent so far has reached the server: requests
+// go out in order, so one round trip covers them.
+func (h *serverHost) Flush() {
+	if c, err := h.connect(false); err == nil {
+		c.List()
+	}
+}
 
 func (h *serverHost) Detach() {
 	h.mu.Lock()
@@ -130,7 +141,7 @@ func newDeckServerRunCmd() *cobra.Command {
 			s := &deckserver.Server{Root: root, Log: log.New(os.Stderr, "deck-server ", log.LstdFlags)}
 			store := mission.Store{Root: root}
 			s.OnCrewEnded = func(spec deckserver.Spec, exit string, stopped bool) {
-				maybeReviewAfterEnd(root, store, spec.Slug, spec.CrewID, spec.Role, stopped)
+				maybeOrchestrateAfterEnd(root, store, spec.Slug, spec.CrewID, spec.Role, stopped)
 			}
 			if err := s.Listen(); err != nil {
 				return err

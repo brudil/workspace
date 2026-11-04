@@ -912,27 +912,37 @@ group = "platform"
 	}
 }
 
-func TestReviewConfig(t *testing.T) {
+func TestOrchestratorConfig(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n"), 0o644)
 	cfg, _, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReviewModel() != "claude-haiku-5-5-medium" || !cfg.ReviewEnabled() {
-		t.Errorf("defaults: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	if cfg.OrchestratorModel() != "claude-haiku-5-5-medium" || !cfg.OrchestratorEnabled() || !cfg.OrchestratorAutoDispatch() || cfg.OrchestratorMaxDispatches() != 3 {
+		t.Errorf("defaults: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
 	}
 
-	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n[review]\nmodel = \"team-model\"\n"), 0o644)
-	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[review]\nenabled = false\n"), 0o644)
+	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n[orchestrator]\nmodel = \"team-model\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\nenabled = false\n"), 0o644)
 	cfg, _, _ = Load(root)
-	if cfg.ReviewModel() != "team-model" || cfg.ReviewEnabled() {
-		t.Errorf("team model + local off: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	if cfg.OrchestratorModel() != "team-model" || cfg.OrchestratorEnabled() {
+		t.Errorf("team model + local off: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
 	}
 
-	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[review]\nmodel = \"mine\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\nmodel = \"mine\"\n"), 0o644)
 	cfg, _, _ = Load(root)
-	if cfg.ReviewModel() != "mine" || !cfg.ReviewEnabled() {
-		t.Errorf("local model: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	if cfg.OrchestratorModel() != "mine" || !cfg.OrchestratorEnabled() {
+		t.Errorf("local model: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
+	}
+
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\ndispatch = \"ask\"\nmax_dispatches = 5\n"), 0o644)
+	cfg, _, _ = Load(root)
+	if cfg.OrchestratorAutoDispatch() || cfg.OrchestratorMaxDispatches() != 5 {
+		t.Errorf("local dispatch: %v %d", cfg.OrchestratorAutoDispatch(), cfg.OrchestratorMaxDispatches())
+	}
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\ndispatch = \"sometimes\"\n"), 0o644)
+	if _, _, err := Load(root); err == nil || !strings.Contains(err.Error(), "must be \"auto\" or \"ask\"") {
+		t.Errorf("bad dispatch: %v", err)
 	}
 }

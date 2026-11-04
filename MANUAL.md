@@ -360,24 +360,29 @@ The same commands work by hand: `ws mission brief` prints or replaces a brief, `
 - **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, so they stop when it quits.
 - If a deck server dies, crew records it left open are marked `lost` the next time a deck opens.
 
-**Review.** When crew report done, or end by themselves (not when you stop them), the deck runs a reviewer: a headless agent (`cursor-agent -p`) that reads the brief, the log, each capsule's diff and PR checks, and the end of the crew's output, then decides what's next. It acts only through `ws` commands, so a mistake comes back as an error it can correct:
+**Orchestrator.** When crew report done, or end by themselves (not when you stop them), ws runs the orchestrator: a headless agent (`cursor-agent -p`) that reads the brief, the log, the crew so far, each capsule's diff and PR checks, and the end of the latest crew's output, then decides what happens next. There's no fixed plan: if the brief says "write a proposal and commit it to docs, then a new agent implements it", the orchestrator sees from the history that the proposal is done and dispatches the implementation. It acts only through `ws` commands, so a mistake comes back as an error it corrects:
 
 | Command | Means | In the deck |
 |---|---|---|
-| `ws mission note "Review: …"` | Its verdict, always one | In the log |
-| `ws mission flag "<why>"` | Something only you can decide | `!` on the mission row, *Needs you* in the mission view; `F` dismisses, launching crew clears it |
+| `ws mission note "Orchestrator: …"` | What it found and decided, always one | In the log, read by its next run |
+| `ws mission dispatch "<handoff>" [--capsule repo/name]` | Start fresh crew on the next piece of work | Crew appears under the mission, with *joined (dispatched)* and a notification |
 | `ws mission resume-with <crew> "<what's left>"` | That crew should carry on | `⏎`/`R` offers to resume it and types the message in |
+| `ws mission flag "<why>"` | Something only you can decide, or the brief says to check with you first | `!` on the mission row, *Needs you* in the view; `F` dismisses, launching crew clears it |
 | `ws mission new "<follow-up>"` | Separate work worth doing | A new mission waiting to be briefed, raised from this one |
 | `ws mission conclude "<why>"` | Looks finished | *Suggested conclusion* in the mission view; `x` archives |
 
-The reviewer may look around read-only (`git diff`, `gh pr checks`) but doesn't change code, push, or launch or stop crew. Each crew event is reviewed once. Its output goes to `.ws/missions/<slug>/review.log`. `ws mission review` runs one by hand (`--crew c2` to focus on one crew, `--print-prompt` to see what it would be told). Crew output is saved to `crew-<id>.log` in the mission's folder when a run ends, so the reviewer can read it later.
+**Dispatch.** Dispatched crew start fresh, told the brief and their handoff (what to do, where earlier crew's output is), and do only that part before reporting done. They run in the deck server, so the orchestrator can move a mission on with no deck open; the deck picks them up when it's running or next opens. If the next crew needs a capsule the mission doesn't have, the orchestrator lifts one first. You can dispatch by hand too (`ws mission dispatch -m <slug> "<handoff>"`). Briefing agents are taught to write staged work as a `## Stages` section, noting where you want to check in.
+
+The orchestrator may dispatch three crew in a row without you; after that `dispatch` refuses and it has to flag you. Anything you do on the mission (launching crew, dismissing a flag) starts the count again. It may look around read-only (`git diff`, `gh pr checks`) and lift capsules, but doesn't change code or push. Each crew event is handled once. Its output goes to `.ws/missions/<slug>/orchestrator.log`. `ws mission orchestrate` runs it by hand (`--crew c2` to say what prompted it, `--print-prompt` to see what it would be told). Crew output is saved to `crew-<id>.log` in the mission's folder when a run ends, so it can read it later.
 
 Configure it in `ws.toml` or `ws.local.toml`:
 
 ```toml
-[review]
+[orchestrator]
 model = "claude-haiku-5-5-medium"   # the default
-enabled = true                      # false turns the automatic reviews off
+enabled = true                      # false turns the automatic runs off
+dispatch = "auto"                   # "ask" queues dispatched crew: → on the mission row, ⏎ launches, F dismisses
+max_dispatches = 3                  # in a row without you
 ```
 
 **Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`, and crew and review output). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
@@ -457,7 +462,7 @@ backend = [".ground"]
 |---|---|
 | `git` | Clone protocol: `"ssh"` or `"https"` (default). |
 
-**Review overrides:** `[review] model` and `enabled` replace the shared values (see [Missions](#missions)).
+**Orchestrator overrides:** each `[orchestrator]` setting replaces the shared value (see [Missions](#missions)).
 
 **Repo overrides:**
 

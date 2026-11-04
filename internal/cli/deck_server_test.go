@@ -130,14 +130,24 @@ type fakeTerm struct {
 func (f *fakeTerm) Resize(w, h int)          { f.resizes = append(f.resizes, [2]int{w, h}) }
 func (f *fakeTerm) Updates() <-chan struct{} { return nil }
 func (f *fakeTerm) Done() <-chan struct{}    { return f.done }
+func (f *fakeTerm) Close(time.Duration)      {}
+func (f *fakeTerm) Exited() bool             { return false }
 
 type fakeHost struct {
 	localHost
 	running []hostedCrew
 }
 
-func (f fakeHost) Running() []hostedCrew { return f.running }
-func (f fakeHost) OwnsLifecycle() bool   { return false }
+func (f fakeHost) Running(skip func(string) bool) []hostedCrew {
+	var out []hostedCrew
+	for _, h := range f.running {
+		if skip == nil || !skip(h.Spec.Slug+"/"+h.Spec.CrewID) {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+func (f fakeHost) OwnsLifecycle() bool { return false }
 
 func TestDeckServer_AdoptDoesntResizeBeforeSizeKnown(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})

@@ -77,10 +77,13 @@ type Crew struct {
 	// ResumeWith is a message to send when this crew is next resumed
 	// (ws mission resume-with); it's used once.
 	ResumeWith string `toml:"resume_with,omitempty"`
-	// Reviewed identifies the crew event (a run ending, a done or ask) last
-	// reviewed, so each is reviewed once. Times alone can't tell events apart:
+	// Handoff is what this crew was dispatched to do, when the orchestrator
+	// (or the user) dispatched it with ws mission dispatch.
+	Handoff string `toml:"handoff,omitempty"`
+	// Orchestrated identifies the crew event (a run ending, a done or ask) the
+	// orchestrator last looked at, so each is handled once. Times alone can't tell events apart:
 	// they're stored to the second.
-	Reviewed string `toml:"reviewed,omitempty"`
+	Orchestrated string `toml:"orchestrated,omitempty"`
 }
 
 // Crew statuses.
@@ -108,6 +111,12 @@ type Mission struct {
 	// Conclude is a suggestion that the mission is finished (ws mission
 	// conclude); archiving it is the user's call.
 	Conclude *Proposal `toml:"conclude,omitempty"`
+	// Dispatch is crew the orchestrator wants launched, waiting for the user
+	// ([orchestrator] dispatch = "ask", or no deck server to launch on).
+	Dispatch *Dispatch `toml:"dispatch,omitempty"`
+	// Dispatches counts crew the orchestrator dispatched since the user last
+	// stepped in; past [orchestrator] max_dispatches it must flag instead.
+	Dispatches int `toml:"dispatches,omitempty"`
 	// Artifacts are outputs ws can't infer (capsules' PRs it finds itself):
 	// a PR from a branch outside the mission, a design doc, a dashboard.
 	Artifacts []Artifact `toml:"artifacts,omitempty"`
@@ -118,6 +127,16 @@ type Proposal struct {
 	Text string    `toml:"text"`
 	By   string    `toml:"by,omitempty"`
 	At   time.Time `toml:"at"`
+}
+
+// Dispatch is new crew to launch on a mission, with the handoff it starts
+// from.
+type Dispatch struct {
+	Text    string    `toml:"text"`
+	Capsule string    `toml:"capsule,omitempty"` // repo/name; "" picks one
+	Harness string    `toml:"harness,omitempty"`
+	By      string    `toml:"by,omitempty"`
+	At      time.Time `toml:"at"`
 }
 
 // Artifact is a link a mission produced.
