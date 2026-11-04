@@ -123,6 +123,10 @@ type deckModel struct {
 
 	ticks int // activity ticks so far (records re-read every few)
 
+	// mouseOff stops the deck capturing the mouse anywhere (M), so the
+	// terminal's own selection, copy and link-clicking work throughout.
+	mouseOff bool
+
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes
 	md      *markdownCache

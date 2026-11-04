@@ -72,6 +72,8 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Typing | Type normally, use arrows, backspace, enter | Same as in a normal terminal |
 | Special keys | `ctrl+c`, `ctrl+r`, `shift+tab`, `alt+enter`, `esc`, `tab` | Each does what it does in Cursor outside the deck |
 | Paste | Paste a multi-line block | Arrives as one paste, not line-by-line submits |
+| Select and copy | With the agent focused, drag over its output, copy, paste elsewhere | Your terminal selects and copies normally (no Option/Shift needed). With the sidebar shown, multi-line selections include its column: `ctrl+g s` hides it |
+| Click links | Cmd-click a URL or PR link in the agent's output | Opens in the browser |
 | Rendering | Watch a long streamed answer, spinners, colours, any boxes/borders | No garbage characters, no stale lines left behind |
 | Resize | Resize the terminal window; `ctrl+g s` to hide/show the sidebar | Agent redraws to the new width |
 | Back to the sidebar | `ctrl+g` then `tab` | Footer goes back to deck keys; agent keeps running (`●c1` row under the mission) |

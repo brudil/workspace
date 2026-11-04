@@ -822,3 +822,40 @@ func TestDeckSignals_DoneShowsAndSilencesWaiting(t *testing.T) {
 		t.Errorf("mission view:\n%s", plainView(m))
 	}
 }
+
+func TestDeck_MouseReleasedForSelection(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Errorf("sidebar: mouse mode %v, want captured", got)
+	}
+	m = launch(t, m) // the crew has the keyboard
+	if got := m.View().MouseMode; got != tea.MouseModeNone {
+		t.Errorf("focused crew: mouse mode %v, want released for selection", got)
+	}
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Errorf("back in the sidebar: mouse mode %v", got)
+	}
+	m, _ = press(t, m, "M")
+	if got := m.View().MouseMode; got != tea.MouseModeNone || !m.mouseOff {
+		t.Errorf("after M: mouse mode %v", got)
+	}
+	m, _ = press(t, m, "M")
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Errorf("after M again: mouse mode %v", got)
+	}
+	_ = slug
+}
+
+func TestDeck_CrewHyperlinksSurvive(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	waitScreen(t, r, "$")
+	m = typeText(m, `printf '\033]8;;https://github.com/acme/api/pull/88\033\\PR 88\033]8;;\033\\\n'`)
+	waitScreen(t, r, "\nPR 88")
+	pane := renderTerm(r.term, 0, m.mainWidth(), m.bodyHeight())
+	if !strings.Contains(pane, "\x1b]8;") || !strings.Contains(pane, "https://github.com/acme/api/pull/88") {
+		t.Errorf("hyperlink lost on the way to the deck's screen: %q", pane)
+	}
+}

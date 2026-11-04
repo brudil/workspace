@@ -30,7 +30,7 @@ var (
 func (m deckModel) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
+	v.MouseMode = m.mouseMode()
 	v.WindowTitle = "Deck"
 	// With a crew terminal focused, put the real cursor where the agent's is.
 	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal && r.scroll == 0 {
@@ -128,12 +128,12 @@ func (m deckModel) renderFooter() string {
 			return " " + ui.Orange.Render("history") + ui.Dim.Render(ansi.Truncate(" k/j line · ctrl+u/d half page · g top · G/esc back to live", m.width-9, "…"))
 		}
 		if m.prefix {
-			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(ansi.Truncate(" then: tab sidebar · [ history · z zoom · n/p next/prev crew · s sidebar · S stop · q quit · ? help · "+deckPrefixKey+" send it", m.width-len(deckPrefixKey)-2, "…"))
+			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(ansi.Truncate(" then: tab sidebar · [ history · z zoom · m mouse · n/p next/prev crew · s sidebar · S stop · q quit · ? help · "+deckPrefixKey+" send it", m.width-len(deckPrefixKey)-2, "…"))
 		}
 		if m.flash != "" {
 			return " " + m.flash
 		}
-		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
+		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · select text and click links freely · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
 	}
 	if m.flash != "" {
 		return " " + m.flash
@@ -451,6 +451,7 @@ func (m deckModel) renderHelp() string {
 		{"tab", "Focus the mission's live crew terminal"},
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
+		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what it is; a briefing agent writes the brief and lifts capsules"},
 		{"N", "New mission you name and brief yourself (in $EDITOR)"},
@@ -598,4 +599,19 @@ func (m deckModel) conclusionHint(dm deckMission) string {
 		return ui.Green.Render("✓ Crew done") + ui.Dim.Render(" · check their work; open PRs if needed")
 	}
 	return ""
+}
+
+// mouseMode decides whether the deck captures the mouse. Capturing it makes
+// the sidebar clickable and the wheel scroll history, but stops the
+// terminal selecting text, copying and Cmd-clicking links. So while a crew
+// terminal has the keyboard (you're reading and working with it) the deck
+// lets go, and M lets go everywhere.
+func (m deckModel) mouseMode() tea.MouseMode {
+	if m.mouseOff {
+		return tea.MouseModeNone
+	}
+	if _, ok := m.focusedRun(); ok {
+		return tea.MouseModeNone
+	}
+	return tea.MouseModeCellMotion
 }

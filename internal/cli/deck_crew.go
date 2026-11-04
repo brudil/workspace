@@ -611,6 +611,8 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.resizePanes()
 	case "z":
 		return m.zoom(r)
+	case "m":
+		return m.toggleMouse(), nil
 	case "[", "pgup":
 		if r.term.ScrollbackLen() == 0 {
 			m.flash = "no history to scroll (the agent is drawing full-screen)"
@@ -1140,4 +1142,15 @@ func (r *deckCrewRun) activityBadge() string {
 	}
 	_, since := r.activity()
 	return ui.Orange.Render("◐"+r.crewID) + ui.Dim.Render(" waiting "+shortDuration(since))
+}
+
+// toggleMouse turns the deck's mouse capture off everywhere, or back on.
+func (m deckModel) toggleMouse() deckModel {
+	m.mouseOff = !m.mouseOff
+	if m.mouseOff {
+		m.flash = "mouse: the terminal selects text and opens links everywhere · M (or " + deckPrefixKey + " m) to give the deck the mouse back"
+	} else {
+		m.flash = "mouse: the deck takes clicks and the wheel when the sidebar has focus"
+	}
+	return m
 }

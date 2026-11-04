@@ -188,6 +188,8 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.resumeCrew()
 	case "S":
 		return m.stopSelected()
+	case "M":
+		return m.toggleMouse(), nil
 	case "s":
 		m.sidebarHidden = !m.sidebarHidden
 		m.resizePanes()
