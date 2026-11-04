@@ -31,6 +31,7 @@ type deckCrewRun struct {
 	harness string
 	capsule string // repo/name it works in
 	dir     string
+	role    string // "" or mission.RoleBriefing
 	term    crewTerm
 
 	// UI state, touched only by Update.
@@ -61,6 +62,7 @@ type deckLaunchReadyMsg struct {
 	harness string
 	capsule string
 	dir     string
+	role    string
 	crewID  string
 	term    crewTerm
 	err     error
@@ -105,8 +107,7 @@ func (m deckModel) shownRun() (*deckCrewRun, bool) {
 
 // focusRun moves the cursor to a crew's row and gives its terminal focus.
 func (m *deckModel) focusRun(r *deckCrewRun) {
-	m.cursorKey = r.key()
-	m.rebuildRows()
+	m.wantRow(r.key())
 	m.focusTerm = true
 }
 
@@ -157,6 +158,9 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 	if m.launching[slug] {
 		return m, nil
 	}
+	if dm.M.State == mission.Briefing {
+		return m.launchBriefing(dm.M, dm.Brief, harnessName)
+	}
 	place, ok := m.crewPlaceFor(dm)
 	if !ok {
 		m.flash = "no capsule to work in yet: a attaches one, or WS_MISSION=" + slug + " ws lift <repo> <name>"
@@ -171,7 +175,7 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.dir}
-	launch := m.launchCmd(slug, harnessName, place.capsule, "", func() (harness.Launch, error) { return h.Start(b) })
+	launch := m.launchCmd(slug, harnessName, place.capsule, "", "", func() (harness.Launch, error) { return h.Start(b) })
 
 	if place.sharedWith != nil {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.sharedWith.crewID, place.capsule),
@@ -221,6 +225,9 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 			place, ok = crewPlace{dir: c.Path, capsule: last.Capsule}, true
 		}
 	}
+	if last.Role == mission.RoleBriefing {
+		place, ok = crewPlace{dir: m.ws.Root, capsule: briefingPlace}, true
+	}
 	if !ok {
 		m.flash = "no capsule left to resume in"
 		return m, nil
@@ -235,7 +242,7 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	}
 	m.launching[slug] = true
 	m.flash = "resuming " + last.ID + " on " + slug + "…"
-	return m, m.launchCmd(slug, last.Harness, place.capsule, last.ID, func() (harness.Launch, error) {
+	return m, m.launchCmd(slug, last.Harness, place.capsule, last.ID, last.Role, func() (harness.Launch, error) {
 		return h.Resume(place.dir, last.Conversation)
 	})
 }
@@ -245,6 +252,11 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 	dm, ok := m.selectedMission()
 	if !ok {
+		return m, nil
+	}
+	// A mission being briefed has one briefing crew at a time: go to it.
+	if runs := m.reg.live(dm.M.Slug); dm.M.State == mission.Briefing && len(runs) > 0 {
+		m.focusRun(runs[len(runs)-1])
 		return m, nil
 	}
 	last, ok := m.resumableCrew(dm)
@@ -382,11 +394,11 @@ func prependPath(dir, path string) string {
 //
 // resumeID, when set, continues that crew (same id) instead of recording new
 // crew.
-func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID string, prepare func() (harness.Launch, error)) tea.Cmd {
+func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, prepare func() (harness.Launch, error)) tea.Cmd {
 	store, host, root := m.store, m.host, m.ws.Root
 	w, h := m.mainWidth(), m.bodyHeight()
 	return func() tea.Msg {
-		msg := deckLaunchReadyMsg{slug: slug, harness: harnessName, capsule: capsule}
+		msg := deckLaunchReadyMsg{slug: slug, harness: harnessName, capsule: capsule, role: role}
 		l, err := prepare()
 		if err != nil {
 			msg.err = err
@@ -397,7 +409,7 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID string, prepar
 		if resumeID != "" {
 			crew, err = store.ResumeCrew(slug, resumeID)
 		} else {
-			crew, err = store.StartCrew(slug, harnessName, l.Conversation)
+			crew, err = store.StartCrewAs(slug, harnessName, l.Conversation, role)
 		}
 		if err != nil {
 			msg.err = err
@@ -405,7 +417,7 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID string, prepar
 		}
 		msg.crewID = crew.ID
 		term, err := host.Launch(crewSpec{
-			Slug: slug, CrewID: crew.ID, Harness: harnessName, Capsule: capsule,
+			Slug: slug, CrewID: crew.ID, Harness: harnessName, Capsule: capsule, Role: role,
 			Args: l.Args, Dir: l.Dir, Env: crewEnv(root, slug, crew.ID),
 			Width: w, Height: h,
 		})
@@ -427,7 +439,7 @@ func (m deckModel) finishLaunch(msg deckLaunchReadyMsg) (tea.Model, tea.Cmd) {
 		m.flash = "launch failed: " + msg.err.Error()
 		return m, loadDeckCmd(m.ws, m.prs)
 	}
-	r := &deckCrewRun{slug: msg.slug, crewID: msg.crewID, harness: msg.harness, capsule: msg.capsule, dir: msg.dir, term: msg.term}
+	r := &deckCrewRun{slug: msg.slug, crewID: msg.crewID, harness: msg.harness, capsule: msg.capsule, dir: msg.dir, role: msg.role, term: msg.term}
 	r.term.Resize(m.mainWidth(), m.bodyHeight())
 	m.reg.add(r)
 	m.focusRun(r)
@@ -439,7 +451,7 @@ func (m deckModel) finishLaunch(msg deckLaunchReadyMsg) (tea.Model, tea.Cmd) {
 func (m *deckModel) adoptHosted() []tea.Cmd {
 	var cmds []tea.Cmd
 	for _, h := range m.host.Running() {
-		r := &deckCrewRun{slug: h.Spec.Slug, crewID: h.Spec.CrewID, harness: h.Spec.Harness, capsule: h.Spec.Capsule, dir: h.Spec.Dir, term: h.Term}
+		r := &deckCrewRun{slug: h.Spec.Slug, crewID: h.Spec.CrewID, harness: h.Spec.Harness, capsule: h.Spec.Capsule, dir: h.Spec.Dir, role: h.Spec.Role, term: h.Term}
 		m.reg.add(r)
 		// Before the first WindowSizeMsg the deck has no size; resizing now
 		// would squash the crew's screen to nothing. resizePanes follows.
@@ -481,6 +493,11 @@ func (m deckModel) handlePaneMsg(msg deckPaneMsg) (tea.Model, tea.Cmd) {
 	if sel, ok := m.selected(); ok && sel.kind == deckRowCrew && sel.run == r {
 		m.focusTerm = false
 		m.cursorKey = "m:" + r.slug
+	}
+	if r.role == mission.RoleBriefing {
+		// The mission may have been renamed by ws mission ready; the next
+		// load finds it by this crew and lands there.
+		m.afterBriefing = r
 	}
 	m.rebuildRows()
 	m.flash = fmt.Sprintf("crew %s on %s ended (%s)", r.crewID, r.slug, r.exit)
@@ -818,4 +835,61 @@ func (m deckModel) chooseHarness() (tea.Model, tea.Cmd) {
 		return func() tea.Msg { return deckLaunchWithMsg{harness: names[i]} }
 	})
 	return m, nil
+}
+
+// briefingPlace is how a briefing crew's working place reads in the deck: it
+// works from the workspace root, before any capsule exists.
+const briefingPlace = "workspace"
+
+// launchBriefing starts briefing crew on a mission being briefed: in the
+// workspace root, with the user's request and the job of writing the brief
+// and creating capsules.
+func (m deckModel) launchBriefing(mm *mission.Mission, brief, harnessName string) (tea.Model, tea.Cmd) {
+	h, err := harness.Get(harnessName)
+	if err == nil {
+		err = h.Available()
+	}
+	if err != nil {
+		m.flash = err.Error() + " · L picks another harness"
+		return m, loadDeckCmd(m.ws, m.prs)
+	}
+	b := harness.Brief{
+		Slug: mm.Slug, Title: mm.Title, Brief: brief, Dir: m.ws.Root,
+		Role: mission.RoleBriefing, Request: mm.Request, Org: m.ws.Org,
+	}
+	m.launching[mm.Slug] = true
+	m.flash = "briefing " + mm.Slug + " with " + harnessName + "…"
+	return m, m.launchCmd(mm.Slug, harnessName, briefingPlace, "", mission.RoleBriefing,
+		func() (harness.Launch, error) { return h.Start(b) })
+}
+
+// landAfterBriefing runs when data arrives after a briefing crew ended: it
+// finds the crew's mission (renamed or not) and puts the cursor on it, saying
+// whether briefing finished.
+func (m *deckModel) landAfterBriefing(d deckData) {
+	r := m.afterBriefing
+	m.afterBriefing = nil
+	for _, dm := range d.Missions {
+		for _, c := range dm.M.Crew {
+			// Same crew on the same slug, or (renamed by ready) the crew
+			// record with this briefing process's pid.
+			sameCrew := c.ID == r.crewID && c.Role == mission.RoleBriefing
+			if !sameCrew || (dm.M.Slug != r.slug && c.PID != r.term.Pid()) {
+				continue
+			}
+			m.cursorKey = "m:" + dm.M.Slug
+			if dm.M.State == mission.Briefing {
+				m.flash = "briefing stopped before the mission was ready · ⏎ to resume or restart it"
+				return
+			}
+			live := 0
+			for _, cv := range dm.Capsules {
+				if cv.Exists {
+					live++
+				}
+			}
+			m.flash = ui.Green.Render("✓") + fmt.Sprintf(" Briefed: %s · %d capsule(s) · ⏎ to launch crew", dm.M.Title, live)
+			return
+		}
+	}
 }

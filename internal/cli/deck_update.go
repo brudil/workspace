@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 )
@@ -53,6 +54,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loaded = true
 		m.err = msg.err
 		if msg.err == nil {
+			if m.afterBriefing != nil {
+				m.landAfterBriefing(msg.data)
+			}
 			m.setData(msg.data)
 		}
 		return m, nil
@@ -189,9 +193,18 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.flash = "refreshing…"
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh))
-	case "n":
+	case "n", "N":
+		// n: say what the mission is and a briefing crew sets it up.
+		// N: name it and write the brief yourself.
 		m.mode = deckModeNewTitle
+		m.newBriefing = msg.String() == "n"
 		m.input.SetValue("")
+		m.input.CharLimit = 120
+		m.input.Placeholder = "Mission title"
+		if m.newBriefing {
+			m.input.CharLimit = 1000
+			m.input.Placeholder = "an idea, or an issue like 'fe issue 45'"
+		}
 		return m, m.input.Focus()
 	case "e":
 		return m.editBrief()
@@ -228,6 +241,16 @@ func (m deckModel) handleTitleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		if title == "" {
 			return m, nil
+		}
+		if m.newBriefing {
+			created, err := m.store.CreateBriefing(title)
+			if err != nil {
+				m.flash = "create failed: " + err.Error()
+				return m, nil
+			}
+			m.wantRow("m:" + created.Slug)
+			next, launch := m.launchBriefing(created, "", harness.Default())
+			return next, tea.Batch(launch, loadDeckCmd(m.ws, m.prs))
 		}
 		created, err := m.store.Create(title)
 		if err != nil {

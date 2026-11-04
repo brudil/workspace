@@ -21,7 +21,13 @@ type Brief struct {
 	Slug  string
 	Title string
 	Brief string // brief.md contents
-	Dir   string // working directory (a mission capsule)
+	Dir   string // working directory (a mission capsule, or the workspace root when briefing)
+
+	// Role is "" for crew working on the mission, or "briefing" for crew
+	// turning a request into a brief and capsules.
+	Role    string
+	Request string // what the user asked for (briefing)
+	Org     string // GitHub org the workspace's repos live in
 }
 
 // Launch is a ready-to-run agent command.
@@ -86,6 +92,9 @@ func Default() string {
 // the mission rather than pasting everything, so the brief stays the single
 // source of truth, but includes the brief too so the agent can start at once.
 func InitialPrompt(b Brief) string {
+	if b.Role == "briefing" {
+		return briefingPrompt(b)
+	}
 	var s strings.Builder
 	fmt.Fprintf(&s, "You are crew on the mission %q (%s), managed by the ws workspace tool.\n\n", b.Title, b.Slug)
 	s.WriteString("Before starting, run `ws mission show -f llm` to see the mission's capsules (worktrees, possibly across repos) and log. ")
@@ -96,5 +105,30 @@ func InitialPrompt(b Brief) string {
 		s.WriteString(brief)
 		s.WriteString("\n")
 	}
+	return s.String()
+}
+
+// briefingPrompt sets up crew whose only job is to turn a request into a
+// ready mission (brief and capsules) and then hand over.
+func briefingPrompt(b Brief) string {
+	var s strings.Builder
+	s.WriteString("You are briefing a new mission in a multi-repo workspace managed by the ws tool. ")
+	s.WriteString("You are NOT doing the work: another agent will, starting from what you set up. ")
+	s.WriteString("Your job is to turn the user's request into a ready mission, then stop.\n\n")
+	fmt.Fprintf(&s, "The request (mission %s):\n\n%s\n\n", b.Slug, strings.TrimSpace(b.Request))
+	s.WriteString("Steps:\n\n")
+	s.WriteString("1. Understand the request. Run `ws status -f llm` to see the repos, their aliases and their worktrees. ")
+	if b.Org != "" {
+		fmt.Fprintf(&s, "Repos live on GitHub as %s/<repo>. ", b.Org)
+	}
+	s.WriteString("If the request names an issue or PR (\"fe issue 45\", \"api#12\", a URL), read it with `gh issue view` / `gh pr view` (use `--repo <org>/<repo>` and `--comments`). ")
+	s.WriteString("Read code in a repo's `.ground` worktree (read-only) or with `ws rg`. Don't change any code.\n")
+	s.WriteString("2. Ask the user about anything ambiguous: which repos, scope, what done looks like.\n")
+	s.WriteString("3. Write the brief, replacing it whole:\n\n")
+	s.WriteString("   ws mission brief --set - <<'EOF'\n   ## Goal\n   ...\n   ## Context\n   (links to issues/PRs, relevant files)\n   ## Constraints\n   ...\n   ## Acceptance\n   ...\n   EOF\n\n")
+	s.WriteString("4. Give it a short title: `ws mission title \"...\"`.\n")
+	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name.\n")
+	s.WriteString("6. Show the user the brief and capsules (`ws mission show -f llm`) and check they're right.\n")
+	s.WriteString("7. When they agree, run `ws mission ready` (add `--slug <short-slug>` if the current slug is poor). That marks the mission ready and ends this session; work crew is launched from the deck.\n")
 	return s.String()
 }

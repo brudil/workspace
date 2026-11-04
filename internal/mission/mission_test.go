@@ -398,3 +398,84 @@ func TestResumeCrew(t *testing.T) {
 		t.Error("resuming unknown crew should fail")
 	}
 }
+
+func TestBriefingLifecycle(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, err := s.CreateBriefing("  fe issue 45\nplus more context  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Slug != "fe-issue-45" || m.Title != "fe issue 45" || m.State != Briefing || m.Request != "fe issue 45\nplus more context" {
+		t.Fatalf("mission = %+v", m)
+	}
+	if got := DeriveState(m, func(Capsule) CapsuleFacts { return CapsuleFacts{Exists: true} }); got != Briefing {
+		t.Errorf("briefing should win over derived state, got %s", got)
+	}
+	brief, _ := s.ReadBrief(m.Slug)
+	if !IsUnwrittenBrief(brief, m.Title) {
+		t.Errorf("new briefing brief = %q", brief)
+	}
+	if _, err := s.CreateBriefing("   "); err == nil {
+		t.Error("empty request should fail")
+	}
+
+	s.WriteBrief(m.Slug, "## Goal\nFix the race")
+	s.SetTitle(m.Slug, "Fix token refresh race")
+	got, _ := s.Load(m.Slug)
+	brief, _ = s.ReadBrief(m.Slug)
+	if got.Title != "Fix token refresh race" || brief != "## Goal\nFix the race\n" || IsUnwrittenBrief(brief, got.Title) {
+		t.Errorf("after edits: title %q brief %q", got.Title, brief)
+	}
+
+	if err := s.MarkReady(m.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkReady(m.Slug); err == nil || !strings.Contains(err.Error(), "isn't being briefed") {
+		t.Errorf("second ready err = %v", err)
+	}
+
+	if err := s.Rename(m.Slug, "token-race"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load("fe-issue-45"); err == nil {
+		t.Error("old slug still loads")
+	}
+	if got, err := s.Load("token-race"); err != nil || got.Title != "Fix token refresh race" {
+		t.Errorf("renamed = %+v, %v", got, err)
+	}
+	s.Create("Other")
+	if err := s.Rename("token-race", "other"); err == nil {
+		t.Error("renaming onto an existing mission should fail")
+	}
+	if err := s.Rename("token-race", "Bad Slug"); err == nil {
+		t.Error("invalid slug accepted")
+	}
+}
+
+func TestIsUnwrittenBrief_Template(t *testing.T) {
+	if !IsUnwrittenBrief(briefTemplate("X"), "X") || IsUnwrittenBrief("## Goal\nreal", "X") {
+		t.Error("template detection wrong")
+	}
+}
+
+func TestEndCrew_FirstEndWins(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Ends")
+	s.StartCrewAs(m.Slug, "cursor", "", RoleBriefing)
+	s.EndCrew(m.Slug, "c1", "briefed")
+	s.EndCrew(m.Slug, "c1", "hangup")
+	got, _ := s.Load(m.Slug)
+	if got.Crew[0].Exit != "briefed" || got.Crew[0].Role != RoleBriefing {
+		t.Errorf("crew = %+v", got.Crew[0])
+	}
+	events, _ := s.ReadLog(m.Slug, 0)
+	ended := 0
+	for _, e := range events {
+		if e.Kind == EventCrewEnded {
+			ended++
+		}
+	}
+	if ended != 1 {
+		t.Errorf("crew_ended logged %d times", ended)
+	}
+}

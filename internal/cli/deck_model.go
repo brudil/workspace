@@ -96,10 +96,11 @@ type deckModel struct {
 	looseOpen     bool
 	showHelp      bool
 
-	mode    deckMode
-	input   textinput.Model
-	pick    *deckPick
-	confirm *deckConfirm
+	mode        deckMode
+	newBriefing bool // the title input is asking for a briefing request
+	input       textinput.Model
+	pick        *deckPick
+	confirm     *deckConfirm
 
 	flash string
 
@@ -111,6 +112,14 @@ type deckModel struct {
 	prefix     bool // the prefix key was pressed; next key is a deck command
 	scrollMode bool // keys move through the focused crew's history
 	stopping   bool // quitting: stopAll records crew ends
+
+	// afterBriefing is a briefing crew that just ended; the next data load
+	// lands on its mission.
+	afterBriefing *deckCrewRun
+
+	// keyPending: cursorKey names a row that may not exist until the next
+	// data load (see wantRow).
+	keyPending bool
 
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes
@@ -163,6 +172,21 @@ func (m *deckModel) setData(d deckData) {
 	}
 	m.data = d
 	m.rebuildRows()
+	// A wanted row gets one data load to appear; after that the cursor's
+	// own row is what's kept.
+	if m.keyPending {
+		m.keyPending = false
+		m.cursorKey = ""
+	}
+}
+
+// wantRow puts the cursor on the row with this key as soon as it exists.
+// Launches and new missions use it: their row only appears once fresh data
+// has loaded, which may arrive before or after the launch completes.
+func (m *deckModel) wantRow(key string) {
+	m.cursorKey = key
+	m.keyPending = true
+	m.rebuildRows()
 }
 
 // rebuildRows recomputes the sidebar rows from data and keeps the cursor on
@@ -202,7 +226,9 @@ func (m *deckModel) rebuildRows() {
 			break
 		}
 	}
-	m.cursorKey = ""
+	if !m.keyPending || m.rows == nil || rowKeyFound(m.rows, m.data, key) {
+		m.cursorKey = ""
+	}
 }
 
 // selected returns the row under the cursor.
@@ -236,4 +262,13 @@ func (m deckModel) counts() string {
 		noun = "mission"
 	}
 	return fmt.Sprintf("%d %s · %d live", n, noun, live)
+}
+
+func rowKeyFound(rows []deckRow, d deckData, key string) bool {
+	for _, r := range rows {
+		if r.key(d) == key {
+			return true
+		}
+	}
+	return false
 }

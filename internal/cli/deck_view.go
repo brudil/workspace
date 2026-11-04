@@ -109,7 +109,10 @@ func (m deckModel) renderHeader() string {
 func (m deckModel) renderFooter() string {
 	switch m.mode {
 	case deckModeNewTitle:
-		return " " + ui.Bold.Render("New mission:") + " " + m.input.View()
+		if m.newBriefing {
+			return " " + ui.Bold.Render("What's the mission?") + " " + m.input.View()
+		}
+		return " " + ui.Bold.Render("Mission title:") + " " + m.input.View()
 	case deckModeConfirm:
 		return " " + ui.Orange.Render(m.confirm.prompt) + ui.Dim.Render("  y/n")
 	case deckModePick:
@@ -197,6 +200,12 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 	b.WriteString("\n" + indent + ui.Bold.Render(dm.M.Title) + "\n")
 	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + stateStyle(dm.State).Render(string(dm.State)) + "\n")
 	b.WriteString(indent + m.crewSummary(dm) + "\n")
+	if dm.State == mission.Briefing {
+		b.WriteString("\n" + indent + ui.Orange.Render("Being briefed") + ui.Dim.Render(" · an agent is turning the request into a brief and capsules; it finishes with ws mission ready") + "\n")
+		if dm.M.Request != "" {
+			b.WriteString(indent + ui.Dim.Render("Requested: ") + strings.ReplaceAll(dm.M.Request, "\n", " ") + "\n")
+		}
+	}
 
 	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")
 	if len(dm.Capsules) == 0 {
@@ -355,7 +364,11 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			if selected && m.focusTerm {
 				marker = ui.Green.Render(" ▸ ")
 			}
-			line = "  " + marker + ui.Green.Render("●"+r.run.crewID) + " " + r.run.harness + ui.Dim.Render(" "+r.run.capsule)
+			label := r.run.harness + ui.Dim.Render(" "+r.run.capsule)
+			if r.run.role == mission.RoleBriefing {
+				label = ui.Orange.Render("briefing") + ui.Dim.Render(" "+r.run.harness)
+			}
+			line = "  " + marker + ui.Green.Render("●"+r.run.crewID) + " " + label
 		case deckRowLooseHeader:
 			add("", -1)
 			arrow := "▸"
@@ -429,7 +442,8 @@ func (m deckModel) renderHelp() string {
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
-		{"n", "New mission (then edit its brief)"},
+		{"n", "New mission: say what it is; a briefing agent writes the brief and lifts capsules"},
+		{"N", "New mission you name and brief yourself (in $EDITOR)"},
 		{"e", "Edit the selected mission's brief in $EDITOR"},
 		{"a", "Attach: a loose capsule to this mission, or this loose capsule to a mission"},
 		{"d", "Detach the selected capsule from its mission"},

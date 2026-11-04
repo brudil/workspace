@@ -319,7 +319,19 @@ ws mission note "Went with a mutex, not a channel"
 
 **Brief.** `brief.md` is yours. `ws mission new --brief "..."` or `--brief-file path|-` writes it without an editor. Agents add to the log with `ws mission note` rather than editing the brief.
 
-**The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` creates a mission, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
+**The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` starts a new mission (see Briefing below), `N` creates one you name and brief yourself in `$EDITOR`, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
+
+**Briefing.** `n` in the deck asks one thing: what's the mission? Answer however you like: `fe issue 45`, a pasted issue URL, or a sentence. The deck creates the mission in the `briefing` state and launches a briefing agent in the workspace root. Its only job is to turn your request into a ready mission:
+
+1. Work out what you mean: repos and aliases from `ws status -f llm`, issues and PRs with `gh`, code in `.ground`.
+2. Ask you about anything unclear.
+3. Write the brief with `ws mission brief --set -`, and title it with `ws mission title`.
+4. Lift (or dock) the capsules the work needs.
+5. Check with you, then run `ws mission ready`.
+
+`ws mission ready` refuses until the brief is written and a capsule exists (`--no-capsules` if none is needed), can rename the mission (`--slug`), records the briefing agent as `briefed` and ends its session. The deck then lands on the ready mission, and `⏎` launches crew to do the work. Briefing missions sit at the top of the sidebar while they wait on you. Stop a briefing early and `⏎` offers to resume it.
+
+The same commands work by hand: `ws mission brief` prints or replaces a brief, `ws mission title` retitles, and `ws mission ready` finishes a briefing. Crew can only change the brief or title while briefing; after that they belong to you.
 
 **Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended. Crew get `.ws/bin` first on `PATH`, where `ws` and `workspace` point at the deck's own binary, so the commands they're told to run always match the deck's version.
 

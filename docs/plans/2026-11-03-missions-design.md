@@ -1,7 +1,7 @@
 # Missions: Workspace Owns the Work, Agents Run It
 
 **Date:** 2026-11-03
-**Status:** Phases 1–4 implemented (#8, #9, #10, deck extras: several crew, scrollback, raw zoom, deck server). Cursor CLI details pending local verification, see `2026-11-04-deck-crew-cursor-checklist.md`.
+**Status:** Phases 1–4 implemented, plus briefing (a briefing agent turns a request into a ready mission) (#8, #9, #10, deck extras: several crew, scrollback, raw zoom, deck server). Cursor CLI details pending local verification, see `2026-11-04-deck-crew-cursor-checklist.md`.
 
 ## Problem
 

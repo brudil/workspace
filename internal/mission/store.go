@@ -323,6 +323,11 @@ func EnsureExcluded(root string) { ensureExcluded(root) }
 // StartCrew records new crew on a mission and logs it. IDs are c1, c2, … in
 // order of launch, so they stay short enough to show in the sidebar.
 func (s Store) StartCrew(slug, harness, conversation string) (Crew, error) {
+	return s.StartCrewAs(slug, harness, conversation, "")
+}
+
+// StartCrewAs is StartCrew with a role (RoleBriefing, or "" for work).
+func (s Store) StartCrewAs(slug, harness, conversation, role string) (Crew, error) {
 	var crew Crew
 	_, err := s.Update(slug, func(m *Mission) error {
 		crew = Crew{
@@ -330,6 +335,7 @@ func (s Store) StartCrew(slug, harness, conversation string) (Crew, error) {
 			Harness:      harness,
 			Conversation: conversation,
 			Started:      now(),
+			Role:         role,
 		}
 		m.Crew = append(m.Crew, crew)
 		return nil
@@ -344,16 +350,22 @@ func (s Store) StartCrew(slug, harness, conversation string) (Crew, error) {
 	return crew, s.AppendLog(slug, Event{Kind: EventCrewStarted, Crew: crew.ID, Text: text})
 }
 
-// EndCrew records that crew stopped, with a short exit summary.
+// EndCrew records that crew stopped, with a short exit summary. The first
+// end recorded wins: ending crew that has already ended changes nothing (so
+// `ws mission ready` can record "briefed" before the hang-up lands).
 func (s Store) EndCrew(slug, id, exit string) error {
-	found := false
+	found, already := false, false
 	if _, err := s.Update(slug, func(m *Mission) error {
 		for i := range m.Crew {
 			if m.Crew[i].ID == id {
+				found = true
+				if m.Crew[i].Ended != nil {
+					already = true
+					return nil
+				}
 				t := now()
 				m.Crew[i].Ended = &t
 				m.Crew[i].Exit = exit
-				found = true
 			}
 		}
 		return nil
@@ -362,6 +374,9 @@ func (s Store) EndCrew(slug, id, exit string) error {
 	}
 	if !found {
 		return fmt.Errorf("mission %s has no crew %s", slug, id)
+	}
+	if already {
+		return nil
 	}
 	return s.AppendLog(slug, Event{Kind: EventCrewEnded, Crew: id, Text: exit})
 }
@@ -450,4 +465,111 @@ func (s Store) ReconcileCrew(alive func(pid int) bool) int {
 		}
 	}
 	return closed
+}
+
+// maxProvisionalTitle bounds the title a briefing mission starts with (the
+// request's first line) until the briefing crew sets a real one.
+const maxProvisionalTitle = 80
+
+// CreateBriefing makes a mission from a free-form request ("fe issue 45",
+// "the token refresh race in api"), in the briefing state, with an empty
+// brief for the briefing crew to write.
+func (s Store) CreateBriefing(request string) (*Mission, error) {
+	request = strings.TrimSpace(request)
+	if request == "" {
+		return nil, errors.New("say what the mission is")
+	}
+	title, _, _ := strings.Cut(request, "\n")
+	if len(title) > maxProvisionalTitle {
+		title = strings.TrimSpace(title[:maxProvisionalTitle]) + "…"
+	}
+	m, err := s.Create(title)
+	if err != nil {
+		return nil, err
+	}
+	m, err = s.Update(m.Slug, func(m *Mission) error {
+		m.State = Briefing
+		m.Request = request
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return m, os.WriteFile(s.BriefPath(m.Slug), nil, 0o644)
+}
+
+// WriteBrief replaces a mission's brief.
+func (s Store) WriteBrief(slug, brief string) error {
+	if _, err := s.Load(slug); err != nil {
+		return err
+	}
+	if brief != "" && !strings.HasSuffix(brief, "\n") {
+		brief += "\n"
+	}
+	return os.WriteFile(s.BriefPath(slug), []byte(brief), 0o644)
+}
+
+// IsUnwrittenBrief reports whether a brief is empty or still the template
+// a mission is created with.
+func IsUnwrittenBrief(brief, title string) bool {
+	b := strings.TrimSpace(brief)
+	return b == "" || b == strings.TrimSpace(briefTemplate(title))
+}
+
+// SetTitle changes a mission's title (its slug stays).
+func (s Store) SetTitle(slug, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return errors.New("title is empty")
+	}
+	_, err := s.Update(slug, func(m *Mission) error {
+		m.Title = title
+		return nil
+	})
+	return err
+}
+
+// MarkReady ends briefing: the mission becomes an ordinary (derived-state)
+// mission.
+func (s Store) MarkReady(slug string) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		if m.State != Briefing {
+			return fmt.Errorf("mission %s isn't being briefed (it's %s)", slug, stateOrDerived(m.State))
+		}
+		m.State = ""
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.AppendLog(slug, Event{Kind: EventState, Text: "ready"})
+}
+
+func stateOrDerived(s State) string {
+	if s == "" {
+		return "ready"
+	}
+	return string(s)
+}
+
+// Rename moves a mission to a new slug. Crew running with WS_MISSION set to
+// the old slug lose track of it, so the deck only renames at the end of
+// briefing.
+func (s Store) Rename(old, slug string) error {
+	if old == slug {
+		return nil
+	}
+	if !validSlug(slug) || len(slug) > maxSlugLen {
+		return fmt.Errorf("%q isn't a valid slug (lowercase letters, digits and dashes, up to %d)", slug, maxSlugLen)
+	}
+	if _, err := s.Load(old); err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.missionDir(slug)); err == nil {
+		return fmt.Errorf("mission %s already exists", slug)
+	}
+	if err := os.Rename(s.missionDir(old), s.missionDir(slug)); err != nil {
+		return err
+	}
+	return s.AppendLog(slug, Event{Kind: EventState, Text: "renamed from " + old})
 }

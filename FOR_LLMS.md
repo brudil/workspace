@@ -66,6 +66,8 @@ Use this to orient yourself before starting work.
 - Create new capsules with `ws lift`. With `WS_MISSION` set, they join the mission automatically.
 - Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
 
+If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
+
 If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.
 
 ## Searching code

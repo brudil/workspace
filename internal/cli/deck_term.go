@@ -41,6 +41,7 @@ var _ crewTerm = (*termpane.Pane)(nil)
 type crewSpec struct {
 	Slug, CrewID, Harness string
 	Capsule               string // repo/name, for display
+	Role                  string // "" or mission.RoleBriefing
 	Args                  []string
 	Dir                   string
 	Env                   []string

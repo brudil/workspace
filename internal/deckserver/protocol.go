@@ -28,6 +28,7 @@ type Spec struct {
 	CrewID  string   `json:"crew"`
 	Harness string   `json:"harness"`
 	Capsule string   `json:"capsule"`
+	Role    string   `json:"role,omitempty"`
 	Args    []string `json:"args"`
 	Dir     string   `json:"dir"`
 	Env     []string `json:"env"`

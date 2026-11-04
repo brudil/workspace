@@ -36,6 +36,7 @@ type deckData struct {
 
 // deckStateOrder is the sidebar order: live work first, finished work last.
 var deckStateOrder = map[mission.State]int{
+	mission.Briefing: -1, // needs you: answer the briefing crew's questions
 	mission.Active:   0,
 	mission.Review:   1,
 	mission.Draft:    2,

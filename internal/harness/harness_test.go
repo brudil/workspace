@@ -121,3 +121,25 @@ func TestRegistryAndDefault(t *testing.T) {
 		t.Errorf("default = %s", Default())
 	}
 }
+
+func TestBriefingPrompt(t *testing.T) {
+	p := InitialPrompt(Brief{Slug: "fe-issue-45", Role: "briefing", Request: "fe issue 45", Org: "acme"})
+	for _, want := range []string{
+		"NOT doing the work",
+		"fe issue 45",
+		"acme/<repo>",
+		"gh issue view",
+		"ws mission brief --set -",
+		"ws mission title",
+		"ws lift <repo> <branch-name>",
+		"ws mission ready",
+		"Don't change any code",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("briefing prompt missing %q", want)
+		}
+	}
+	if work := InitialPrompt(Brief{Slug: "x", Title: "X"}); strings.Contains(work, "ws mission ready") {
+		t.Error("work crew prompt mentions ws mission ready")
+	}
+}

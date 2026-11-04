@@ -34,7 +34,13 @@ const (
 	Landed   State = "landed"
 	Parked   State = "parked"
 	Archived State = "archived"
+	// Briefing: a briefing crew is turning the request into a brief and
+	// capsules. `ws mission ready` ends it.
+	Briefing State = "briefing"
 )
+
+// RoleBriefing marks crew that brief a mission rather than work on it.
+const RoleBriefing = "briefing"
 
 // Capsule identifies a capsule owned by a mission. Repo and Name are its
 // identity; Branch is remembered so a PR can still be found after the
@@ -59,14 +65,19 @@ type Crew struct {
 	PID int `toml:"pid,omitzero"`
 	// Capsule (repo/name) the crew worked in, so resuming goes back there.
 	Capsule string `toml:"capsule,omitempty"`
+	// Role is "" for crew working on the mission, or RoleBriefing.
+	Role string `toml:"role,omitempty"`
 }
 
 // Mission is the contents of mission.toml plus its slug.
 type Mission struct {
-	Slug     string    `toml:"-"`
-	Title    string    `toml:"title"`
-	Created  time.Time `toml:"created"`
-	State    State     `toml:"state,omitempty"` // stored override: "", parked or archived
+	Slug    string    `toml:"-"`
+	Title   string    `toml:"title"`
+	Created time.Time `toml:"created"`
+	State   State     `toml:"state,omitempty"` // stored override: "", briefing, parked or archived
+	// Request is what the user asked for, verbatim, when a briefing crew
+	// created the mission from it.
+	Request  string    `toml:"request,omitempty"`
 	Capsules []Capsule `toml:"capsules,omitempty"`
 	Crew     []Crew    `toml:"crew,omitempty"`
 }
@@ -132,7 +143,7 @@ type CapsuleFacts struct {
 //	every one has a PR     → review
 //	anything else          → active
 func DeriveState(m *Mission, facts func(Capsule) CapsuleFacts) State {
-	if m.State == Parked || m.State == Archived {
+	if m.State == Parked || m.State == Archived || m.State == Briefing {
 		return m.State
 	}
 	counted, withPR, merged := 0, 0, 0

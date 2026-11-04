@@ -1,0 +1,117 @@
+package cli_test
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/brudil/workspace/internal/mission"
+	"github.com/brudil/workspace/internal/testutil"
+)
+
+func writeFile(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestBriefing_HumanPath(t *testing.T) {
+	w := missionWorkspace(t)
+	store := mission.Store{Root: w.Root}
+	m, err := store.CreateBriefing("fe issue 45")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(mission.EnvMission, m.Slug)
+
+	// Not ready without a brief.
+	r := testutil.RunCommand(t, w.Root, nil, "mission", "ready")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "write the brief first") {
+		t.Fatalf("ready without brief: %v", r.Err)
+	}
+
+	run(t, w, nil, "mission", "brief", "--set", writeFile(t, t.TempDir(), "b.md", "## Goal\nFix the race in token refresh."))
+	run(t, w, nil, "mission", "title", "Fix", "token", "refresh", "race")
+	if got := run(t, w, nil, "mission", "brief"); got.Stdout != "## Goal\nFix the race in token refresh.\n" {
+		t.Errorf("brief = %q", got.Stdout)
+	}
+
+	// Not ready without a capsule.
+	r = testutil.RunCommand(t, w.Root, nil, "mission", "ready")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "create the capsules") {
+		t.Fatalf("ready without capsules: %v", r.Err)
+	}
+
+	run(t, w, nil, "lift", "fe", "token-race")
+	ready := run(t, w, nil, "mission", "ready", "--slug", "token-race")
+	if !strings.Contains(ready.Stderr, "Mission token-race is ready: Fix token refresh race · 1 capsule") {
+		t.Errorf("ready output:\n%s", ready.Stderr)
+	}
+	got, err := store.Load("token-race")
+	if err != nil || got.State != "" || !got.HasCapsule("frontend", "token-race") {
+		t.Errorf("after ready: %+v, %v", got, err)
+	}
+	if show := run(t, w, nil, "mission", "show", "token-race", "-f", "llm"); !strings.Contains(show.Stdout, "Requested as: fe issue 45") {
+		t.Errorf("show:\n%s", show.Stdout)
+	}
+}
+
+func TestBriefing_CrewCantEditBriefOnceReady(t *testing.T) {
+	w := missionWorkspace(t)
+	run(t, w, nil, "mission", "new", "Ready one", "--no-edit")
+	t.Setenv(mission.EnvMission, "ready-one")
+	t.Setenv(mission.EnvCrew, "c1")
+	r := testutil.RunCommand(t, w.Root, nil, "mission", "brief", "--set", writeFile(t, t.TempDir(), "b.md", "rewritten"))
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "belongs to the user") {
+		t.Errorf("crew edited the brief: %v", r.Err)
+	}
+	r = testutil.RunCommand(t, w.Root, nil, "mission", "title", "Renamed by agent")
+	if r.Err == nil {
+		t.Error("crew retitled a briefed mission")
+	}
+}
+
+func TestBriefing_ReadyEndsTheBriefingCrew(t *testing.T) {
+	w := missionWorkspace(t)
+	store := mission.Store{Root: w.Root}
+	m, _ := store.CreateBriefing("api: cache the user lookup")
+
+	// Stand-in for the briefing agent: its own process group, like crew in a pty.
+	agent := exec.Command("sleep", "30")
+	agent.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := agent.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- agent.Wait() }()
+	t.Cleanup(func() { agent.Process.Kill() })
+
+	crew, _ := store.StartCrewAs(m.Slug, "cursor", "conv-9", mission.RoleBriefing)
+	store.SetCrewProcess(m.Slug, crew.ID, agent.Process.Pid, "")
+	t.Setenv(mission.EnvMission, m.Slug)
+	t.Setenv(mission.EnvCrew, crew.ID)
+
+	run(t, w, nil, "mission", "brief", "--set", writeFile(t, t.TempDir(), "b.md", "## Goal\nCache it."))
+	run(t, w, nil, "lift", "backend", "cache-lookup")
+	ready := run(t, w, nil, "mission", "ready")
+	if !strings.Contains(ready.Stderr, "this briefing session ends now") {
+		t.Errorf("ready output:\n%s", ready.Stderr)
+	}
+
+	got, _ := store.Load(m.Slug)
+	if got.Crew[0].Exit != "briefed" || got.Crew[0].Ended == nil {
+		t.Errorf("briefing crew = %+v", got.Crew[0])
+	}
+	select {
+	case <-exited:
+	case <-time.After(6 * time.Second):
+		t.Fatal("briefing crew wasn't hung up")
+	}
+}

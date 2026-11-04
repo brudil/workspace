@@ -36,6 +36,9 @@ With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
 	cmd.AddCommand(newMissionListCmd())
 	cmd.AddCommand(newMissionShowCmd())
 	cmd.AddCommand(newMissionNoteCmd())
+	cmd.AddCommand(newMissionBriefCmd())
+	cmd.AddCommand(newMissionTitleCmd())
+	cmd.AddCommand(newMissionReadyCmd())
 	cmd.AddCommand(newMissionAttachCmd())
 	cmd.AddCommand(newMissionDetachCmd())
 	cmd.AddCommand(newMissionStateCmd("park", mission.Parked, "Park a mission (paused work)"))
@@ -237,6 +240,8 @@ func stateStyle(s mission.State) lipgloss.Style {
 		return ui.Orange
 	case mission.Landed:
 		return ui.Green
+	case mission.Briefing:
+		return ui.Orange
 	default:
 		return ui.Dim
 	}
@@ -312,6 +317,9 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 	fmt.Fprintf(&b, "Mission: %s\n", v.M.Slug)
 	fmt.Fprintf(&b, "Title: %s\n", v.M.Title)
 	fmt.Fprintf(&b, "State: %s\n", v.State)
+	if v.M.Request != "" {
+		fmt.Fprintf(&b, "Requested as: %s\n", strings.ReplaceAll(v.M.Request, "\n", " "))
+	}
 	fmt.Fprintf(&b, "Brief file: %s\n", briefPath)
 	if len(v.Capsules) == 0 {
 		b.WriteString("Capsules: none yet. Create one with `ws lift <repo> <name>`; with WS_MISSION set it joins this mission.\n")

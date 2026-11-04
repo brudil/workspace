@@ -201,7 +201,7 @@ func TestDeck_NewMission(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
 	m := loadedDeck(t, ws, prIndex{})
 
-	m, cmd := press(t, m, "n")
+	m, cmd := press(t, m, "N")
 	if m.mode != deckModeNewTitle || cmd == nil {
 		t.Fatalf("mode = %v", m.mode)
 	}
@@ -227,7 +227,7 @@ func TestDeck_NewMission(t *testing.T) {
 func TestDeck_NewMissionEscCancels(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
 	m := loadedDeck(t, ws, prIndex{})
-	m, _ = press(t, m, "n", "x", "esc")
+	m, _ = press(t, m, "N", "x", "esc")
 	if m.mode != deckModeNormal {
 		t.Errorf("mode = %v", m.mode)
 	}

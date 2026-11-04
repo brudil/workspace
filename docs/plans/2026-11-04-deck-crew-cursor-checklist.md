@@ -83,6 +83,20 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Stop | `ctrl+g` then `S`, `y` | Agent exits; mission view says `c1 (cursor) ended: …` |
 | Resume | After stopping crew (or quitting with **Stop crew**), `⏎` on the mission | Asks **Resume c1** / **New crew**; resume brings back the same conversation as `c1` (not `c2`), in the same capsule. `R` does the same without asking |
 
+## 5b. Briefing a new mission
+
+| Check | How | Expected |
+|---|---|---|
+| Ask, don't name | In the deck, `n` | Footer asks **What's the mission?** (`N` is the old title + editor flow) |
+| From an issue | Type e.g. `<alias> issue <number>` for a real issue, `⏎` | A `briefing` mission appears at the top; a briefing agent (`●c1 briefing`) starts and has focus |
+| It reads the issue | Watch its first steps | Runs `ws status -f llm`, then `gh issue view … --repo <org>/<repo>`; doesn't edit code |
+| It asks, then briefs | Answer its questions | It writes the brief (`ws mission brief --set -`), titles it, and lifts capsules in the right repo(s) |
+| Hand-over | When it's done, agree | It runs `ws mission ready`; its session ends a couple of seconds later; the deck lands on the mission (now ready) and says **Briefed: … · ⏎ to launch crew** |
+| Work crew | `⏎`, choose **New crew** | A normal agent starts in the capsule with the brief as its first message |
+| Stop early | `n`, then `ctrl+g S` mid-briefing | Mission stays `briefing`; `⏎` offers to resume the briefing conversation |
+
+If the briefing agent tries to run `ws mission ready` before it has written a brief or lifted a capsule, ws refuses with a message telling it what's missing: say whether it recovered.
+
 ## 6. Detach and reattach
 
 | Check | How | Expected |

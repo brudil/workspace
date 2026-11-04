@@ -60,7 +60,7 @@ func (h *serverHost) Launch(s crewSpec) (crewTerm, error) {
 		return nil, err
 	}
 	return c.Launch(deckserver.Spec{
-		Slug: s.Slug, CrewID: s.CrewID, Harness: s.Harness, Capsule: s.Capsule,
+		Slug: s.Slug, CrewID: s.CrewID, Harness: s.Harness, Capsule: s.Capsule, Role: s.Role,
 		Args: s.Args, Dir: s.Dir, Env: s.Env, Width: s.Width, Height: s.Height,
 	})
 }
@@ -82,7 +82,7 @@ func (h *serverHost) Running() []hostedCrew {
 		}
 		sp := info.Spec
 		out = append(out, hostedCrew{
-			Spec: crewSpec{Slug: sp.Slug, CrewID: sp.CrewID, Harness: sp.Harness, Capsule: sp.Capsule, Dir: sp.Dir},
+			Spec: crewSpec{Slug: sp.Slug, CrewID: sp.CrewID, Harness: sp.Harness, Capsule: sp.Capsule, Role: sp.Role, Dir: sp.Dir},
 			Term: t,
 		})
 	}
