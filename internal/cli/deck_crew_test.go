@@ -613,3 +613,61 @@ func TestDeckCrew_ResumeReturnsToItsCapsule(t *testing.T) {
 		t.Errorf("resumed %s in %s, want c2 in frontend/two", r.crewID, r.capsule)
 	}
 }
+
+// promptHarness is a shell whose opening prompt is a command, so the test
+// can see the deck typing it in.
+type promptHarness struct{}
+
+func (promptHarness) Name() string     { return "prompted" }
+func (promptHarness) Available() error { return nil }
+func (promptHarness) Start(b harness.Brief) (harness.Launch, error) {
+	return harness.Launch{Args: []string{"/bin/sh", "-i"}, Dir: b.Dir, Prompt: `echo "delivered to $WS_CREW"`}, nil
+}
+func (promptHarness) Resume(string, string) (harness.Launch, error) {
+	return harness.Launch{}, harness.ErrNoResume
+}
+
+func TestDeckCrew_OpeningPromptIsTypedInOnceDrawn(t *testing.T) {
+	old := promptSettle
+	promptSettle = 300 * time.Millisecond
+	t.Cleanup(func() { promptSettle = old })
+
+	m, slug := shellCrewDeck(t)
+	harness.Register(promptHarness{})
+	t.Setenv(harness.EnvDefault, "prompted")
+
+	m, cmd := press(t, m, "enter")
+	ready := cmd().(deckLaunchReadyMsg)
+	if ready.prompt == "" {
+		t.Fatal("launch didn't carry the prompt")
+	}
+	next, follow := m.Update(ready)
+	m = next.(deckModel)
+	r, _ := liveRun(m, slug)
+
+	// Run the follow-up commands as the program would; one of them types
+	// the prompt in.
+	var flashes []string
+	for _, c := range follow().(tea.BatchMsg) {
+		if c == nil {
+			continue
+		}
+		if f, ok := c().(deckFlashMsg); ok {
+			flashes = append(flashes, string(f))
+		}
+	}
+	waitScreen(t, r, "\ndelivered to c1")
+	if strings.Join(flashes, "|") != "sent the opening prompt to c1" {
+		t.Errorf("flashes = %q", flashes)
+	}
+}
+
+func TestDeckCrew_PromptNotTypedIntoExitedCrew(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	r.term.Close(time.Second)
+	if msg := deliverPrompt(r, "echo late")(); msg != nil {
+		t.Errorf("typed into exited crew: %v", msg)
+	}
+}

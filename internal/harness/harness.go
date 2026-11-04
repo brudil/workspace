@@ -37,6 +37,11 @@ type Launch struct {
 	// Conversation is the agent's own session id when known before the
 	// agent starts, so the crew record can be resumed later.
 	Conversation string
+	// Prompt, when set, is pasted into the agent once its interface has
+	// drawn and settled, then submitted with Enter, as a person would.
+	// Typing it in avoids relying on how a CLI treats a long multi-line
+	// prompt argument.
+	Prompt string
 }
 
 // Harness launches one kind of agent.

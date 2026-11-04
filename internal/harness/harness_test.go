@@ -51,11 +51,11 @@ func TestCursor_StartWithChatID(t *testing.T) {
 	if l.Conversation != "3f2a9c1e-7b4d-4e2a-9f00-1234abcd" {
 		t.Errorf("conversation = %q", l.Conversation)
 	}
-	if len(l.Args) != 4 || l.Args[0] != "/bin/ca" || l.Args[1] != "--resume" || l.Args[2] != l.Conversation {
-		t.Errorf("args = %q", l.Args)
+	if strings.Join(l.Args, " ") != "/bin/ca --resume "+l.Conversation {
+		t.Errorf("args = %q (the prompt must not be an argument)", l.Args)
 	}
-	if !strings.Contains(l.Args[3], "ws mission show -f llm") || !strings.Contains(l.Args[3], "Fix it.") {
-		t.Errorf("prompt = %q", l.Args[3])
+	if !strings.Contains(l.Prompt, "ws mission show -f llm") || !strings.Contains(l.Prompt, "Fix it.") {
+		t.Errorf("prompt = %q", l.Prompt)
 	}
 	if l.Dir != "/w/fe/auth" {
 		t.Errorf("dir = %q", l.Dir)
@@ -72,7 +72,7 @@ func TestCursor_StartWithoutChatID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if l.Conversation != "" || len(l.Args) != 2 {
+		if l.Conversation != "" || len(l.Args) != 1 || l.Prompt == "" {
 			t.Errorf("%s: launch = %+v", name, l)
 		}
 	}

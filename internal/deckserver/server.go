@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -278,6 +279,7 @@ func (s *Server) do(c *conn, req request) message {
 	case "mirror":
 		cr.setMirror(c, req.On)
 	case "stop":
+		s.Log.Printf("stop requested for %s", req.Crew)
 		grace := time.Duration(req.Grace) * time.Millisecond
 		if grace <= 0 {
 			grace = 3 * time.Second
@@ -316,7 +318,7 @@ func (s *Server) launch(spec Spec) (int, error) {
 	s.crews[spec.Key()] = cr
 	s.checkIdleLocked()
 	s.mu.Unlock()
-	s.Log.Printf("launched %s (%s) pid %d in %s", spec.Key(), spec.Harness, pane.Pid(), spec.Dir)
+	s.Log.Printf("launched %s (%s) pid %d in %s: %s", spec.Key(), spec.Harness, pane.Pid(), spec.Dir, argsForLog(spec.Args))
 
 	go cr.fanOut()
 	s.watchers.Add(1)
@@ -477,3 +479,16 @@ func (cr *crew) refreshMirror() {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// argsForLog shows a command line with long arguments shortened.
+func argsForLog(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		a = strings.ReplaceAll(a, "\n", "⏎")
+		if len(a) > 60 {
+			a = a[:57] + "…"
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
+}

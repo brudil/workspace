@@ -73,14 +73,14 @@ func (c *Cursor) Start(b Brief) (Launch, error) {
 	conv := c.createChat(bin)
 	args := []string{bin}
 	if conv != "" {
-		// GUESS: --resume <id> attaches to the chat create-chat made, and an
-		// extra positional argument is the opening prompt.
+		// Verified: --resume <id> opens the chat create-chat made,
+		// interactively.
 		args = append(args, "--resume", conv)
 	}
-	// GUESS: a positional argument is sent as the first prompt and the agent
-	// stays interactive afterwards (no --print).
-	args = append(args, InitialPrompt(b))
-	return Launch{Args: args, Dir: b.Dir, Conversation: conv}, nil
+	// The opening prompt is typed in once the agent has drawn (see
+	// Launch.Prompt), not passed as an argument: a long multi-line prompt
+	// argument got new crew killed before they rendered.
+	return Launch{Args: args, Dir: b.Dir, Conversation: conv, Prompt: InitialPrompt(b)}, nil
 }
 
 func (c *Cursor) Resume(dir, conversation string) (Launch, error) {

@@ -65,7 +65,7 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Check | How | Expected |
 |---|---|---|
 | Launches | `⏎` on the mission | Header shows `crew c1 · cursor`, the agent's UI fills the left pane, the sidebar shows `●c1` |
-| Opening prompt arrived | Look at the agent's first turn | It mentions the mission and runs `ws mission show -f llm` |
+| Opening prompt arrived | Watch the pane after launch | Cursor draws, then about a second later the deck pastes the opening prompt into its input and submits it (footer: *sent the opening prompt to c1*). Its first turn mentions the mission. Report if the paste lands as separate lines, isn't submitted, or arrives before Cursor is ready |
 | Env reaches the agent's shell | Ask it: "run `env \| grep WS_`" | `WS_MISSION=crew-trial` and `WS_CREW=c1` |
 | Agent runs the deck's ws | Ask it: "run `command -v ws workspace` and `ws mission show -f llm`" | Both paths are `<workspace root>/.ws/bin/…`, and the mission prints. If the paths are elsewhere, your shell's rc file is putting another directory first on `PATH`: tell me which |
 | Works in the capsule | Ask it: "run `pwd`" | The capsule path |

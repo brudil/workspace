@@ -64,6 +64,7 @@ type deckLaunchReadyMsg struct {
 	dir     string
 	role    string
 	crewID  string
+	prompt  string // typed into the agent once it has drawn
 	term    crewTerm
 	err     error
 }
@@ -405,6 +406,7 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, 
 			return msg
 		}
 		msg.dir = l.Dir
+		msg.prompt = l.Prompt
 		var crew mission.Crew
 		if resumeID != "" {
 			crew, err = store.ResumeCrew(slug, resumeID)
@@ -444,7 +446,44 @@ func (m deckModel) finishLaunch(msg deckLaunchReadyMsg) (tea.Model, tea.Cmd) {
 	m.reg.add(r)
 	m.focusRun(r)
 	m.flash = ""
-	return m, tea.Batch(waitPane(r), loadDeckCmd(m.ws, m.prs))
+	return m, tea.Batch(waitPane(r), loadDeckCmd(m.ws, m.prs), deliverPrompt(r, msg.prompt))
+}
+
+// Typing the opening prompt in: wait for the agent's screen to draw and stop
+// changing, then paste and submit, as a person would.
+var (
+	promptSettle  = 1200 * time.Millisecond
+	promptMaxWait = 20 * time.Second
+)
+
+func deliverPrompt(r *deckCrewRun, prompt string) tea.Cmd {
+	if strings.TrimSpace(prompt) == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		deadline := time.Now().Add(promptMaxWait)
+		last, changed, drawn := "", time.Now(), false
+		for time.Now().Before(deadline) {
+			if r.term.Exited() {
+				return nil
+			}
+			if text := r.term.Text(); text != last {
+				last, changed = text, time.Now()
+				drawn = drawn || strings.TrimSpace(text) != ""
+			}
+			if drawn && time.Since(changed) >= promptSettle {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if r.term.Exited() {
+			return nil
+		}
+		r.term.Paste(prompt)
+		time.Sleep(300 * time.Millisecond)
+		r.term.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
+		return deckFlashMsg("sent the opening prompt to " + r.crewID)
+	}
 }
 
 // adoptHosted takes over crew a server host was already running.
