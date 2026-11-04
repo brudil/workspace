@@ -321,12 +321,26 @@ ws mission note "Went with a mutex, not a channel"
 
 **The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` creates a mission, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
 
-**Crew.** Press `⏎` on a mission to launch an agent on it. It runs inside the deck, in place of the brief, starting in the mission's first capsule with `WS_MISSION` and `WS_CREW` set. It is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended.
+**Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended.
 
-- While the agent has focus, every key goes to it. `ctrl+g` is the deck's prefix key: `ctrl+g tab` goes back to the sidebar, `ctrl+g s` hides the sidebar, `ctrl+g S` stops the crew, `ctrl+g ctrl+g` sends a literal `ctrl+g`. `tab` on the mission returns to the agent.
-- `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`.
-- `R` resumes the mission's last crew conversation, when the agent reported one.
-- Crew run as long as the deck does. Quitting with crew running asks first and hangs them up. A deck that dies records its crew as `lost` the next time it opens.
+- **Several crew.** Each crew gets its own row under its mission in the sidebar. The mission row shows the brief and lists who is working; a crew row shows that agent's terminal. `⏎` on the mission launches more crew, in a capsule nobody is working in, and asks before two crew share one.
+- **Focus.** `tab` (or `⏎`) on a crew row hands it the keyboard: every key and paste goes to the agent. `ctrl+g` is the deck's prefix key while an agent has focus:
+
+  | Key | Does |
+  |---|---|
+  | `ctrl+g tab` | Back to the sidebar (the agent keeps running) |
+  | `ctrl+g [` | Scroll back through the agent's history (`k`/`j`, `ctrl+u`/`ctrl+d`, `g`/`G`, `esc`) |
+  | `ctrl+g z` | Zoom: give the agent the whole real terminal, unemulated, until `ctrl+g z` again |
+  | `ctrl+g n` / `p` | Next / previous crew |
+  | `ctrl+g s` | Hide or show the sidebar |
+  | `ctrl+g S` | Stop this crew |
+  | `ctrl+g q` | Quit the deck |
+  | `ctrl+g ctrl+g` | Send a literal `ctrl+g` to the agent |
+
+  The mouse wheel scrolls history too, or goes to the agent when it draws full-screen.
+- **Harnesses.** `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`. `R` resumes the mission's last crew conversation, when the agent reported one.
+- **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, so they stop when it quits.
+- If a deck server dies, crew records it left open are marked `lost` the next time a deck opens.
 
 **Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 

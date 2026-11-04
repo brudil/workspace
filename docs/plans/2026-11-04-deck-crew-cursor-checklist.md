@@ -73,14 +73,30 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Paste | Paste a multi-line block | Arrives as one paste, not line-by-line submits |
 | Rendering | Watch a long streamed answer, spinners, colours, any boxes/borders | No garbage characters, no stale lines left behind |
 | Resize | Resize the terminal window; `ctrl+g s` to hide/show the sidebar | Agent redraws to the new width |
-| Back to the sidebar | `ctrl+g` then `tab` | Footer goes back to deck keys; agent keeps running (`●c1`) |
-| Return | `tab` (or `⏎`) on the mission | Back in the agent |
-| Stop | `ctrl+g` then `S`, `y` | Agent exits; mission view says `crew c1 (cursor) ended: …` |
+| Back to the sidebar | `ctrl+g` then `tab` | Footer goes back to deck keys; agent keeps running (`●c1` row under the mission) |
+| Return | `tab` (or `⏎`) on the crew row, or `tab` on the mission | Back in the agent |
+| History | After a long answer, `ctrl+g [`, then `k`/`ctrl+u`/`g`, `esc` | Scrolls back through earlier output; header shows `↑N lines`; `esc` returns to live. If it says "drawing full-screen", the agent uses the alternate screen and has no history here: report that |
+| Wheel | Scroll the mouse wheel over the agent | Scrolls history (or the agent's own UI if it's full-screen) |
+| Zoom | `ctrl+g z`, use the agent, `ctrl+g z` | The agent takes the whole terminal with no deck chrome; everything works exactly as outside the deck; `ctrl+g z` brings the deck back intact. **If anything renders or types wrong in the pane, check whether it's right when zoomed** |
+| Second crew | `ctrl+g tab`, `g` (mission row), `⏎` | If the mission has one capsule: asks before sharing it; `y` launches `c2`. `ctrl+g n` / `p` switch between them |
+| Stop | `ctrl+g` then `S`, `y` | Agent exits; mission view says `c1 (cursor) ended: …` |
 | Resume | `R` on the mission | Same conversation comes back (needs step 2 to have worked) |
-| Quit with crew running | Launch again, then `ctrl+g q`, `y` | Deck exits; `ws mission show crew-trial` lists the crew as `stopped: …` |
+
+## 6. Detach and reattach
+
+| Check | How | Expected |
+|---|---|---|
+| Detach | With crew running, `q` in the sidebar, choose **Detach** | Deck exits; `./bin/workspace deck server status` lists the crew |
+| Reattach | `./bin/workspace deck crew-trial`, then `tab` | Crew row is back with its screen as you left it; the agent kept working while detached |
+| Crash survival | Close the terminal window the deck is in, open a new one, `./bin/workspace deck` | Crew still there |
+| Stop and quit | `q`, choose **Stop crew and quit** | `ws mission show crew-trial` lists the crew ended; `deck server status` shows no crew |
+| Server log | `cat .ws/deck-server.log` at the workspace root | One line per launch and end, nothing alarming |
+| Stop everything | `./bin/workspace deck server stop` | Hangs up every crew and the server |
+
+`WS_DECK_SERVER=0` runs crew inside the deck instead (no detach). If something misbehaves only with the server, try with `WS_DECK_SERVER=0` and say which.
 
 For comparison, `WS_DECK_HARNESS=shell ./bin/workspace deck crew-trial` runs your `$SHELL` as crew through the same path. If something is broken with Cursor but fine with the shell, the problem is in the Cursor adapter. If it's broken with both, it's in the terminal embedding.
 
 ## What to send back
 
-For each numbered step and table row, "ok" or what happened instead. Paste the command outputs from steps 1–4, and a screenshot of any rendering problem.
+For each numbered step and table row (sections 5 and 6), "ok" or what happened instead. Paste the command outputs from steps 1–4, and a screenshot of any rendering problem.
