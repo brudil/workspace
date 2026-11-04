@@ -12,6 +12,7 @@ import (
 	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 )
 
@@ -436,4 +437,37 @@ func TestGolden_Deck_Help(t *testing.T) {
 	m := goldenDeck(t)
 	m, _ = press(t, m, "?")
 	golden.RequireEqual(t, plainView(m))
+}
+
+func TestDeck_ArtifactsAndConclusion(t *testing.T) {
+	ws := deckWorkspace(t, map[string][]string{"frontend": {"cache-ui"}, "backend": {"cache-api"}})
+	slug := seedMission(t, ws, "Cache", "## Goal\nCache it.", [2]string{"frontend", "cache-ui"}, [2]string{"backend", "cache-api"})
+	store := mission.Store{Root: ws.Root}
+	store.AddArtifact(slug, "https://example.com/design", "Design doc", "c1")
+
+	open := prIndex{
+		"frontend": {open: map[string]*github.PR{"cache-ui": {Number: 12, HeadRefName: "cache-ui", Title: "Cache UI"}}},
+		"backend":  {merged: map[string]*github.PR{"cache-api": {Number: 88, HeadRefName: "cache-api", Title: "Cache API"}}},
+	}
+	m := loadedDeck(t, ws, open)
+	_, content := m.mainContent(m.mainWidth()) // the whole pane, not just what fits on screen
+	view := ansi.Strip(content)
+	for _, want := range []string{"Artifacts", "frontend/cache-ui  #12 open  Cache UI", "backend/cache-api  #88 merged  Cache API", "Design doc  https://example.com/design"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Concluded") {
+		t.Error("concluded with a PR still open")
+	}
+
+	merged := prIndex{
+		"frontend": {merged: map[string]*github.PR{"cache-ui": {Number: 12, HeadRefName: "cache-ui"}}},
+		"backend":  {merged: map[string]*github.PR{"cache-api": {Number: 88, HeadRefName: "cache-api"}}},
+	}
+	m = loadedDeck(t, ws, merged)
+	_, content = m.mainContent(m.mainWidth())
+	if view := ansi.Strip(content); !strings.Contains(view, "✓ Concluded · every PR merged · x archives the mission") {
+		t.Errorf("no conclusion hint:\n%s", view)
+	}
 }

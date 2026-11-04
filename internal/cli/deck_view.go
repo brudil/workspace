@@ -232,6 +232,11 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 		}
 	}
 
+	b.WriteString(m.renderArtifacts(dm, indent))
+	if hint := m.conclusionHint(dm); hint != "" {
+		b.WriteString("\n" + indent + hint + "\n")
+	}
+
 	b.WriteString("\n" + indent + ui.Bold.Render("Brief") + ui.Dim.Render("  e to edit") + "\n")
 	if strings.TrimSpace(dm.Brief) == "" {
 		b.WriteString(indent + "  " + ui.Dim.Render("(empty)") + "\n")
@@ -528,4 +533,69 @@ func (m deckModel) missionMark(runs []*deckCrewRun) string {
 	default:
 		return ui.Green.Render("●" + n)
 	}
+}
+
+// renderArtifacts lists what the mission has produced: each capsule's PR
+// (found from its branch) and links crew recorded.
+func (m deckModel) renderArtifacts(dm deckMission, indent string) string {
+	var lines []string
+	for _, c := range dm.Capsules {
+		if c.PR == nil {
+			continue
+		}
+		state := ui.Blue.Render("open")
+		if c.PRS == mission.PRMerged {
+			state = ui.Green.Render("merged")
+		}
+		line := fmt.Sprintf("%s  #%d %s", c.Repo+"/"+c.Name, c.PR.Number, state)
+		if c.PR.Title != "" {
+			line += "  " + c.PR.Title
+		}
+		if c.PR.URL != "" {
+			line = ui.Hyperlink(c.PR.URL, line)
+		}
+		lines = append(lines, line)
+	}
+	for _, a := range dm.M.Artifacts {
+		label := a.Label
+		if label == "" {
+			label = a.URL
+		}
+		line := ui.Hyperlink(a.URL, label)
+		if a.Label != "" {
+			line += ui.Dim.Render("  " + a.URL)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n" + indent + ui.Bold.Render("Artifacts") + "\n")
+	for _, l := range lines {
+		b.WriteString(indent + "  " + l + "\n")
+	}
+	return b.String()
+}
+
+// conclusionHint says when a mission looks finished, and what's left.
+func (m deckModel) conclusionHint(dm deckMission) string {
+	live := m.reg.live(dm.M.Slug)
+	allDone := len(live) > 0
+	for _, r := range live {
+		if status, _ := m.crewStatus(r); status != mission.CrewDone {
+			allDone = false
+		}
+	}
+	switch {
+	case dm.State == mission.Landed && len(live) == 0:
+		return ui.Green.Render("✓ Concluded") + ui.Dim.Render(" · every PR merged · x archives the mission")
+	case dm.State == mission.Landed && allDone:
+		return ui.Green.Render("✓ Concluded") + ui.Dim.Render(" · every PR merged and crew done · S stops crew, then x archives")
+	case allDone && dm.State == mission.Review:
+		return ui.Green.Render("✓ Crew done") + ui.Dim.Render(" · PRs in review · tab to the crew to handle review comments")
+	case allDone:
+		return ui.Green.Render("✓ Crew done") + ui.Dim.Render(" · check their work; open PRs if needed")
+	}
+	return ""
 }

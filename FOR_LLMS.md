@@ -65,6 +65,8 @@ Use this to orient yourself before starting work.
 - A mission can span several capsules across repos. You may work in any capsule of your mission, but don't touch capsules outside it.
 - Create new capsules with `ws lift`. With `WS_MISSION` set, they join the mission automatically.
 - Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
+- When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it.
+- When your part is finished, run `ws mission done "<one-line summary>"`. ws finds PRs from the mission's capsules; record other outputs with `ws mission artifact add <url> "<label>"`.
 
 If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
 

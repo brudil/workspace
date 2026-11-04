@@ -97,6 +97,16 @@ Press `⏎` to launch Cursor on the mission. Then check:
 
 If the briefing agent tries to run `ws mission ready` before it has written a brief or lifted a capsule, ws refuses with a message telling it what's missing: say whether it recovered.
 
+## 5c. Working, waiting, asking, done
+
+| Check | How | Expected |
+|---|---|---|
+| Working / waiting | Launch crew, give it a task, `ctrl+g tab` to the sidebar | Row shows `●c2 working` while Cursor streams, then `◐c2 waiting …` a few seconds after it stops. If it flips to waiting while Cursor is still thinking (no visible output for 5s+), say so |
+| Notified | Stay in the sidebar (or another window) while it finishes | Deck says *c2 … is waiting for you*, bell rings, desktop notification (if your terminal supports OSC 9) |
+| Asks | Give it something needing a decision | It runs `ws mission ask "…"`; row shows `?c2 asks`, mission row `?1`, notification with the question. Typing to it clears it |
+| Done | Let it finish | It runs `ws mission done "…"`; row shows `✓c2 done`, mission view shows the summary |
+| Artifacts | After it opens a PR | Mission view's **Artifacts** lists the capsule's PR; anything it recorded with `ws mission artifact add` too |
+
 ## 6. Detach and reattach
 
 | Check | How | Expected |
