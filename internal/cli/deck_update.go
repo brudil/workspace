@@ -23,6 +23,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deckLaunchWithMsg:
 		return m.startCrew(msg.harness)
 
+	case deckZoomDoneMsg:
+		return m.handleZoomDone(msg)
+
 	case deckLaunchNowMsg:
 		m.launching[msg.slug] = true
 		m.flash = "launching " + msg.harness + " on " + msg.slug + "…"
