@@ -18,6 +18,9 @@ const (
 	EventCrewStarted   = "crew_started"
 	EventCrewEnded     = "crew_ended"
 	EventCrewResumed   = "crew_resumed"
+	EventCrewAsked     = "crew_asked"
+	EventCrewDone      = "crew_done"
+	EventArtifact      = "artifact"
 	EventState         = "state"
 )
 

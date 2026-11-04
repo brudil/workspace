@@ -47,7 +47,7 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if r, ok := m.focusedRun(); ok && m.mode == deckModeNormal {
 			r.scroll = 0
 			r.term.Paste(msg.Content)
-			return m, nil
+			return m, m.clearStatusCmd(r)
 		}
 
 	case deckLoadedMsg:
@@ -58,6 +58,7 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.landAfterBriefing(msg.data)
 			}
 			m.setData(msg.data)
+			return m, m.announceSignals()
 		}
 		return m, nil
 
@@ -67,6 +68,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case deckActivityTickMsg:
 		return m.handleActivityTick()
+
+	case deckRecordsMsg:
+		return m.handleRecords(msg)
 
 	case deckTickMsg:
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), deckTick())

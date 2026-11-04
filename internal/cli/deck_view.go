@@ -349,13 +349,7 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			}
 			state := stateStyle(dm.State).Render(string(dm.State))
 			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
-				mark := ui.Green.Render(fmt.Sprintf("●%d", len(runs)))
-				for _, r := range runs {
-					if working, _ := r.activity(); !working {
-						mark = ui.Orange.Render(fmt.Sprintf("◐%d", len(runs)))
-					}
-				}
-				state = mark + " " + state
+				state = m.missionMark(runs) + " " + state
 			} else if m.launching[dm.M.Slug] {
 				state = ui.Dim.Render("…") + " " + state
 			}
@@ -379,7 +373,7 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			if r.run.role == mission.RoleBriefing {
 				label = ui.Dim.Render(" briefing")
 			}
-			line = "  " + marker + r.run.activityBadge() + label
+			line = "  " + marker + m.crewBadge(r.run) + label
 		case deckRowLooseHeader:
 			add("", -1)
 			arrow := "▸"
@@ -505,4 +499,33 @@ func (c *markdownCache) render(md string, width int) string {
 	}
 	c.entries[key] = out
 	return out
+}
+
+// missionMark summarises a mission's live crew for its sidebar row, most
+// urgent first: ? one asks you, ◐ one waits, ✓ all are done, ● working.
+func (m deckModel) missionMark(runs []*deckCrewRun) string {
+	asking, waiting, done := false, false, 0
+	for _, r := range runs {
+		switch status, _ := m.crewStatus(r); status {
+		case mission.CrewAsking:
+			asking = true
+		case mission.CrewDone:
+			done++
+		default:
+			if working, _ := r.activity(); !working {
+				waiting = true
+			}
+		}
+	}
+	n := fmt.Sprint(len(runs))
+	switch {
+	case asking:
+		return ui.Orange.Render("?" + n)
+	case waiting:
+		return ui.Orange.Render("◐" + n)
+	case done == len(runs):
+		return ui.Green.Render("✓" + n)
+	default:
+		return ui.Green.Render("●" + n)
+	}
 }

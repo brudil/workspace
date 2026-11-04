@@ -145,7 +145,7 @@ func TestDeckCrew_MissionRowShowsBriefWhileCrewRuns(t *testing.T) {
 		t.Fatal("mission row should show the mission, not a terminal")
 	}
 	view := plainView(m)
-	if !strings.Contains(view, "●c1 shell in frontend/work") || !strings.Contains(view, "Capsules") {
+	if !strings.Contains(view, "c1 working shell in frontend/work") || !strings.Contains(view, "Capsules") {
 		t.Errorf("mission view doesn't list live crew:\n%s", view)
 	}
 	// tab from the mission row jumps to its crew.
@@ -744,5 +744,81 @@ func TestDeckActivity_NoNotificationWhileWatching(t *testing.T) {
 	m, _ = tick(m)
 	if m.flash != "" {
 		t.Errorf("notified about the crew you're looking at: %q", m.flash)
+	}
+}
+
+func reloadRecords(m deckModel) (deckModel, tea.Cmd) {
+	next, cmd := m.Update(loadRecordsCmd(m.store)())
+	return next.(deckModel), cmd
+}
+
+func TestDeckSignals_AskNotifiesAndClearsOnInput(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+
+	// What `ws mission ask` does, from the crew.
+	m.store.SetCrewStatus(slug, "c1", mission.CrewAsking, "Per-org or global?")
+	m, cmd := reloadRecords(m)
+	if !strings.Contains(m.flash, "c1 on "+slug+" asks: Per-org or global?") || cmd == nil {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	view := plainView(m)
+	if !strings.Contains(view, "?c1 asks") || !strings.Contains(view, "?1") {
+		t.Errorf("sidebar doesn't show the ask:\n%s", view)
+	}
+	// Announced once.
+	m.flash = ""
+	m, _ = reloadRecords(m)
+	if m.flash != "" {
+		t.Errorf("announced twice: %q", m.flash)
+	}
+
+	// Talking to the crew clears it.
+	m, _ = press(t, m, "tab")
+	next, clear := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m = next.(deckModel)
+	if clear == nil {
+		t.Fatal("typing to an asking crew didn't clear its status")
+	}
+	clear()
+	if got, _ := m.store.Load(slug); got.Crew[0].Status != "" {
+		t.Errorf("status = %q after the user replied", got.Crew[0].Status)
+	}
+	if strings.Contains(plainView(m), "?c1") {
+		t.Error("sidebar still shows the ask")
+	}
+	_ = r
+}
+
+func TestDeckSignals_DoneShowsAndSilencesWaiting(t *testing.T) {
+	shortIdle(t)
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	r.term.(interface{ SendText(string) }).SendText("echo finished\r")
+	waitScreen(t, r, "\nfinished")
+	m, _ = tick(m)
+
+	m.store.SetCrewStatus(slug, "c1", mission.CrewDone, "Added the cache")
+	m, _ = reloadRecords(m)
+	if !strings.Contains(m.flash, "is done: Added the cache") {
+		t.Errorf("flash = %q", m.flash)
+	}
+	if view := plainView(m); !strings.Contains(view, "✓c1 done") || !strings.Contains(view, "✓1") {
+		t.Errorf("sidebar:\n%s", view)
+	}
+	// Going quiet after reporting done isn't announced again as waiting.
+	m.flash = ""
+	time.Sleep(600 * time.Millisecond)
+	m, _ = tick(m)
+	if m.flash != "" {
+		t.Errorf("waiting announced for done crew: %q", m.flash)
+	}
+	m, _ = press(t, m, "g")
+	if !strings.Contains(plainView(m), "✓c1 done shell in frontend/work: Added the cache") {
+		t.Errorf("mission view:\n%s", plainView(m))
 	}
 }

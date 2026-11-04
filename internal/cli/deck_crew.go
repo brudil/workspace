@@ -42,6 +42,8 @@ type deckCrewRun struct {
 	// wasWorking is the activity seen at the last tick, to notice the
 	// moment crew goes from working to waiting.
 	wasWorking bool
+	// notified is the crew status (and when it was set) already announced.
+	notified string
 
 	// recordOnce makes sure the crew's end is written to the mission once,
 	// whichever path (exit, stop, quit, deck dying) gets there first.
@@ -595,7 +597,7 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		r.scroll = 0
 		r.term.SendKey(uv.KeyPressEvent(msg))
-		return m, nil
+		return m, m.clearStatusCmd(r)
 	}
 
 	m.prefix = false
@@ -830,7 +832,11 @@ func (m deckModel) crewSummary(dm deckMission) string {
 	slug := dm.M.Slug
 	var lines []string
 	for _, r := range m.reg.live(slug) {
-		lines = append(lines, ui.Green.Render("●"+r.crewID)+" "+r.harness+ui.Dim.Render(" in "+r.capsule))
+		line := m.crewBadge(r) + " " + r.harness + ui.Dim.Render(" in "+r.capsule)
+		if status, note := m.crewStatus(r); status != "" && note != "" {
+			line += ": " + note
+		}
+		lines = append(lines, line)
 	}
 	if m.launching[slug] {
 		lines = append(lines, ui.Dim.Render("launching crew…"))
@@ -970,14 +976,125 @@ func (m deckModel) handleActivityTick() (tea.Model, tea.Cmd) {
 	focused, _ := m.focusedRun()
 	for _, r := range m.reg.live("") {
 		working, _ := r.activity()
-		if r.wasWorking && !working && r != focused {
+		status, _ := m.crewStatus(r)
+		if r.wasWorking && !working && r != focused && status == "" {
 			msg := fmt.Sprintf("%s on %s is waiting for you", r.crewID, r.slug)
 			m.flash = ui.Orange.Render("◐") + " " + msg
 			cmds = append(cmds, notifyCmd("ws deck: "+msg))
 		}
 		r.wasWorking = working
 	}
+	m.ticks++
+	if m.ticks%recordsEveryTicks == 0 {
+		cmds = append(cmds, loadRecordsCmd(m.store))
+	}
 	return m, tea.Batch(append(cmds, activityTick())...)
+}
+
+// recordsEveryTicks: crew signals (ws mission ask/done) are picked up by a
+// light re-read of mission records this often, rather than waiting for the
+// full reload.
+const recordsEveryTicks = 2
+
+type deckRecordsMsg struct{ missions map[string]*mission.Mission }
+
+func loadRecordsCmd(store mission.Store) tea.Cmd {
+	return func() tea.Msg {
+		list, _ := store.List()
+		by := make(map[string]*mission.Mission, len(list))
+		for _, mm := range list {
+			by[mm.Slug] = mm
+		}
+		return deckRecordsMsg{missions: by}
+	}
+}
+
+// handleRecords swaps in fresh mission records (crew statuses, artifacts)
+// and announces new signals.
+func (m deckModel) handleRecords(msg deckRecordsMsg) (tea.Model, tea.Cmd) {
+	for i := range m.data.Missions {
+		if mm, ok := msg.missions[m.data.Missions[i].M.Slug]; ok {
+			m.data.Missions[i].M = mm
+		}
+	}
+	return m, m.announceSignals()
+}
+
+// crewStatus is what a crew last said about itself (asking/done), per its
+// mission record.
+func (m deckModel) crewStatus(r *deckCrewRun) (status, note string) {
+	for _, dm := range m.data.Missions {
+		if dm.M.Slug != r.slug {
+			continue
+		}
+		if c, ok := crewRecord(dm.M, r.crewID); ok {
+			return c.Status, c.Note
+		}
+	}
+	return "", ""
+}
+
+// announceSignals notifies once per new ask/done from live crew.
+func (m *deckModel) announceSignals() tea.Cmd {
+	var cmds []tea.Cmd
+	for _, r := range m.reg.live("") {
+		status, note := m.crewStatus(r)
+		key := ""
+		for _, dm := range m.data.Missions {
+			if dm.M.Slug == r.slug {
+				if c, ok := crewRecord(dm.M, r.crewID); ok && c.StatusAt != nil {
+					key = status + c.StatusAt.String()
+				}
+			}
+		}
+		if status == "" {
+			r.notified = ""
+			continue
+		}
+		if key == r.notified {
+			continue
+		}
+		r.notified = key
+		var msg string
+		switch status {
+		case mission.CrewAsking:
+			msg = fmt.Sprintf("%s on %s asks: %s", r.crewID, r.slug, note)
+			m.flash = ui.Orange.Render("?") + " " + msg
+		case mission.CrewDone:
+			msg = fmt.Sprintf("%s on %s is done: %s", r.crewID, r.slug, note)
+			m.flash = ui.Green.Render("✓") + " " + msg
+		default:
+			continue
+		}
+		cmds = append(cmds, notifyCmd("ws deck: "+msg))
+	}
+	return tea.Batch(cmds...)
+}
+
+// clearStatusCmd forgets a crew's asking/done once the user talks to it.
+func (m deckModel) clearStatusCmd(r *deckCrewRun) tea.Cmd {
+	if status, _ := m.crewStatus(r); status == "" {
+		return nil
+	}
+	// Forget it locally now, so the sidebar updates before the re-read.
+	for i := range m.data.Missions {
+		if m.data.Missions[i].M.Slug != r.slug {
+			continue
+		}
+		mm := *m.data.Missions[i].M
+		mm.Crew = append([]mission.Crew(nil), mm.Crew...)
+		for j := range mm.Crew {
+			if mm.Crew[j].ID == r.crewID {
+				mm.Crew[j].Status, mm.Crew[j].Note, mm.Crew[j].StatusAt = "", "", nil
+			}
+		}
+		m.data.Missions[i].M = &mm
+	}
+	store, slug, id := m.store, r.slug, r.crewID
+	return func() tea.Msg {
+		store.ClearCrewStatus(slug, id)
+		return nil
+	}
 }
 
 // notifyCmd rings the terminal bell and asks for a desktop notification
@@ -1002,6 +1119,18 @@ func shortDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
+}
+
+// crewBadge is how crew reads in the sidebar: what it said about itself
+// (asking, done) first, else its activity.
+func (m deckModel) crewBadge(r *deckCrewRun) string {
+	switch status, _ := m.crewStatus(r); status {
+	case mission.CrewAsking:
+		return ui.Orange.Render("?"+r.crewID) + ui.Dim.Render(" asks")
+	case mission.CrewDone:
+		return ui.Green.Render("✓"+r.crewID) + ui.Dim.Render(" done")
+	}
+	return r.activityBadge()
 }
 
 // activityBadge is how a crew's activity reads in the sidebar.

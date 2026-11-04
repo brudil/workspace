@@ -67,7 +67,20 @@ type Crew struct {
 	Capsule string `toml:"capsule,omitempty"`
 	// Role is "" for crew working on the mission, or RoleBriefing.
 	Role string `toml:"role,omitempty"`
+
+	// Status is what the crew last said about itself: CrewAsking (needs the
+	// user), CrewDone (finished its part), or "". Note is the question or
+	// the summary. Both clear when the user next talks to the crew.
+	Status   string     `toml:"status,omitempty"`
+	Note     string     `toml:"note,omitempty"`
+	StatusAt *time.Time `toml:"status_at,omitempty"`
 }
+
+// Crew statuses.
+const (
+	CrewAsking = "asking"
+	CrewDone   = "done"
+)
 
 // Mission is the contents of mission.toml plus its slug.
 type Mission struct {
@@ -80,6 +93,17 @@ type Mission struct {
 	Request  string    `toml:"request,omitempty"`
 	Capsules []Capsule `toml:"capsules,omitempty"`
 	Crew     []Crew    `toml:"crew,omitempty"`
+	// Artifacts are outputs ws can't infer (capsules' PRs it finds itself):
+	// a PR from a branch outside the mission, a design doc, a dashboard.
+	Artifacts []Artifact `toml:"artifacts,omitempty"`
+}
+
+// Artifact is a link a mission produced.
+type Artifact struct {
+	URL   string    `toml:"url"`
+	Label string    `toml:"label,omitempty"`
+	Crew  string    `toml:"crew,omitempty"`
+	Added time.Time `toml:"added"`
 }
 
 // HasCapsule reports whether the mission owns repo/name.

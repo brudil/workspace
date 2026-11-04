@@ -115,3 +115,42 @@ func TestBriefing_ReadyEndsTheBriefingCrew(t *testing.T) {
 		t.Fatal("briefing crew wasn't hung up")
 	}
 }
+
+func TestSignals_AskDoneArtifact(t *testing.T) {
+	w := missionWorkspace(t)
+	store := mission.Store{Root: w.Root}
+	run(t, w, nil, "mission", "new", "Cache", "--no-edit")
+	store.StartCrew("cache", "cursor", "conv")
+	t.Setenv(mission.EnvMission, "cache")
+
+	// Crew only.
+	if r := testutil.RunCommand(t, w.Root, nil, "mission", "ask", "which?"); r.Err == nil || !strings.Contains(r.Err.Error(), "WS_CREW") {
+		t.Errorf("ask without WS_CREW: %v", r.Err)
+	}
+	t.Setenv(mission.EnvCrew, "c1")
+	run(t, w, nil, "mission", "ask", "Per-org", "or", "global?")
+	got, _ := store.Load("cache")
+	if got.Crew[0].Status != mission.CrewAsking || got.Crew[0].Note != "Per-org or global?" {
+		t.Errorf("after ask: %+v", got.Crew[0])
+	}
+	run(t, w, nil, "mission", "done", "Added the per-org cache")
+	run(t, w, nil, "mission", "artifact", "add", "https://example.com/design", "Design", "doc")
+	show := run(t, w, nil, "mission", "show", "-f", "llm")
+	for _, want := range []string{"Crew c1 done: Added the per-org cache", "https://example.com/design — Design doc"} {
+		if !strings.Contains(show.Stdout, want) {
+			t.Errorf("show missing %q:\n%s", want, show.Stdout)
+		}
+	}
+}
+
+func TestSignals_BriefingCrewIsToldToUseReady(t *testing.T) {
+	w := missionWorkspace(t)
+	store := mission.Store{Root: w.Root}
+	m, _ := store.CreateBriefing("something")
+	store.StartCrewAs(m.Slug, "cursor", "", mission.RoleBriefing)
+	t.Setenv(mission.EnvMission, m.Slug)
+	t.Setenv(mission.EnvCrew, "c1")
+	if r := testutil.RunCommand(t, w.Root, nil, "mission", "done", "briefed it"); r.Err == nil || !strings.Contains(r.Err.Error(), "ws mission ready") {
+		t.Errorf("briefing crew done: %v", r.Err)
+	}
+}

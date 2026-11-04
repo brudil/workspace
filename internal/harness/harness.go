@@ -104,7 +104,10 @@ func InitialPrompt(b Brief) string {
 	fmt.Fprintf(&s, "You are crew on the mission %q (%s), managed by the ws workspace tool.\n\n", b.Title, b.Slug)
 	s.WriteString("Before starting, run `ws mission show -f llm` to see the mission's capsules (worktrees, possibly across repos) and log. ")
 	s.WriteString("Work only in this mission's capsules; create new ones with `ws lift <repo> <name>` and they join the mission automatically. ")
-	s.WriteString("Record significant decisions and progress with `ws mission note \"...\"`. Don't edit the brief.\n")
+	s.WriteString("Record significant decisions and progress with `ws mission note \"...\"`. Don't edit the brief.\n\n")
+	s.WriteString("Tell the user's deck where you are, so they know when you need them:\n")
+	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`.\n")
+	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), run `ws mission done \"<one-line summary>\"`. ws finds PRs from the mission's capsules itself; record any other outputs (docs, links, PRs from other branches) with `ws mission artifact add <url> \"<label>\"`.\n")
 	if brief := strings.TrimSpace(b.Brief); brief != "" {
 		s.WriteString("\nThe brief:\n\n")
 		s.WriteString(brief)

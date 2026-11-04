@@ -420,6 +420,7 @@ func (s Store) ResumeCrew(slug, id string) (Crew, error) {
 				m.Crew[i].Ended = nil
 				m.Crew[i].Exit = ""
 				m.Crew[i].PID = 0
+				m.Crew[i].Status, m.Crew[i].Note, m.Crew[i].StatusAt = "", "", nil
 				crew, found = m.Crew[i], true
 			}
 		}
@@ -584,4 +585,74 @@ func (s Store) Rename(old, slug string) error {
 		return err
 	}
 	return s.AppendLog(slug, Event{Kind: EventState, Text: "renamed from " + old})
+}
+
+// SetCrewStatus records what crew says about itself (CrewAsking or CrewDone,
+// with the question or summary) and logs it.
+func (s Store) SetCrewStatus(slug, id, status, note string) error {
+	found := false
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				t := now()
+				m.Crew[i].Status, m.Crew[i].Note, m.Crew[i].StatusAt = status, note, &t
+				found = true
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("mission %s has no crew %s", slug, id)
+	}
+	kind := EventCrewAsked
+	if status == CrewDone {
+		kind = EventCrewDone
+	}
+	return s.AppendLog(slug, Event{Kind: kind, Crew: id, Text: note})
+}
+
+// ClearCrewStatus forgets a crew's asking/done status (the user has talked to
+// it again). It reports whether there was one.
+func (s Store) ClearCrewStatus(slug, id string) (bool, error) {
+	cleared := false
+	_, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id && m.Crew[i].Status != "" {
+				m.Crew[i].Status, m.Crew[i].Note, m.Crew[i].StatusAt = "", "", nil
+				cleared = true
+			}
+		}
+		return nil
+	})
+	return cleared, err
+}
+
+// AddArtifact records a link the mission produced (once per URL; a repeat
+// updates the label).
+func (s Store) AddArtifact(slug, url, label, crew string) error {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return errors.New("artifact URL is empty")
+	}
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Artifacts {
+			if m.Artifacts[i].URL == url {
+				if label != "" {
+					m.Artifacts[i].Label = label
+				}
+				return nil
+			}
+		}
+		m.Artifacts = append(m.Artifacts, Artifact{URL: url, Label: label, Crew: crew, Added: now()})
+		return nil
+	}); err != nil {
+		return err
+	}
+	text := url
+	if label != "" {
+		text = label + " " + url
+	}
+	return s.AppendLog(slug, Event{Kind: EventArtifact, Crew: crew, Text: text})
 }

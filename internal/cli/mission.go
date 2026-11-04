@@ -39,6 +39,9 @@ With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
 	cmd.AddCommand(newMissionBriefCmd())
 	cmd.AddCommand(newMissionTitleCmd())
 	cmd.AddCommand(newMissionReadyCmd())
+	cmd.AddCommand(newMissionAskCmd())
+	cmd.AddCommand(newMissionDoneCmd())
+	cmd.AddCommand(newMissionArtifactCmd())
 	cmd.AddCommand(newMissionAttachCmd())
 	cmd.AddCommand(newMissionDetachCmd())
 	cmd.AddCommand(newMissionStateCmd("park", mission.Parked, "Park a mission (paused work)"))
@@ -334,6 +337,21 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 				fmt.Fprintf(&b, " [%s]", f)
 			}
 			b.WriteByte('\n')
+		}
+	}
+	if len(v.M.Artifacts) > 0 {
+		b.WriteString("Artifacts:\n")
+		for _, a := range v.M.Artifacts {
+			fmt.Fprintf(&b, "  %s", a.URL)
+			if a.Label != "" {
+				fmt.Fprintf(&b, " — %s", a.Label)
+			}
+			b.WriteByte('\n')
+		}
+	}
+	for _, c := range v.M.Crew {
+		if c.Status != "" && c.Ended == nil {
+			fmt.Fprintf(&b, "Crew %s %s: %s\n", c.ID, c.Status, c.Note)
 		}
 	}
 	b.WriteString("\n## Brief\n\n")

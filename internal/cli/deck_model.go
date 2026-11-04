@@ -121,6 +121,8 @@ type deckModel struct {
 	// data load (see wantRow).
 	keyPending bool
 
+	ticks int // activity ticks so far (records re-read every few)
+
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes
 	md      *markdownCache

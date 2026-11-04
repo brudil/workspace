@@ -507,3 +507,40 @@ func TestBriefingCrewIsDoneOnceReady(t *testing.T) {
 		t.Errorf("work crew = %+v %v", c, ok)
 	}
 }
+
+func TestCrewStatus(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Signals")
+	s.StartCrew(m.Slug, "cursor", "conv")
+	if err := s.SetCrewStatus(m.Slug, "c1", CrewAsking, "per-org or global?"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Load(m.Slug)
+	if c := got.Crew[0]; c.Status != CrewAsking || c.Note != "per-org or global?" || c.StatusAt == nil {
+		t.Errorf("crew = %+v", c)
+	}
+	if cleared, _ := s.ClearCrewStatus(m.Slug, "c1"); !cleared {
+		t.Error("nothing cleared")
+	}
+	if cleared, _ := s.ClearCrewStatus(m.Slug, "c1"); cleared {
+		t.Error("cleared twice")
+	}
+	s.SetCrewStatus(m.Slug, "c1", CrewDone, "added the cache")
+	s.EndCrew(m.Slug, "c1", "hangup")
+	s.ResumeCrew(m.Slug, "c1")
+	got, _ = s.Load(m.Slug)
+	if got.Crew[0].Status != "" {
+		t.Errorf("resume kept status %q", got.Crew[0].Status)
+	}
+	events, _ := s.ReadLog(m.Slug, 0)
+	var kinds []string
+	for _, e := range events {
+		kinds = append(kinds, e.Kind)
+	}
+	if j := strings.Join(kinds, ","); !strings.Contains(j, "crew_asked") || !strings.Contains(j, "crew_done") {
+		t.Errorf("log = %s", j)
+	}
+	if err := s.SetCrewStatus(m.Slug, "c9", CrewDone, "x"); err == nil {
+		t.Error("unknown crew accepted")
+	}
+}
