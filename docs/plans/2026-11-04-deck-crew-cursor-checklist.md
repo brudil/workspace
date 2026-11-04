@@ -111,7 +111,7 @@ If the briefing agent tries to run `ws mission ready` before it has written a br
 
 ## 5d. Reviewer
 
-Headless mode is a guess: we run `cursor-agent -p --force --output-format text --model <model> "<prompt>"`. First paste `cursor-agent --help` (the print mode and model flags) and `cursor-agent --list-models` or whatever lists models, so we can confirm `claude-haiku-5-5-medium` is a name it accepts.
+We run `cursor-agent -p --force --trust --output-format text --model <model> "<prompt>"` (flags confirmed from `cursor-agent --help`). Still to confirm: paste `cursor-agent --list-models`, so we know `claude-haiku-5-5-medium` is a name it accepts (it may want the `name[effort=…]` form instead).
 
 | Check | How | Expected |
 |---|---|---|

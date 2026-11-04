@@ -13,9 +13,9 @@ import (
 
 // Cursor runs the Cursor CLI agent.
 //
-// Every assumption about the Cursor CLI lives in this file and is marked
-// GUESS. They have not been checked against a real cursor-agent yet; see
-// docs/plans/2026-11-04-deck-crew-cursor-checklist.md for how to verify them.
+// Every assumption about the Cursor CLI lives in this file. Those checked
+// against a real cursor-agent say VERIFIED; any left marked GUESS haven't
+// been, see docs/plans/2026-11-04-deck-crew-cursor-checklist.md.
 type Cursor struct {
 	// lookPath and run are swapped in tests.
 	lookPath func(string) (string, error)
@@ -25,10 +25,10 @@ type Cursor struct {
 // EnvCursorBin overrides the Cursor CLI binary (name or path).
 const EnvCursorBin = "WS_CURSOR_AGENT"
 
-// GUESS: the binary is installed as cursor-agent, with agent as a newer alias.
+// VERIFIED: the binary is installed as cursor-agent, with agent as a newer alias.
 var cursorBinaries = []string{"cursor-agent", "agent"}
 
-// GUESS: `create-chat` prints a new chat id (alone, on the last line) and
+// VERIFIED: `create-chat` prints a new chat id (alone, on the last line) and
 // exits, letting us know the conversation id before the agent starts.
 var cursorCreateChatArgs = []string{"create-chat"}
 
@@ -91,7 +91,7 @@ func (c *Cursor) Resume(dir, conversation string) (Launch, error) {
 	if err != nil {
 		return Launch{}, err
 	}
-	// GUESS: --resume <id> reopens an earlier chat interactively.
+	// VERIFIED: --resume <id> reopens an earlier chat interactively.
 	return Launch{Args: []string{bin, "--resume", conversation}, Dir: dir, Conversation: conversation}, nil
 }
 
@@ -112,10 +112,13 @@ func (c *Cursor) createChat(bin string) string {
 	return ""
 }
 
-// GUESS: print mode runs one prompt headless and exits (-p / --print),
-// --force lets it run shell commands without asking, --model picks the
-// model, and --output-format text prints its final message.
-var cursorReviewArgs = []string{"-p", "--force", "--output-format", "text"}
+// VERIFIED (cursor-agent --help): -p/--print runs one prompt headless with
+// every tool, --output-format text (the default) prints the final message,
+// --force runs commands unless explicitly denied, --trust skips the
+// workspace-trust prompt nobody is there to answer, and --model picks the
+// model. GUESS: the reviewer's default model name is one Cursor accepts
+// (cursor-agent --list-models lists them).
+var cursorReviewArgs = []string{"-p", "--force", "--trust", "--output-format", "text"}
 
 // Review runs a headless review with Cursor's print mode.
 func (c *Cursor) Review(prompt, dir, model string) (Launch, error) {
