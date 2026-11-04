@@ -319,6 +319,8 @@ ws mission note "Went with a mutex, not a channel"
 
 **Brief.** `brief.md` is yours. `ws mission new --brief "..."` or `--brief-file path|-` writes it without an editor. Agents add to the log with `ws mission note` rather than editing the brief.
 
+**The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` creates a mission, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
+
 **Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 
 ---
