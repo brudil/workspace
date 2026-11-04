@@ -12,6 +12,7 @@ package termpane
 
 import (
 	"errors"
+	"hash/fnv"
 	"io"
 	"os"
 	"os/exec"
@@ -42,6 +43,12 @@ type Pane struct {
 	mirrorMu sync.Mutex
 	mirror   io.Writer
 
+	// screenHash and lastChange (guarded by emuMu) track when the screen's
+	// text last changed: output that only moves the cursor or sets modes
+	// doesn't count. Hosts use it to tell working crew from waiting crew.
+	screenHash uint64
+	lastChange time.Time
+
 	updates chan struct{} // signalled (coalesced) when the screen changes
 	done    chan struct{} // closed when the program exits
 
@@ -71,6 +78,8 @@ func Start(cmd *exec.Cmd, width, height int) (*Pane, error) {
 		done:    make(chan struct{}),
 		width:   width,
 		height:  height,
+
+		lastChange: time.Now(),
 	}
 	p.emu.SetCallbacks(vt.Callbacks{
 		Title: func(t string) {
@@ -95,6 +104,9 @@ func (p *Pane) pumpOutput() {
 		if n > 0 {
 			p.emuMu.Lock()
 			p.emu.Write(buf[:n])
+			if h := hashText(p.emu.String()); h != p.screenHash {
+				p.screenHash, p.lastChange = h, time.Now()
+			}
 			p.emuMu.Unlock()
 			p.mirrorMu.Lock()
 			if p.mirror != nil {
@@ -212,6 +224,8 @@ func (p *Pane) Resize(width, height int) {
 	p.mu.Unlock()
 	p.emuMu.Lock()
 	p.emu.Resize(width, height)
+	// Re-wrapping isn't the program doing anything: don't count it.
+	p.screenHash = hashText(p.emu.String())
 	p.emuMu.Unlock()
 	if !p.Exited() {
 		pty.Setsize(p.pty, &pty.Winsize{Cols: uint16(width), Rows: uint16(height)})
@@ -392,4 +406,17 @@ func (p *Pane) Close(grace time.Duration) {
 		syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 		<-p.done
 	}
+}
+
+// LastChange is when the screen's text last changed (or the program started).
+func (p *Pane) LastChange() time.Time {
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	return p.lastChange
+}
+
+func hashText(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
 }

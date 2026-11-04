@@ -452,3 +452,13 @@ func (t *Term) Close(grace time.Duration) {
 	case <-time.After(grace + 5*time.Second):
 	}
 }
+
+// LastChange is when the crew's screen text last changed, per the server.
+func (t *Term) LastChange() time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.frame.Changed == 0 {
+		return time.Now()
+	}
+	return time.UnixMilli(t.frame.Changed)
+}

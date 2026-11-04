@@ -131,7 +131,7 @@ func TestDeckCrew_LaunchRunsInCapsuleWithMissionEnv(t *testing.T) {
 	waitScreen(t, r, "M="+slug+" C=c1 D=work T=xterm-256color")
 
 	view := plainView(m)
-	if !strings.Contains(view, "M="+slug) || !strings.Contains(view, "●c1 shell frontend/work") {
+	if !strings.Contains(view, "M="+slug) || !strings.Contains(view, "c1 working frontend/work") {
 		t.Errorf("view doesn't show the crew:\n%s", view)
 	}
 }
@@ -669,5 +669,80 @@ func TestDeckCrew_PromptNotTypedIntoExitedCrew(t *testing.T) {
 	r.term.Close(time.Second)
 	if msg := deliverPrompt(r, "echo late")(); msg != nil {
 		t.Errorf("typed into exited crew: %v", msg)
+	}
+}
+
+func shortIdle(t *testing.T) {
+	t.Helper()
+	old := crewIdleAfter
+	crewIdleAfter = 400 * time.Millisecond
+	t.Cleanup(func() { crewIdleAfter = old })
+}
+
+func tick(m deckModel) (deckModel, tea.Cmd) {
+	next, cmd := m.Update(deckActivityTickMsg{})
+	return next.(deckModel), cmd
+}
+
+func TestDeckActivity_WorkingThenWaitingNotifies(t *testing.T) {
+	shortIdle(t)
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	waitScreen(t, r, "$")
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab}) // look away: sidebar
+
+	r.term.(interface{ SendText(string) }).SendText("echo busy\r")
+	waitScreen(t, r, "\nbusy")
+	m, _ = tick(m)
+	if !r.wasWorking {
+		t.Fatal("crew that just printed isn't working")
+	}
+	if !strings.Contains(plainView(m), "●c1 working") {
+		t.Errorf("sidebar:\n%s", plainView(m))
+	}
+
+	time.Sleep(600 * time.Millisecond)
+	m, cmd := tick(m)
+	if !strings.Contains(m.flash, "c1 on "+slug+" is waiting for you") {
+		t.Errorf("flash = %q", m.flash)
+	}
+	if !strings.Contains(plainView(m), "◐c1 waiting") {
+		t.Errorf("sidebar:\n%s", plainView(m))
+	}
+	// The tick's commands include the bell/notification (a raw write).
+	raw := false
+	for _, c := range cmd().(tea.BatchMsg) {
+		if c == nil {
+			continue
+		}
+		if _, ok := c().(tea.RawMsg); ok {
+			raw = true
+		}
+	}
+	if !raw {
+		t.Error("no bell/notification sent")
+	}
+
+	// Still waiting: no second notification.
+	m.flash = ""
+	m, _ = tick(m)
+	if m.flash != "" {
+		t.Errorf("notified twice: %q", m.flash)
+	}
+}
+
+func TestDeckActivity_NoNotificationWhileWatching(t *testing.T) {
+	shortIdle(t)
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m) // focused
+	r, _ := liveRun(m, slug)
+	m = typeText(m, "echo watched")
+	waitScreen(t, r, "\nwatched")
+	m, _ = tick(m)
+	time.Sleep(600 * time.Millisecond)
+	m, _ = tick(m)
+	if m.flash != "" {
+		t.Errorf("notified about the crew you're looking at: %q", m.flash)
 	}
 }

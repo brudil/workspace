@@ -92,6 +92,11 @@ func (m deckModel) renderHeader() string {
 		if r.scroll > 0 {
 			label += fmt.Sprintf(" · ↑%d lines", r.scroll)
 		}
+		if working, since := r.activity(); working {
+			label += " · working"
+		} else {
+			label += " · waiting " + shortDuration(since)
+		}
 		if m.focusTerm {
 			title += ui.Green.Render(label)
 		} else {
@@ -343,8 +348,14 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 				marker = ui.Orange.Render("▸ ")
 			}
 			state := stateStyle(dm.State).Render(string(dm.State))
-			if n := len(m.reg.live(dm.M.Slug)); n > 0 {
-				state = ui.Green.Render(fmt.Sprintf("●%d", n)) + " " + state
+			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
+				mark := ui.Green.Render(fmt.Sprintf("●%d", len(runs)))
+				for _, r := range runs {
+					if working, _ := r.activity(); !working {
+						mark = ui.Orange.Render(fmt.Sprintf("◐%d", len(runs)))
+					}
+				}
+				state = mark + " " + state
 			} else if m.launching[dm.M.Slug] {
 				state = ui.Dim.Render("…") + " " + state
 			}
@@ -364,11 +375,11 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			if selected && m.focusTerm {
 				marker = ui.Green.Render(" ▸ ")
 			}
-			label := r.run.harness + ui.Dim.Render(" "+r.run.capsule)
+			label := ui.Dim.Render(" " + r.run.capsule)
 			if r.run.role == mission.RoleBriefing {
-				label = ui.Orange.Render("briefing") + ui.Dim.Render(" "+r.run.harness)
+				label = ui.Dim.Render(" briefing")
 			}
-			line = "  " + marker + ui.Green.Render("●"+r.run.crewID) + " " + label
+			line = "  " + marker + r.run.activityBadge() + label
 		case deckRowLooseHeader:
 			add("", -1)
 			arrow := "▸"

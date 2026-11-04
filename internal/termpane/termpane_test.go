@@ -203,3 +203,36 @@ func TestPane_MirrorAndRawInput(t *testing.T) {
 	}
 	p.SetMirror(nil)
 }
+
+func TestPane_LastChangeTracksScreenText(t *testing.T) {
+	p := start(t, 30, 5, "sh", "-c", `read a; printf 'text'; read b; printf '\033[1;1H\033[?25l'; read c; printf ' more'; sleep 5`)
+	time.Sleep(100 * time.Millisecond)
+	t0 := p.LastChange()
+
+	p.SendText("\r")
+	waitFor(t, p, "text", func(s string) bool { return strings.Contains(s, "text") })
+	t1 := p.LastChange()
+	if !t1.After(t0) {
+		t.Fatal("printing text didn't count as a change")
+	}
+
+	// Cursor moves and mode changes alone aren't activity.
+	p.SendText("\r")
+	time.Sleep(300 * time.Millisecond)
+	if !p.LastChange().Equal(t1) {
+		t.Error("cursor-only output counted as a change")
+	}
+
+	// Nor is re-wrapping on resize.
+	p.Resize(20, 5)
+	time.Sleep(100 * time.Millisecond)
+	if !p.LastChange().Equal(t1) {
+		t.Error("resize counted as a change")
+	}
+
+	p.SendText("\r")
+	waitFor(t, p, "more", func(s string) bool { return strings.Contains(s, "more") })
+	if !p.LastChange().After(t1) {
+		t.Error("new text didn't count as a change")
+	}
+}

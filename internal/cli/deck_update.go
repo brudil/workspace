@@ -65,6 +65,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prs = msg.prs
 		return m, loadDeckCmd(m.ws, m.prs)
 
+	case deckActivityTickMsg:
+		return m.handleActivityTick()
+
 	case deckTickMsg:
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), deckTick())
 

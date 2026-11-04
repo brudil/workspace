@@ -423,6 +423,7 @@ func (cr *crew) push(sb *sub) {
 			CursorX:       x, CursorY: y, CursorVisible: visible,
 			Title: cr.pane.Title(),
 			Width: w, Height: h,
+			Changed: cr.pane.LastChange().UnixMilli(),
 		}
 		if err := sb.c.send(message{Ev: "frame", Crew: cr.spec.Key(), Frame: f}); err != nil {
 			return

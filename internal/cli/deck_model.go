@@ -160,7 +160,7 @@ func deckTick() tea.Cmd {
 }
 
 func (m deckModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh), deckTick()}
+	cmds := []tea.Cmd{loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh), deckTick(), activityTick()}
 	return tea.Batch(append(cmds, m.adoptHosted()...)...)
 }
 

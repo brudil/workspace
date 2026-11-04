@@ -39,6 +39,10 @@ type deckCrewRun struct {
 	exit   string
 	scroll int // lines scrolled back into history; 0 is live
 
+	// wasWorking is the activity seen at the last tick, to notice the
+	// moment crew goes from working to waiting.
+	wasWorking bool
+
 	// recordOnce makes sure the crew's end is written to the mission once,
 	// whichever path (exit, stop, quit, deck dying) gets there first.
 	recordOnce sync.Once
@@ -936,4 +940,75 @@ func (m *deckModel) landAfterBriefing(d deckData) {
 			return
 		}
 	}
+}
+
+// --- activity ---
+
+// crewIdleAfter is how long a crew's screen must stay still before it counts
+// as waiting (for you) rather than working.
+var crewIdleAfter = 5 * time.Second
+
+const activityTickEvery = time.Second
+
+type deckActivityTickMsg struct{}
+
+func activityTick() tea.Cmd {
+	return tea.Tick(activityTickEvery, func(time.Time) tea.Msg { return deckActivityTickMsg{} })
+}
+
+// activity says whether crew is working (its screen changed recently) and
+// for how long it has been in that state's current stretch.
+func (r *deckCrewRun) activity() (working bool, since time.Duration) {
+	since = time.Since(r.term.LastChange())
+	return since < crewIdleAfter, since
+}
+
+// handleActivityTick notices crew that just went quiet and tells you, unless
+// you're already looking at that crew.
+func (m deckModel) handleActivityTick() (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	focused, _ := m.focusedRun()
+	for _, r := range m.reg.live("") {
+		working, _ := r.activity()
+		if r.wasWorking && !working && r != focused {
+			msg := fmt.Sprintf("%s on %s is waiting for you", r.crewID, r.slug)
+			m.flash = ui.Orange.Render("◐") + " " + msg
+			cmds = append(cmds, notifyCmd("ws deck: "+msg))
+		}
+		r.wasWorking = working
+	}
+	return m, tea.Batch(append(cmds, activityTick())...)
+}
+
+// notifyCmd rings the terminal bell and asks for a desktop notification
+// (OSC 9: iTerm2, kitty, Ghostty and WezTerm show it; others ignore it).
+func notifyCmd(text string) tea.Cmd {
+	text = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, text)
+	return tea.Raw("\a\x1b]9;" + text + "\x1b\\")
+}
+
+// shortDuration is "12s", "4m" or "2h".
+func shortDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+}
+
+// activityBadge is how a crew's activity reads in the sidebar.
+func (r *deckCrewRun) activityBadge() string {
+	if working, _ := r.activity(); working {
+		return ui.Green.Render("●"+r.crewID) + ui.Dim.Render(" working")
+	}
+	_, since := r.activity()
+	return ui.Orange.Render("◐"+r.crewID) + ui.Dim.Render(" waiting "+shortDuration(since))
 }

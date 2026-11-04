@@ -68,7 +68,7 @@ func TestDeckBriefing_NewLaunchesBriefingCrewInRoot(t *testing.T) {
 	}
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	view := plainView(m)
-	if !strings.Contains(view, "●c1 briefing") {
+	if !strings.Contains(view, "c1 working briefing") {
 		t.Errorf("sidebar doesn't mark the briefing crew:\n%s", view)
 	}
 	m, _ = press(t, m, "g")

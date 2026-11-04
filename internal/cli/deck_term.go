@@ -19,6 +19,8 @@ type crewTerm interface {
 	Text() string
 	Cursor() (x, y int, visible bool)
 	Title() string
+	// LastChange is when the screen's text last changed.
+	LastChange() time.Time
 
 	SendKey(uv.KeyPressEvent)
 	SendMouse(uv.MouseEvent)
