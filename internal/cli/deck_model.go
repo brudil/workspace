@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/brudil/workspace/internal/crew"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -105,7 +106,7 @@ type deckModel struct {
 	flash string
 
 	// Crew: where they run, every run so far, and launches in progress.
-	host       crewHost
+	host       crew.Host
 	reg        *crewRegistry
 	launching  map[string]bool
 	focusTerm  bool // keys go to the selected crew's terminal
@@ -136,15 +137,17 @@ func newDeckModel(ws *workspace.Workspace, gh github.Client, focus string) deckM
 	ti := textinput.New()
 	ti.Placeholder = "Mission title"
 	ti.CharLimit = 120
+	store := mission.Store{Root: ws.Root}
 	m := deckModel{
-		ws:        ws,
-		gh:        gh,
-		store:     mission.Store{Root: ws.Root},
-		prs:       prIndex{},
-		input:     ti,
-		mainVP:    viewport.New(),
-		md:        newMarkdownCache(),
-		host:      localHost{},
+		ws:     ws,
+		gh:     gh,
+		store:  store,
+		prs:    prIndex{},
+		input:  ti,
+		mainVP: viewport.New(),
+		md:     newMarkdownCache(),
+		// Crew run in this process until the deck picks the server (deck.go).
+		host:      &crew.LocalHost{Store: store, OnEnded: orchestrateHook(ws.Root, store)},
 		reg:       &crewRegistry{},
 		launching: map[string]bool{},
 	}

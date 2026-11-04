@@ -12,6 +12,7 @@ package deckserver
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"github.com/brudil/workspace/internal/crew"
 	"os"
 	"path/filepath"
 
@@ -22,22 +23,8 @@ import (
 // refuses a server speaking another version.
 const ProtocolVersion = 1
 
-// Spec describes crew to launch.
-type Spec struct {
-	Slug    string   `json:"slug"`
-	CrewID  string   `json:"crew"`
-	Harness string   `json:"harness"`
-	Capsule string   `json:"capsule"`
-	Role    string   `json:"role,omitempty"`
-	Args    []string `json:"args"`
-	Dir     string   `json:"dir"`
-	Env     []string `json:"env"`
-	Width   int      `json:"w"`
-	Height  int      `json:"h"`
-}
-
-// Key returns the crew's identity on the server.
-func (s Spec) Key() string { return s.Slug + "/" + s.CrewID }
+// Spec describes crew to launch; it travels as JSON.
+type Spec = crew.Spec
 
 // CrewInfo is running crew as listed by the server.
 type CrewInfo struct {

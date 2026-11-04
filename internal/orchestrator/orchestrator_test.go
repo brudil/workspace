@@ -1,4 +1,4 @@
-package cli
+package orchestrator
 
 import (
 	"os"
@@ -10,20 +10,22 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/harness"
+	"github.com/brudil/workspace/internal/mission"
 )
 
-func TestRunOrchestrator_TimeoutKillsWhatItStarted(t *testing.T) {
-	oldT, oldW := orchestrateTimeout, orchestrateWaitDelay
-	orchestrateTimeout, orchestrateWaitDelay = 300*time.Millisecond, 2*time.Second
-	t.Cleanup(func() { orchestrateTimeout, orchestrateWaitDelay = oldT, oldW })
+func TestRun_TimeoutKillsWhatItStarted(t *testing.T) {
+	oldT, oldW := Timeout, WaitDelay
+	Timeout, WaitDelay = 300*time.Millisecond, 2*time.Second
+	t.Cleanup(func() { Timeout, WaitDelay = oldT, oldW })
 
 	// The agent starts a long-lived child that holds its output open, as a
 	// shell running `gh pr checks --watch` would.
 	pidFile := filepath.Join(t.TempDir(), "child")
 	l := harness.Launch{Dir: t.TempDir(), Args: []string{"/bin/sh", "-c", `sleep 30 & echo $! > ` + pidFile + `; echo started; wait`}}
 	start := time.Now()
-	out, err := runOrchestrator(l, "m")
+	out, err := Run(l, t.TempDir(), "m")
 	took := time.Since(start)
 	t.Logf("returned after %s", took)
 	if took > 5*time.Second {
@@ -68,5 +70,31 @@ func TestClip_KeepsWholeCharactersAndLines(t *testing.T) {
 	tail := clipTail(strings.Repeat("a\n", 100)+"last line\n", 40, "…")
 	if !strings.HasPrefix(tail, "…") || !strings.HasSuffix(tail, "last line\n") || strings.HasPrefix(tail, "…\n") {
 		t.Errorf("tail = %q", tail)
+	}
+}
+
+func TestAfterEnd_OnlyForCrewEndingByThemselves(t *testing.T) {
+	store := mission.Store{Root: t.TempDir()}
+	m, _ := store.Create("Ends")
+	type call struct{ slug, crew, trigger string }
+	var calls []call
+	hook := AfterEnd("/root", store, func(root, slug, crewID, trigger string) { calls = append(calls, call{slug, crewID, trigger}) })
+	spec := func(id, role string) crew.Spec { return crew.Spec{Slug: m.Slug, CrewID: id, Role: role} }
+
+	hook(spec("c1", ""), "hangup", true) // stopped
+	hook(spec("c1", mission.RoleBriefing), "exit 0", false)
+	if len(calls) != 0 {
+		t.Fatalf("ran for a stopped or briefing crew: %v", calls)
+	}
+	store.StartCrew(m.Slug, "cursor", "conv")
+	store.SetCrewStatus(m.Slug, "c1", mission.CrewDone, "x")
+	hook(spec("c1", ""), "exit 0", false)
+	if len(calls) != 0 {
+		t.Fatalf("ran again after done: %v", calls)
+	}
+	store.StartCrew(m.Slug, "cursor", "conv2")
+	hook(spec("c2", ""), "exit 1", false)
+	if len(calls) != 1 || calls[0] != (call{m.Slug, "c2", "ended"}) {
+		t.Errorf("calls = %v", calls)
 	}
 }

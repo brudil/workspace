@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"errors"
+	"github.com/brudil/workspace/internal/crew"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +29,7 @@ func TestDeckServer_DetachAndReattach(t *testing.T) {
 
 	open := func() deckModel {
 		m := newDeckModel(ws, nil, "")
-		m.host = &serverHost{root: ws.Root}
+		m.host = deckserver.NewHost(ws.Root)
 		for _, c := range m.adoptHosted() {
 			_ = c // wait commands; the test polls screens directly
 		}
@@ -122,7 +124,7 @@ func TestDeckServer_DetachAndReattach(t *testing.T) {
 
 // fakeTerm records resizes; everything else is inert.
 type fakeTerm struct {
-	crewTerm
+	crew.Term
 	resizes [][2]int
 	done    chan struct{}
 }
@@ -133,27 +135,31 @@ func (f *fakeTerm) Done() <-chan struct{}    { return f.done }
 func (f *fakeTerm) Close(time.Duration)      {}
 func (f *fakeTerm) Exited() bool             { return false }
 
+// fakeHost is a detachable host already running some crew.
 type fakeHost struct {
-	localHost
-	running []hostedCrew
+	running []crew.Hosted
 }
 
-func (f fakeHost) Running(skip func(string) bool) []hostedCrew {
-	var out []hostedCrew
+func (fakeHost) Launch(crew.Spec) (crew.Term, error) {
+	return nil, errors.New("fake host launches nothing")
+}
+func (f fakeHost) Running(skip func(string) bool) []crew.Hosted {
+	var out []crew.Hosted
 	for _, h := range f.running {
-		if skip == nil || !skip(h.Spec.Slug+"/"+h.Spec.CrewID) {
+		if skip == nil || !skip(h.Spec.Key()) {
 			out = append(out, h)
 		}
 	}
 	return out
 }
-func (f fakeHost) OwnsLifecycle() bool { return false }
+func (fakeHost) Detachable() bool { return true }
+func (fakeHost) Leave()           {}
 
 func TestDeckServer_AdoptDoesntResizeBeforeSizeKnown(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
 	term := &fakeTerm{done: make(chan struct{})}
 	m := newDeckModel(ws, nil, "")
-	m.host = fakeHost{running: []hostedCrew{{Spec: crewSpec{Slug: "s", CrewID: "c1"}, Term: term}}}
+	m.host = fakeHost{running: []crew.Hosted{{Spec: crew.Spec{Slug: "s", CrewID: "c1"}, Term: term}}}
 
 	m.adoptHosted() // as Init does, before any WindowSizeMsg
 	if len(term.resizes) != 0 {

@@ -121,17 +121,10 @@ func newMissionArtifactCmd() *cobra.Command {
 	return cmd
 }
 
-// EnvRole names a special role a process plays for a mission; the orchestrator
-// sets it to "orchestrator".
-const EnvRole = "WS_ROLE"
-
-// roleOrchestrator is WS_ROLE for the orchestrator.
-const roleOrchestrator = "orchestrator"
-
 // raisedBy is who a proposal comes from: the orchestrator, crew, or the user.
 func raisedBy() string {
-	if os.Getenv(EnvRole) == roleOrchestrator {
-		return roleOrchestrator
+	if os.Getenv(mission.EnvRole) == mission.RoleOrchestrator {
+		return mission.RoleOrchestrator
 	}
 	if c := os.Getenv(mission.EnvCrew); c != "" {
 		return c

@@ -49,6 +49,11 @@ func loadedDeck(t *testing.T, ws *workspace.Workspace, prs prIndex) deckModel {
 	t.Helper()
 	m := newDeckModel(ws, nil, "")
 	m.prs = prs
+	// As deck.go does after the program ends: stop crew this deck's
+	// in-process host still runs, and wait for their ends to be recorded
+	// (before the test's directories go).
+	host := m.host
+	t.Cleanup(host.Leave)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 24})
 	data, err := loadDeckData(ws, prs)
 	if err != nil {

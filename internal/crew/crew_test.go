@@ -1,0 +1,150 @@
+package crew
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/brudil/workspace/internal/harness"
+	"github.com/brudil/workspace/internal/mission"
+)
+
+func TestPickPlace(t *testing.T) {
+	caps := []Capsule{{Name: "fe/a", Path: "/a"}, {Name: "fe/b", Path: "/b"}}
+	cases := []struct {
+		busy      map[string]string
+		want      string
+		capsule   string
+		busyCrew  string
+		errIs     error
+		errString string
+	}{
+		{busy: nil, capsule: "fe/a"},
+		{busy: map[string]string{"fe/a": "c1"}, capsule: "fe/b"},
+		{busy: map[string]string{"fe/a": "c1", "fe/b": "c2"}, capsule: "fe/a", busyCrew: "c1"},
+		{busy: map[string]string{"fe/b": "c2"}, want: "fe/b", capsule: "fe/b", busyCrew: "c2"},
+		{want: "be/x", errString: "no capsule be/x (it has: fe/a, fe/b)"},
+	}
+	for i, c := range cases {
+		p, err := PickPlace(caps, c.busy, c.want)
+		switch {
+		case c.errString != "":
+			var u *UnknownCapsuleError
+			if !errors.As(err, &u) || err.Error() != c.errString {
+				t.Errorf("%d: err = %v", i, err)
+			}
+		case err != nil:
+			t.Errorf("%d: err = %v", i, err)
+		case p.Capsule != c.capsule || p.Busy != c.busyCrew:
+			t.Errorf("%d: place = %+v", i, p)
+		}
+	}
+	if _, err := PickPlace(nil, nil, ""); !errors.Is(err, ErrNoCapsule) {
+		t.Errorf("no capsules: %v", err)
+	}
+}
+
+func TestBusyIn_IgnoresDeadProcesses(t *testing.T) {
+	now := time.Now()
+	m := &mission.Mission{Crew: []mission.Crew{
+		{ID: "c1", Capsule: "fe/a", PID: os.Getpid()}, // running
+		{ID: "c2", Capsule: "fe/b", PID: 999999},      // its process is gone
+		{ID: "c3", Capsule: "fe/c", Ended: &now},      // ended
+		{ID: "c4", Capsule: "fe/d"},                   // starting
+	}}
+	busy := BusyIn(m)
+	if busy["fe/a"] != "c1" || busy["fe/b"] != "" || busy["fe/c"] != "" || busy["fe/d"] != "c4" {
+		t.Errorf("busy = %v", busy)
+	}
+}
+
+type ended struct {
+	exit    string
+	stopped bool
+}
+
+func localFixture(t *testing.T) (*LocalHost, mission.Store, string, chan ended) {
+	t.Helper()
+	store := mission.Store{Root: t.TempDir()}
+	m, _ := store.Create("Local")
+	ends := make(chan ended, 4)
+	h := &LocalHost{Store: store, OnEnded: func(s Spec, exit string, stopped bool) { ends <- ended{exit, stopped} }}
+	t.Cleanup(h.Leave)
+	return h, store, m.Slug, ends
+}
+
+func shellLaunch(script string) func() (harness.Launch, error) {
+	return func() (harness.Launch, error) {
+		return harness.Launch{Args: []string{"/bin/sh", "-c", script}, Prompt: "hello"}, nil
+	}
+}
+
+func TestStart_RecordsAndTheHostRecordsTheEnd(t *testing.T) {
+	h, store, slug, ends := localFixture(t)
+	st, err := Start(Request{Store: store, Host: h, Root: store.Root, Slug: slug, Harness: "shell",
+		Place: Place{Dir: store.Root, Capsule: "fe/a"}, Handoff: "do stage two", By: "orchestrator",
+		Width: 40, Height: 5, Prepare: shellLaunch(`printf 'out-%s\n' "$WS_CREW"; exit 3`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Crew.ID != "c1" || st.Prompt != "hello" {
+		t.Errorf("started = %+v", st)
+	}
+	<-st.Term.Done()
+	// Done means recorded: the end, the output and the hook are all there.
+	m, _ := store.Load(slug)
+	c := m.Crew[0]
+	if c.Ended == nil || c.Exit != "exit 3" || c.Capsule != "fe/a" || c.Handoff != "do stage two" {
+		t.Errorf("crew = %+v", c)
+	}
+	if data, _ := os.ReadFile(store.TranscriptPath(slug, "c1")); !strings.Contains(string(data), "out-c1") {
+		t.Errorf("transcript = %q", data)
+	}
+	select {
+	case e := <-ends:
+		if e.exit != "exit 3" || e.stopped {
+			t.Errorf("hook got %+v", e)
+		}
+	default:
+		t.Error("hook didn't run before Done")
+	}
+}
+
+func TestLocalHost_StoppedAndLeaving(t *testing.T) {
+	h, store, slug, ends := localFixture(t)
+	req := Request{Store: store, Host: h, Root: store.Root, Slug: slug, Harness: "shell", Width: 40, Height: 5, Prepare: shellLaunch(`sleep 30`)}
+	a, _ := Start(req)
+	b, _ := Start(req)
+
+	a.Term.Close(time.Second)
+	<-a.Term.Done()
+	if e := <-ends; !e.stopped || e.exit != "hangup" {
+		t.Errorf("stopped crew: %+v", e)
+	}
+	h.Leave() // stops b and waits for its end to be recorded
+	if e := <-ends; !e.stopped || e.exit != "stopped: hangup" {
+		t.Errorf("left crew: %+v", e)
+	}
+	if m, _ := store.Load(slug); m.Crew[1].Exit != "stopped: hangup" || !b.Term.Exited() {
+		t.Errorf("b = %+v", m.Crew[1])
+	}
+}
+
+type failingHost struct{ LocalHost }
+
+func (*failingHost) Launch(Spec) (Term, error) { return nil, errors.New("no server") }
+
+func TestStart_FailedLaunchIsRecorded(t *testing.T) {
+	store := mission.Store{Root: t.TempDir()}
+	m, _ := store.Create("Fails")
+	_, err := Start(Request{Store: store, Host: &failingHost{}, Slug: m.Slug, Harness: "shell", Prepare: shellLaunch("true")})
+	if err == nil {
+		t.Fatal("no error")
+	}
+	got, _ := store.Load(m.Slug)
+	if len(got.Crew) != 1 || got.Crew[0].Exit != "failed to start: no server" {
+		t.Errorf("crew = %+v", got.Crew)
+	}
+}

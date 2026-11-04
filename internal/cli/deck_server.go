@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/brudil/workspace/internal/deckserver"
@@ -15,102 +14,11 @@ import (
 )
 
 // EnvDeckServer set to 0 keeps crew inside the deck process (they stop when
-// the deck quits) instead of in the workspace's deck server.
+// the deck quits) instead of in the workspace's deck server. It's a
+// debugging aid: crew start and end exactly as they do on the server.
 const EnvDeckServer = "WS_DECK_SERVER"
 
 func deckServerEnabled() bool { return os.Getenv(EnvDeckServer) != "0" }
-
-// serverHost runs crew in the workspace's deck server. It only starts the
-// server when crew are first launched; opening the deck just looks for one
-// to reattach to.
-type serverHost struct {
-	root string
-
-	mu     sync.Mutex
-	client *deckserver.Client
-}
-
-func (h *serverHost) connect(start bool) (*deckserver.Client, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.client != nil {
-		select {
-		case <-h.client.Lost():
-			h.client = nil
-		default:
-			return h.client, nil
-		}
-	}
-	var c *deckserver.Client
-	var err error
-	if start {
-		c, err = deckserver.Connect(h.root)
-	} else {
-		c, err = deckserver.Dial(h.root)
-	}
-	if err != nil {
-		return nil, err
-	}
-	h.client = c
-	return c, nil
-}
-
-func (h *serverHost) Launch(s crewSpec) (crewTerm, error) {
-	c, err := h.connect(true)
-	if err != nil {
-		return nil, err
-	}
-	return c.Launch(deckserver.Spec{
-		Slug: s.Slug, CrewID: s.CrewID, Harness: s.Harness, Capsule: s.Capsule, Role: s.Role,
-		Args: s.Args, Dir: s.Dir, Env: s.Env, Width: s.Width, Height: s.Height,
-	})
-}
-
-func (h *serverHost) Running(skip func(key string) bool) []hostedCrew {
-	c, err := h.connect(false)
-	if err != nil {
-		return nil // no server running: nothing to reattach
-	}
-	infos, err := c.List()
-	if err != nil {
-		return nil
-	}
-	var out []hostedCrew
-	for _, info := range infos {
-		if skip != nil && skip(info.Spec.Key()) {
-			continue
-		}
-		t, err := c.Attach(info)
-		if err != nil {
-			continue
-		}
-		sp := info.Spec
-		out = append(out, hostedCrew{
-			Spec: crewSpec{Slug: sp.Slug, CrewID: sp.CrewID, Harness: sp.Harness, Capsule: sp.Capsule, Role: sp.Role, Dir: sp.Dir},
-			Term: t,
-		})
-	}
-	return out
-}
-
-func (h *serverHost) OwnsLifecycle() bool { return false }
-
-// Flush waits until everything sent so far has reached the server: requests
-// go out in order, so one round trip covers them.
-func (h *serverHost) Flush() {
-	if c, err := h.connect(false); err == nil {
-		c.List()
-	}
-}
-
-func (h *serverHost) Detach() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.client != nil {
-		h.client.Close()
-		h.client = nil
-	}
-}
 
 // --- ws deck server ---
 
@@ -140,9 +48,7 @@ func newDeckServerRunCmd() *cobra.Command {
 			}
 			s := &deckserver.Server{Root: root, Log: log.New(os.Stderr, "deck-server ", log.LstdFlags)}
 			store := mission.Store{Root: root}
-			s.OnCrewEnded = func(spec deckserver.Spec, exit string, stopped bool) {
-				maybeOrchestrateAfterEnd(root, store, spec.Slug, spec.CrewID, spec.Role, stopped)
-			}
+			s.OnCrewEnded = orchestrateHook(root, store)
 			if err := s.Listen(); err != nil {
 				return err
 			}

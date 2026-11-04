@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/brudil/workspace/internal/crew"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,12 +30,7 @@ func shellCrewDeck(t *testing.T, capsules ...string) (deckModel, string) {
 		owned = append(owned, [2]string{"frontend", c})
 	}
 	slug := seedMission(t, ws, "Crewed", "", owned...)
-	m := loadedDeck(t, ws, prIndex{})
-	t.Cleanup(func() {
-		for _, r := range m.reg.all() {
-			r.term.Close(time.Second)
-		}
-	})
+	m := loadedDeck(t, ws, prIndex{}) // its cleanup stops the crew
 	return m, slug
 }
 
@@ -333,7 +329,8 @@ func TestDeckCrew_QuitWithLiveCrewStopsThem(t *testing.T) {
 	}
 	m.stopLeftovers() // deck.go always calls this after Run
 	got, _ := m.store.Load(slug)
-	if got.Crew[0].Exit != "stopped: hangup" {
+	// Recorded as the server records a stopped crew.
+	if got.Crew[0].Exit != "hangup" {
 		t.Errorf("exit = %q", got.Crew[0].Exit)
 	}
 	if n := crewEnded(t, m, slug); n != 1 {
@@ -355,7 +352,8 @@ func TestDeckCrew_LeftoversAreStoppedAndRecordedOnce(t *testing.T) {
 	m.stopLeftovers()
 
 	got, _ := m.store.Load(slug)
-	if got.Crew[0].Exit != "stopped: deck exited" {
+	// The host shutting down, as the server records it.
+	if got.Crew[0].Exit != "stopped: hangup" {
 		t.Errorf("exit = %q", got.Crew[0].Exit)
 	}
 	if n := crewEnded(t, m, slug); n != 1 {
@@ -452,48 +450,6 @@ func TestDeckCrew_ScrollUnavailableFullScreen(t *testing.T) {
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: '[', Text: "["})
 	if m.scrollMode || !strings.Contains(m.flash, "full-screen") {
 		t.Errorf("scrollMode=%v flash=%q", m.scrollMode, m.flash)
-	}
-}
-
-func TestCrewEnv_PutsThisBinaryFirstOnPath(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("PATH", "/usr/bin:/bin")
-	env := crewEnv(root, "m", "c1")
-
-	shim := filepath.Join(root, ".ws", "bin")
-	var path string
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
-			if path != "" {
-				t.Fatal("PATH set twice")
-			}
-			path = v
-		}
-	}
-	if path != shim+":/usr/bin:/bin" {
-		t.Errorf("PATH = %q", path)
-	}
-	exe, _ := os.Executable()
-	exe, _ = filepath.EvalSymlinks(exe)
-	for _, name := range []string{"ws", "workspace"} {
-		if got, _ := os.Readlink(filepath.Join(shim, name)); got != exe {
-			t.Errorf("%s -> %q, want %q", name, got, exe)
-		}
-	}
-
-	// A stale link (an earlier build) is replaced; repeating is harmless.
-	link := filepath.Join(shim, "ws")
-	os.Remove(link)
-	os.Symlink("/old/workspace", link)
-	t.Setenv("PATH", shim+":/usr/bin")
-	env = crewEnv(root, "m", "c2")
-	if got, _ := os.Readlink(link); got != exe {
-		t.Errorf("stale link not replaced: %q", got)
-	}
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "PATH="); ok && v != shim+":/usr/bin" {
-			t.Errorf("shim dir duplicated on PATH: %q", v)
-		}
 	}
 }
 
@@ -628,9 +584,9 @@ func (promptHarness) Resume(string, string) (harness.Launch, error) {
 }
 
 func TestDeckCrew_OpeningPromptIsTypedInOnceDrawn(t *testing.T) {
-	old := promptSettle
-	promptSettle = 300 * time.Millisecond
-	t.Cleanup(func() { promptSettle = old })
+	old := crew.PromptSettle
+	crew.PromptSettle = 300 * time.Millisecond
+	t.Cleanup(func() { crew.PromptSettle = old })
 
 	m, slug := shellCrewDeck(t)
 	harness.Register(promptHarness{})
@@ -871,29 +827,6 @@ func captureOrchestrations(t *testing.T) *[]spawned {
 	return &calls
 }
 
-func TestOrchestrateTrigger_OnlyForCrewEndingByThemselves(t *testing.T) {
-	calls := captureOrchestrations(t)
-	m, slug := shellCrewDeck(t)
-	store := m.store
-
-	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", "", true) // stopped
-	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", mission.RoleBriefing, false)
-	if len(*calls) != 0 {
-		t.Fatalf("reviewed a stopped or briefing crew: %v", *calls)
-	}
-	store.StartCrew(slug, "cursor", "conv")
-	store.SetCrewStatus(slug, "c1", mission.CrewDone, "x")
-	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c1", "", false)
-	if len(*calls) != 0 {
-		t.Fatalf("reviewed again after done: %v", *calls)
-	}
-	store.StartCrew(slug, "cursor", "conv2")
-	maybeOrchestrateAfterEnd(m.ws.Root, store, slug, "c2", "", false)
-	if len(*calls) != 1 || (*calls)[0] != (spawned{slug, "c2", "ended"}) {
-		t.Errorf("calls = %v", *calls)
-	}
-}
-
 func TestDeckCrew_ExitSavesTranscriptAndTriggersOrchestrator(t *testing.T) {
 	calls := captureOrchestrations(t)
 	m, slug := shellCrewDeck(t)
@@ -1007,7 +940,7 @@ func TestDeckDispatch_FDismissesQueued(t *testing.T) {
 func TestDeckAdoptsCrewLaunchedElsewhere(t *testing.T) {
 	m, slug := shellCrewDeck(t)
 	term := &fakeTerm{done: make(chan struct{})}
-	m.host = fakeHost{running: []hostedCrew{{Spec: crewSpec{Slug: slug, CrewID: "c1", Capsule: "frontend/work"}, Term: term}}}
+	m.host = fakeHost{running: []crew.Hosted{{Spec: crew.Spec{Slug: slug, CrewID: "c1", Capsule: "frontend/work"}, Term: term}}}
 
 	// Nothing recorded as running: no need to ask the server.
 	if _, cmd := reloadRecords(m); cmd != nil {
@@ -1062,9 +995,9 @@ func TestDeckAdopt_LookupDoesntReadRunsConcurrently(t *testing.T) {
 	m, slug := shellCrewDeck(t)
 	running := &deckCrewRun{slug: slug, crewID: "c1", term: &fakeTerm{done: make(chan struct{})}}
 	m.reg.add(running)
-	m.host = fakeHost{running: []hostedCrew{
-		{Spec: crewSpec{Slug: slug, CrewID: "c1"}, Term: &fakeTerm{done: make(chan struct{})}},
-		{Spec: crewSpec{Slug: slug, CrewID: "c2"}, Term: &fakeTerm{done: make(chan struct{})}},
+	m.host = fakeHost{running: []crew.Hosted{
+		{Spec: crew.Spec{Slug: slug, CrewID: "c1"}, Term: &fakeTerm{done: make(chan struct{})}},
+		{Spec: crew.Spec{Slug: slug, CrewID: "c2"}, Term: &fakeTerm{done: make(chan struct{})}},
 	}}
 	m.store.StartCrew(slug, "shell", "")
 	m.store.StartCrew(slug, "shell", "")

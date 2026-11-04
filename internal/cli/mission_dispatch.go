@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brudil/workspace/internal/crew"
+	"github.com/brudil/workspace/internal/deckserver"
 	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
@@ -15,7 +17,7 @@ import (
 const dispatchWidth, dispatchHeight = 120, 40
 
 // dispatchHost is where dispatched crew run; tests replace it.
-var dispatchHost = func(root string) crewHost { return &serverHost{root: root} }
+var dispatchHost = func(root string) crew.Host { return deckserver.NewHost(root) }
 
 func newMissionDispatchCmd() *cobra.Command {
 	var slug, capsule, harnessName string
@@ -45,7 +47,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				return err
 			}
 			by := raisedBy()
-			if by != roleOrchestrator && by != "you" {
+			if by != mission.RoleOrchestrator && by != "you" {
 				return errors.New("crew don't dispatch other crew: run ws mission done when your part is finished, and the orchestrator decides what follows")
 			}
 			if m.State == mission.Briefing {
@@ -58,7 +60,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			queued := queue || !ctx.Config.OrchestratorAutoDispatch() || !deckServerEnabled()
 			// Out of dispatches is the answer that matters most: say it
 			// before anything else (CountDispatch enforces it again below).
-			if by == roleOrchestrator && !queued && m.Dispatches >= ctx.Config.OrchestratorMaxDispatches() {
+			if by == mission.RoleOrchestrator && !queued && m.Dispatches >= ctx.Config.OrchestratorMaxDispatches() {
 				return dispatchLimitErr(fmt.Errorf("%w: %d crew dispatched without the user", mission.ErrDispatchLimit, m.Dispatches))
 			}
 			// Launching now, nobody is there to confirm sharing a capsule
@@ -70,7 +72,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			store := missionStore(ctx)
 
 			if queued {
-				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: handoff, Capsule: place.capsule, Harness: harnessName, By: by}); err != nil {
+				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: handoff, Capsule: place.Capsule, Harness: harnessName, By: by}); err != nil {
 					if errors.Is(err, mission.ErrDispatchQueued) {
 						return fmt.Errorf("%w; only one waits at a time, so don't queue another: say what you'd dispatch next in ws mission note, or ws mission flag the user", err)
 					}
@@ -88,7 +90,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				return err
 			}
 			counted := false
-			if by == roleOrchestrator {
+			if by == mission.RoleOrchestrator {
 				if err := store.CountDispatch(m.Slug, ctx.Config.OrchestratorMaxDispatches()); err != nil {
 					return dispatchLimitErr(err)
 				}
@@ -97,16 +99,30 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				store.UserActed(m.Slug)
 			}
 			brief, _ := store.ReadBrief(m.Slug)
-			c, err := launchDispatched(ctx.WS.Root, store, dispatchHost(ctx.WS.Root), h, harness.Brief{
-				Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.dir, Handoff: handoff,
-			}, place.capsule, by)
+			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Handoff: handoff}
+			host := dispatchHost(ctx.WS.Root)
+			defer host.Leave()
+			started, err := crew.Start(crew.Request{
+				Store: store, Host: host, Root: ctx.WS.Root,
+				Slug: m.Slug, Harness: h.Name(), Place: place, Handoff: handoff, By: by,
+				Width: dispatchWidth, Height: dispatchHeight,
+				Prepare: func() (harness.Launch, error) { return h.Start(b) },
+			})
 			if err != nil {
-				if counted && c == "" {
+				if counted {
 					store.ReleaseDispatch(m.Slug) // nothing launched: don't use up the allowance
 				}
 				return err
 			}
-			fmt.Fprintf(ui.Stderr, "  %s dispatched %s on %s in %s; it's running in the deck server\n", ui.Green.Render("✓"), c, m.Slug, place.capsule)
+			id := started.Crew.ID
+			if started.Prompt != "" && !crew.TypePrompt(started.Term, started.Prompt) {
+				return fmt.Errorf("%s exited before its prompt could be sent: %s", id, started.Term.ExitSummary())
+			}
+			// Make sure the paste reached the server before letting go of it.
+			if f, ok := host.(interface{ Flush() }); ok {
+				f.Flush()
+			}
+			fmt.Fprintf(ui.Stderr, "  %s dispatched %s on %s in %s; it's running in the deck server\n", ui.Green.Render("✓"), id, m.Slug, place.Capsule)
 			return nil
 		},
 	}
@@ -128,84 +144,31 @@ func dispatchLimitErr(err error) error {
 // dispatchPlace picks the capsule dispatched crew work in: the one asked
 // for, else the first one no running crew is in. Unless shared is allowed,
 // it refuses a capsule crew is still working in: two agents in one worktree
-// edit the same files.
-func dispatchPlace(ctx *Context, m *mission.Mission, want string, shared bool) (crewPlace, error) {
-	v := buildMissionViewsFrom(ctx.WS, nil, []*mission.Mission{m})[0]
-	busy := map[string]string{} // capsule → crew working there
-	for _, c := range m.Crew {
-		// A record whose process is gone (a crashed deck server) isn't
-		// working anywhere.
-		if c.Ended == nil && c.Capsule != "" && (c.PID == 0 || processAlive(c.PID)) {
-			busy[c.Capsule] = c.ID
+// edit the same files. Its errors tell the orchestrator how to recover.
+func dispatchPlace(ctx *Context, m *mission.Mission, want string, shared bool) (crew.Place, error) {
+	var caps []crew.Capsule
+	for _, c := range buildMissionViewsFrom(ctx.WS, nil, []*mission.Mission{m})[0].Capsules {
+		if c.Exists {
+			caps = append(caps, crew.Capsule{Name: c.Repo + "/" + c.Name, Path: c.Path})
 		}
 	}
-	var names []string
-	var first, free *crewPlace
-	for _, c := range v.Capsules {
-		if !c.Exists {
-			continue
-		}
-		name := c.Repo + "/" + c.Name
-		names = append(names, name)
-		p := crewPlace{dir: c.Path, capsule: name}
-		if want == name {
-			if id := busy[name]; id != "" && !shared {
-				return crewPlace{}, fmt.Errorf("%s is still working in %s; wait for it to finish, or create another capsule with ws lift <repo> <branch> (it joins the mission) and dispatch there", id, name)
-			}
-			return p, nil
-		}
-		if first == nil {
-			first = &p
-		}
-		if free == nil && busy[name] == "" {
-			free = &p
-		}
-	}
+	p, err := crew.PickPlace(caps, crew.BusyIn(m), want)
+	var unknown *crew.UnknownCapsuleError
 	switch {
-	case want != "" && len(names) > 0:
-		return crewPlace{}, fmt.Errorf("mission %s has no capsule %s (it has: %s); create it with ws lift <repo> <branch>, which joins it to the mission", m.Slug, want, strings.Join(names, ", "))
-	case want != "":
-		return crewPlace{}, fmt.Errorf("mission %s has no capsule %s; create it with ws lift <repo> <branch>, which joins it to the mission", m.Slug, want)
-	case free != nil:
-		return *free, nil
-	case first != nil && shared:
-		return *first, nil
-	case first != nil:
-		return crewPlace{}, fmt.Errorf("crew are working in every capsule of %s (%s); wait for them, or create another capsule with ws lift <repo> <branch> and dispatch with --capsule", m.Slug, strings.Join(names, ", "))
+	case errors.As(err, &unknown):
+		return p, fmt.Errorf("mission %s has %s; create it with ws lift <repo> <branch>, which joins it to the mission", m.Slug, unknown)
+	case errors.Is(err, crew.ErrNoCapsule):
+		return p, fmt.Errorf("mission %s has no capsule to work in: create one with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule <repo>/<branch>", m.Slug)
+	case err != nil:
+		return p, err
+	case p.Busy != "" && !shared && want != "":
+		return p, fmt.Errorf("%s is still working in %s; wait for it to finish, or create another capsule with ws lift <repo> <branch> (it joins the mission) and dispatch there", p.Busy, p.Capsule)
+	case p.Busy != "" && !shared:
+		var names []string
+		for _, c := range caps {
+			names = append(names, c.Name)
+		}
+		return p, fmt.Errorf("crew are working in every capsule of %s (%s); wait for them, or create another capsule with ws lift <repo> <branch> and dispatch with --capsule", m.Slug, strings.Join(names, ", "))
 	}
-	return crewPlace{}, fmt.Errorf("mission %s has no capsule to work in: create one with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule <repo>/<branch>", m.Slug)
-}
-
-// launchDispatched starts crew in the deck server, types its opening prompt
-// in, and leaves it running there. It returns the new crew's id.
-func launchDispatched(root string, store mission.Store, host crewHost, h harness.Harness, b harness.Brief, capsule, by string) (string, error) {
-	l, err := h.Start(b)
-	if err != nil {
-		return "", err
-	}
-	crew, err := store.StartCrewAs(b.Slug, h.Name(), l.Conversation, "")
-	if err != nil {
-		return "", err
-	}
-	store.SetHandoff(b.Slug, crew.ID, by, b.Handoff)
-	term, err := host.Launch(crewSpec{
-		Slug: b.Slug, CrewID: crew.ID, Harness: h.Name(), Capsule: capsule,
-		Args: l.Args, Dir: l.Dir, Env: crewEnv(root, b.Slug, crew.ID),
-		Width: dispatchWidth, Height: dispatchHeight,
-	})
-	if err != nil {
-		store.EndCrew(b.Slug, crew.ID, "failed to start: "+err.Error())
-		return "", err
-	}
-	store.SetCrewProcess(b.Slug, crew.ID, term.Pid(), capsule)
-	if l.Prompt != "" && !typePrompt(term, l.Prompt) {
-		host.Detach()
-		return crew.ID, fmt.Errorf("%s exited before its prompt could be sent: %s", crew.ID, term.ExitSummary())
-	}
-	// Make sure the paste reached the server before letting go of it.
-	if f, ok := host.(interface{ Flush() }); ok {
-		f.Flush()
-	}
-	host.Detach()
-	return crew.ID, nil
+	return p, nil
 }

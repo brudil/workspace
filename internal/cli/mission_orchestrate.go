@@ -1,49 +1,28 @@
 package cli
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
-	"syscall"
-	"time"
-	"unicode/utf8"
 
 	"github.com/brudil/workspace/internal/config"
-	"github.com/brudil/workspace/internal/deckserver"
-	"github.com/brudil/workspace/internal/harness"
+	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/mission"
+	"github.com/brudil/workspace/internal/orchestrator"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-const (
-	orchestrateTranscriptLines = 200
-	orchestrateLogEvents       = 40
-	orchestrateOutputKeep      = 1500 // bytes of the orchestrator's final message kept in the log
+// orchestrateSpawner starts the orchestrator for a crew event; tests stub
+// it (os.Executable is the test binary).
+var orchestrateSpawner orchestrator.Spawner = orchestrator.Spawn
 
-	// The prompt goes to the agent as one argument, and Linux caps a single
-	// argument at 128 KiB (MAX_ARG_STRLEN), so each section has a budget
-	// and the whole stays well under it. What's cut is a command away.
-	promptBriefMax      = 24 << 10
-	promptCapsulesMax   = 16 << 10
-	promptLogMax        = 16 << 10
-	promptCrewMax       = 8 << 10
-	promptHandoffMax    = 600
-	promptTranscriptMax = 32 << 10
-	promptMax           = 112 << 10
-)
-
-var (
-	// orchestrateTimeout bounds one run; tests shorten it.
-	orchestrateTimeout = 10 * time.Minute
-	// orchestrateWaitDelay is how long to wait for output after killing a
-	// run that timed out.
-	orchestrateWaitDelay = 5 * time.Second
-)
+// orchestrateHook is the end hook hosts run: the orchestrator for crew that
+// ended by themselves.
+func orchestrateHook(root string, store mission.Store) crew.EndHook {
+	return orchestrator.AfterEnd(root, store, func(root, slug, crewID, trigger string) {
+		orchestrateSpawner(root, slug, crewID, trigger)
+	})
+}
 
 func newMissionOrchestrateCmd() *cobra.Command {
 	var slug, crewID, trigger, model string
@@ -86,20 +65,10 @@ you before it must flag you.`,
 			if model == "" {
 				model = ctx.Config.OrchestratorModel()
 			}
-			prompt := orchestratePrompt(ctx, m, crewID, trigger)
-
-			h, err := harness.Get(harness.Default())
+			prompt := orchestrator.Prompt(orchestratorInput(ctx, m, crewID, trigger))
+			rv, err := orchestrator.Harness()
 			if err != nil {
 				return err
-			}
-			rv, ok := h.(harness.Orchestrator)
-			if !ok {
-				if h, err = harness.Get("cursor"); err == nil {
-					rv, ok = h.(harness.Orchestrator)
-				}
-			}
-			if !ok {
-				return errors.New("no harness here can run a headless orchestrator")
 			}
 			l, err := rv.Orchestrate(prompt, ctx.WS.Root, model)
 			if err != nil {
@@ -125,11 +94,8 @@ you before it must flag you.`,
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + model})
 			fmt.Fprintf(ui.Stderr, "  %s orchestrator looking at %s on %s with %s…\n", ui.Dim.Render("·"), what, m.Slug, model)
 
-			out, runErr := runOrchestrator(l, m.Slug)
-			summary := clipTail(strings.TrimSpace(out), orchestrateOutputKeep, "…")
-			if runErr != nil {
-				summary = "orchestrator failed: " + runErr.Error() + ifSome(" · "+summary, summary)
-			}
+			out, runErr := orchestrator.Run(l, ctx.WS.Root, m.Slug)
+			summary := orchestrator.Summary(out, runErr)
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: summary})
 			fmt.Fprintln(ui.Stderr, summary)
 			return runErr
@@ -144,183 +110,31 @@ you before it must flag you.`,
 	return cmd
 }
 
-func ifSome(s, cond string) string {
-	if cond == "" {
-		return ""
-	}
-	return s
-}
-
-// runOrchestrator runs the orchestrator with its role, returning what it
-// printed. It runs in its own process group so a timeout kills everything it
-// started (a shell, a `gh pr checks --watch`), not just the agent: anything
-// left holding its output would keep Run waiting forever.
-func runOrchestrator(l harness.Launch, slug string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), orchestrateTimeout)
-	defer cancel()
-	c := exec.CommandContext(ctx, l.Args[0], l.Args[1:]...)
-	c.Dir = l.Dir
-	env := crewEnv(l.Dir, slug, "")
-	c.Env = append(env, EnvRole+"="+roleOrchestrator)
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
-	c.WaitDelay = orchestrateWaitDelay
-	var out bytes.Buffer
-	c.Stdout, c.Stderr = &out, &out
-	err := c.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		err = fmt.Errorf("timed out after %s", orchestrateTimeout)
-	}
-	return out.String(), err
-}
-
-// orchestratePrompt is everything the orchestrator needs, gathered up front
-// so it can usually decide without digging: the brief, the capsules (diffs,
-// PRs), the log, the crew and the latest crew's output.
-func orchestratePrompt(ctx *Context, m *mission.Mission, crewID, trigger string) string {
+// orchestratorInput gathers what the orchestrator is told: the brief, the
+// capsules (diffs, PRs), the recent log, and the prompting crew's output.
+func orchestratorInput(ctx *Context, m *mission.Mission, crewID, trigger string) orchestrator.Input {
 	store := missionStore(ctx)
 	v := buildMissionViews(ctx.WS, ctx.GitHub, []*mission.Mission{m})[0]
 	brief, _ := store.ReadBrief(m.Slug)
-	events, _ := store.ReadLog(m.Slug, orchestrateLogEvents)
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "You are the orchestrator for the mission %q (%s) in a multi-repo workspace managed by the ws tool. Crew (coding agents) do the work; you decide what happens between them.\n", m.Title, m.Slug)
-	switch trigger {
-	case "done":
-		fmt.Fprintf(&b, "Crew %s has just reported that its part is done.\n", crewID)
-	case "ended":
-		fmt.Fprintf(&b, "Crew %s has just ended without reporting done.\n", crewID)
-	}
-	b.WriteString(`
-Read the brief and the history below and decide what should happen next: is what just finished good, what does the brief still need, and who should do it? The brief may describe stages for separate crew (say, a proposal and then its implementation); the log and crew list show which are done. Act only through these commands (WS_MISSION is set for you):
-
-- ws mission note "Orchestrator: <what you found and decided, two or three sentences>"   (always, once; the next orchestrator run reads it)
-- ws mission dispatch "<handoff>" [--capsule <repo>/<name>]   (start new, fresh crew on the next piece of work. The handoff is all it knows beyond the brief: what to do, where earlier crew's output is (files, commits, PRs), what to watch for)
-- ws mission resume-with <crew> "<what's left>"   (that crew should carry on: unfinished, tests missing, CI failing. Better than dispatching when its context matters)
-- ws mission flag "<why the user is needed>"   (a decision or problem only the user can resolve, or the brief says to check with them before the next stage)
-- ws mission new "<follow-up, what and why>"   (separate work worth doing, outside this mission's scope)
-- ws mission conclude "<why it's finished>"   (everything in the brief is met; PRs merged or ready)
-
-If the next crew needs a capsule the mission doesn't have yet, create it first with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule.
-You may investigate read-only: ws mission show -f llm, git diff/log in the capsule paths below, gh pr view/checks. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
-
-`)
-	fmt.Fprintf(&b, "## Brief\n\n%s\n\n", clipHead(strings.TrimSpace(firstNonEmpty(brief, "(empty)")), promptBriefMax,
-		"\n… (the brief continues: ws mission brief prints it whole)"))
-
-	b.WriteString("## Capsules\n\n")
-	if len(v.Capsules) == 0 {
-		b.WriteString("(none)\n")
-	}
-	var caps strings.Builder
+	events, _ := store.ReadLog(m.Slug, orchestrator.LogEvents)
+	in := orchestrator.Input{Mission: m, CrewID: crewID, Trigger: trigger, Brief: brief}
 	for _, c := range v.Capsules {
-		fmt.Fprintf(&caps, "- %s/%s", c.Repo, c.Name)
-		if c.Exists {
-			fmt.Fprintf(&caps, " at %s (branch %s)", c.Path, c.Branch)
-		} else {
-			caps.WriteString(" (burned)")
-		}
+		oc := orchestrator.Capsule{Name: c.Repo + "/" + c.Name, Path: c.Path, Exists: c.Exists, Branch: c.Branch}
 		if c.PR != nil {
-			state := "open"
-			if c.PRS == mission.PRMerged {
-				state = "merged"
-			}
-			fmt.Fprintf(&caps, " — PR #%d %s", c.PR.Number, state)
-			if c.PR.StatusRollup != "" {
-				fmt.Fprintf(&caps, ", checks %s", c.PR.StatusRollup)
-			}
-			if c.PR.URL != "" {
-				fmt.Fprintf(&caps, " %s", c.PR.URL)
-			}
+			oc.PR, oc.PRMerged, oc.Checks, oc.URL = c.PR.Number, c.PRS == mission.PRMerged, c.PR.StatusRollup, c.PR.URL
 		}
-		caps.WriteByte('\n')
 		if c.Exists {
-			if stat := diffStat(c.Path, "origin/"+ctx.WS.DefaultBranch); stat != "" {
-				for _, line := range strings.Split(stat, "\n") {
-					caps.WriteString("    " + line + "\n")
-				}
-			}
+			oc.DiffStat = orchestrator.DiffStat(c.Path, "origin/"+ctx.WS.DefaultBranch)
 		}
+		in.Capsules = append(in.Capsules, oc)
 	}
-	b.WriteString(clipHead(caps.String(), promptCapsulesMax, "… (more: ws mission show -f llm, and git diff --stat in each capsule)\n"))
-
-	if len(events) > 0 {
-		b.WriteString("\n## Recent log\n\n")
-		var log strings.Builder
-		for _, e := range events {
-			log.WriteString(formatEventLine(e, true) + "\n")
-		}
-		b.WriteString(clipTail(log.String(), promptLogMax, "… (earlier: ws mission show -f llm)\n"))
+	for _, e := range events {
+		in.Log = append(in.Log, formatEventLine(e, true))
 	}
-
-	if len(m.Crew) > 0 {
-		b.WriteString("\n## Crew\n\n")
-		var crew strings.Builder
-		for _, c := range m.Crew {
-			fmt.Fprintf(&crew, "- %s", c.ID)
-			if c.Role != "" {
-				fmt.Fprintf(&crew, " (%s)", c.Role)
-			}
-			if c.Capsule != "" {
-				fmt.Fprintf(&crew, " in %s", c.Capsule)
-			}
-			switch {
-			case c.Ended != nil:
-				fmt.Fprintf(&crew, ", ended (%s)", c.Exit)
-			default:
-				crew.WriteString(", running")
-			}
-			if c.Status != "" {
-				fmt.Fprintf(&crew, ", %s: %s", c.Status, c.Note)
-			}
-			if c.Handoff != "" {
-				fmt.Fprintf(&crew, "\n    dispatched with: %s", clipHead(c.Handoff, promptHandoffMax, "…"))
-			}
-			crew.WriteByte('\n')
-		}
-		b.WriteString(clipTail(crew.String(), promptCrewMax, "… (earlier crew: ws mission show -f llm)\n"))
-	}
-
 	if crewID != "" {
-		if tail := crewOutputTail(ctx, m.Slug, crewID); tail != "" {
-			fmt.Fprintf(&b, "\n## The end of %s's output\n\n```\n%s\n```\n", crewID, clipTail(tail, promptTranscriptMax, "…\n"))
-		}
+		in.Output = orchestrator.CrewOutput(ctx.WS.Root, store, m.Slug, crewID)
 	}
-	return clipHead(b.String(), promptMax, "\n… (cut to fit)")
-}
-
-// clipHead keeps the start of s within limit bytes, at a line break where one
-// is near, never splitting a character, and appends more if anything went.
-func clipHead(s string, limit int, more string) string {
-	if len(s) <= limit {
-		return s
-	}
-	cut := max(0, limit-len(more))
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	head := s[:cut]
-	if i := strings.LastIndexByte(head, '\n'); i > len(head)/2 {
-		head = head[:i+1]
-	}
-	return head + more
-}
-
-// clipTail keeps the end of s within limit bytes, from a line break where one
-// is near, never splitting a character, and prepends more if anything went.
-func clipTail(s string, limit int, more string) string {
-	if len(s) <= limit {
-		return s
-	}
-	cut := len(s) - limit + len(more)
-	for cut < len(s) && !utf8.RuneStart(s[cut]) {
-		cut++
-	}
-	tail := s[cut:]
-	if i := strings.IndexByte(tail, '\n'); i >= 0 && i < len(tail)/2 {
-		tail = tail[i+1:]
-	}
-	return more + tail
+	return in
 }
 
 func firstNonEmpty(s, fallback string) string {
@@ -328,33 +142,4 @@ func firstNonEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
-}
-
-// diffStat summarises a capsule's changes against its base.
-func diffStat(dir, base string) string {
-	out, err := exec.Command("git", "-C", dir, "diff", "--stat", base+"...HEAD").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimRight(string(out), "\n")
-}
-
-// crewOutputTail is the last lines a crew showed: from the deck server if
-// it's still running there, else from its saved transcript.
-func crewOutputTail(ctx *Context, slug, crewID string) string {
-	text := ""
-	if c, err := deckserver.Dial(ctx.WS.Root); err == nil {
-		text, _ = c.Transcript(slug + "/" + crewID)
-		c.Close()
-	}
-	if text == "" {
-		if data, err := os.ReadFile(missionStore(ctx).TranscriptPath(slug, crewID)); err == nil {
-			text = string(data)
-		}
-	}
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	if len(lines) > orchestrateTranscriptLines {
-		lines = lines[len(lines)-orchestrateTranscriptLines:]
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
 }

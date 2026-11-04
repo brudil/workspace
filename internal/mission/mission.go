@@ -21,7 +21,14 @@ import (
 const (
 	EnvMission = "WS_MISSION"
 	EnvCrew    = "WS_CREW"
+	// EnvRole names a special role a process plays for a mission:
+	// RoleOrchestrator.
+	EnvRole = "WS_ROLE"
 )
+
+// RoleOrchestrator is WS_ROLE for the orchestrator, which decides what
+// happens next on a mission.
+const RoleOrchestrator = "orchestrator"
 
 // State is a mission's lifecycle state. Only Parked and Archived are stored;
 // the rest are derived from capsule and PR facts (see DeriveState).

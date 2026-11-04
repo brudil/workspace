@@ -4,6 +4,8 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brudil/workspace/internal/crew"
+	"github.com/brudil/workspace/internal/deckserver"
 	"github.com/spf13/cobra"
 )
 
@@ -27,10 +29,10 @@ Pass a mission slug to open with it selected.`,
 			}
 			m := newDeckModel(ctx.WS, ctx.GitHub, firstArg(args))
 			if deckServerEnabled() {
-				m.host = &serverHost{root: ctx.WS.Root}
+				m.host = deckserver.NewHost(ctx.WS.Root)
 			}
-			// Close crew records a previous deck left open when it died.
-			m.store.ReconcileCrew(processAlive)
+			// Close crew records a deck server left open when it died.
+			m.store.ReconcileCrew(crew.ProcessAlive)
 			_, err = tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
 			m.stopLeftovers()
 			return err

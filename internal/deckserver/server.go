@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/termpane"
 )
@@ -28,16 +29,15 @@ type Server struct {
 	// IdleTimeout is how long the server stays up with no crew and no decks.
 	IdleTimeout time.Duration
 	Log         *log.Logger
-	// OnCrewEnded, if set, runs after a crew's end is recorded. stopped is
-	// true when the crew was stopped (by a deck or by shutdown) rather than
-	// ending by itself.
-	OnCrewEnded func(spec Spec, exit string, stopped bool)
+	// OnCrewEnded, if set, runs after a crew's end is recorded (see
+	// crew.EndHook).
+	OnCrewEnded crew.EndHook
 
 	store mission.Store
 	ln    net.Listener
 
 	mu      sync.Mutex
-	crews   map[string]*crew
+	crews   map[string]*crewProc
 	conns   map[*conn]bool
 	idle    *time.Timer
 	closing bool
@@ -46,7 +46,7 @@ type Server struct {
 	watchers sync.WaitGroup // crew end recorders; Shutdown waits for them
 }
 
-type crew struct {
+type crewProc struct {
 	spec Spec
 	pane *termpane.Pane
 
@@ -94,7 +94,7 @@ func (s *Server) Listen() error {
 	os.Chmod(path, 0o600)
 	s.ln = ln
 	s.store = mission.Store{Root: s.Root}
-	s.crews = map[string]*crew{}
+	s.crews = map[string]*crewProc{}
 	s.conns = map[*conn]bool{}
 	s.done = make(chan struct{})
 	if s.Log == nil {
@@ -148,7 +148,7 @@ func (s *Server) Shutdown(reason string) {
 		return
 	}
 	s.closing = true
-	crews := make([]*crew, 0, len(s.crews))
+	crews := make([]*crewProc, 0, len(s.crews))
 	for _, cr := range s.crews {
 		crews = append(crews, cr)
 	}
@@ -218,7 +218,7 @@ func (s *Server) handle(c *conn) {
 	}
 }
 
-func (s *Server) crew(key string) (*crew, error) {
+func (s *Server) crew(key string) (*crewProc, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cr, ok := s.crews[key]
@@ -322,7 +322,7 @@ func (s *Server) launch(spec Spec) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	cr := &crew{spec: spec, pane: pane, subs: map[*conn]*sub{}}
+	cr := &crewProc{spec: spec, pane: pane, subs: map[*conn]*sub{}}
 
 	s.mu.Lock()
 	s.crews[spec.Key()] = cr
@@ -340,7 +340,7 @@ func (s *Server) launch(spec Spec) (int, error) {
 }
 
 // watch records the crew's end on its mission and tells attached decks.
-func (s *Server) watch(cr *crew) {
+func (s *Server) watch(cr *crewProc) {
 	<-cr.pane.Done()
 	exit := cr.pane.ExitSummary()
 	s.mu.Lock()
@@ -349,15 +349,9 @@ func (s *Server) watch(cr *crew) {
 	if closing {
 		exit = "stopped: " + exit
 	}
-	if err := s.store.SaveTranscript(cr.spec.Slug, cr.spec.CrewID, exit, cr.pane.Transcript()); err != nil {
-		s.Log.Printf("saving transcript of %s: %v", cr.spec.Key(), err)
-	}
-	if err := s.store.EndCrew(cr.spec.Slug, cr.spec.CrewID, exit); err != nil {
-		s.Log.Printf("recording end of %s: %v", cr.spec.Key(), err)
-	}
 	s.Log.Printf("%s ended: %s", cr.spec.Key(), exit)
-	if s.OnCrewEnded != nil {
-		s.OnCrewEnded(cr.spec, exit, closing || cr.stopRequested.Load())
+	if err := crew.Finish(s.store, cr.spec, exit, cr.pane.Transcript(), closing || cr.stopRequested.Load(), s.OnCrewEnded); err != nil {
+		s.Log.Printf("recording end of %s: %v", cr.spec.Key(), err)
 	}
 
 	cr.mu.Lock()
@@ -375,7 +369,7 @@ func (s *Server) watch(cr *crew) {
 }
 
 // fanOut turns the pane's single update signal into one per attached deck.
-func (cr *crew) fanOut() {
+func (cr *crewProc) fanOut() {
 	for {
 		select {
 		case <-cr.pane.Updates():
@@ -393,7 +387,7 @@ func (cr *crew) fanOut() {
 	}
 }
 
-func (cr *crew) attach(c *conn) {
+func (cr *crewProc) attach(c *conn) {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
 	if _, ok := cr.subs[c]; ok {
@@ -405,7 +399,7 @@ func (cr *crew) attach(c *conn) {
 	go cr.push(sb)
 }
 
-func (cr *crew) detach(c *conn) {
+func (cr *crewProc) detach(c *conn) {
 	cr.mu.Lock()
 	sb, ok := cr.subs[c]
 	if ok {
@@ -419,7 +413,7 @@ func (cr *crew) detach(c *conn) {
 }
 
 // push sends frames to one deck, at most one per frameInterval.
-func (cr *crew) push(sb *sub) {
+func (cr *crewProc) push(sb *sub) {
 	for {
 		select {
 		case <-sb.quit:
@@ -448,7 +442,7 @@ func (cr *crew) push(sb *sub) {
 	}
 }
 
-func (cr *crew) setOffset(c *conn, offset int) {
+func (cr *crewProc) setOffset(c *conn, offset int) {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
 	if sb, ok := cr.subs[c]; ok {
@@ -460,7 +454,7 @@ func (cr *crew) setOffset(c *conn, offset int) {
 	}
 }
 
-func (cr *crew) setMirror(c *conn, on bool) {
+func (cr *crewProc) setMirror(c *conn, on bool) {
 	cr.mu.Lock()
 	if sb, ok := cr.subs[c]; ok {
 		sb.mirror = on
@@ -470,7 +464,7 @@ func (cr *crew) setMirror(c *conn, on bool) {
 }
 
 // refreshMirror points the pane's raw mirror at every deck that wants it.
-func (cr *crew) refreshMirror() {
+func (cr *crewProc) refreshMirror() {
 	cr.mu.Lock()
 	var want []*conn
 	for c, sb := range cr.subs {
