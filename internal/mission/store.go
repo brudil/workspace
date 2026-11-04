@@ -656,3 +656,111 @@ func (s Store) AddArtifact(slug, url, label, crew string) error {
 	}
 	return s.AppendLog(slug, Event{Kind: EventArtifact, Crew: crew, Text: text})
 }
+
+// TranscriptPath is where a crew's output is kept.
+func (s Store) TranscriptPath(slug, id string) string {
+	return filepath.Join(s.missionDir(slug), "crew-"+id+".log")
+}
+
+// SaveTranscript appends a crew run's output to its transcript, under a
+// header saying how the run ended (resumed crew keep earlier runs).
+func (s Store) SaveTranscript(slug, id, exit, text string) error {
+	if !validSlug(slug) {
+		return ErrNotFound
+	}
+	if _, err := os.Stat(s.missionDir(slug)); err != nil {
+		return ErrNotFound
+	}
+	f, err := os.OpenFile(s.TranscriptPath(slug, id), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "=== %s run ended %s (%s) ===\n%s", id, now().Format(time.RFC3339), exit, text)
+	return err
+}
+
+// SetFlag marks the mission as needing the user ("" clears it).
+func (s Store) SetFlag(slug, text, by string) error {
+	return s.setProposal(slug, text, by, EventFlag, func(m *Mission) **Proposal { return &m.Flag })
+}
+
+// SetConclude records a suggestion that the mission is finished ("" clears).
+func (s Store) SetConclude(slug, text, by string) error {
+	return s.setProposal(slug, text, by, EventConclude, func(m *Mission) **Proposal { return &m.Conclude })
+}
+
+func (s Store) setProposal(slug, text, by, kind string, field func(*Mission) **Proposal) error {
+	text = strings.TrimSpace(text)
+	if _, err := s.Update(slug, func(m *Mission) error {
+		p := field(m)
+		if text == "" {
+			*p = nil
+			return nil
+		}
+		*p = &Proposal{Text: text, By: by, At: now()}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if text == "" {
+		return nil
+	}
+	return s.AppendLog(slug, Event{Kind: kind, Crew: by, Text: text})
+}
+
+// SetResumeWith stores a message for the next time crew is resumed ("" clears).
+func (s Store) SetResumeWith(slug, id, message string) error {
+	found := false
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				m.Crew[i].ResumeWith = strings.TrimSpace(message)
+				found = true
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("mission %s has no crew %s", slug, id)
+	}
+	if message == "" {
+		return nil
+	}
+	return s.AppendLog(slug, Event{Kind: EventResumeWith, Crew: id, Text: message})
+}
+
+// MarkReviewed records that crew's latest event is being reviewed. It
+// reports false if that event was already reviewed.
+// eventKey names a crew's latest state: its run, status and end.
+func (c Crew) eventKey() string {
+	key := c.Started.Format(time.RFC3339)
+	if c.StatusAt != nil {
+		key += "|" + c.Status + "@" + c.StatusAt.Format(time.RFC3339) + ":" + c.Note
+	}
+	if c.Ended != nil {
+		key += "|ended@" + c.Ended.Format(time.RFC3339)
+	}
+	return key
+}
+
+func (s Store) MarkReviewed(slug, id string) (bool, error) {
+	fresh := false
+	_, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			c := &m.Crew[i]
+			if c.ID != id {
+				continue
+			}
+			key := c.eventKey()
+			if c.Reviewed == key {
+				return nil
+			}
+			c.Reviewed, fresh = key, true
+		}
+		return nil
+	})
+	return fresh, err
+}

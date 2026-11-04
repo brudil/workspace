@@ -544,3 +544,49 @@ func TestCrewStatus(t *testing.T) {
 		t.Error("unknown crew accepted")
 	}
 }
+
+func TestProposalsAndReviewMarks(t *testing.T) {
+	fixedNow(t) // every event lands in the same second: keys must still differ
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Proposals")
+	s.StartCrew(m.Slug, "cursor", "conv")
+
+	if err := s.SetFlag(m.Slug, "needs a decision", "reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	s.SetConclude(m.Slug, "all done", "reviewer")
+	if err := s.SetResumeWith(m.Slug, "c1", "add tests"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Load(m.Slug)
+	if got.Flag.Text != "needs a decision" || got.Flag.By != "reviewer" || got.Conclude.Text != "all done" || got.Crew[0].ResumeWith != "add tests" {
+		t.Errorf("proposals = %+v %+v %q", got.Flag, got.Conclude, got.Crew[0].ResumeWith)
+	}
+	s.SetFlag(m.Slug, "", "")
+	if got, _ := s.Load(m.Slug); got.Flag != nil {
+		t.Error("empty flag didn't clear")
+	}
+	if err := s.SetResumeWith(m.Slug, "c9", "x"); err == nil {
+		t.Error("resume-with on a missing crew succeeded")
+	}
+
+	mark := func() bool {
+		t.Helper()
+		fresh, err := s.MarkReviewed(m.Slug, "c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fresh
+	}
+	if !mark() || mark() {
+		t.Fatal("first mark should be fresh, the second not")
+	}
+	s.SetCrewStatus(m.Slug, "c1", CrewDone, "shipped")
+	if !mark() || mark() {
+		t.Fatal("done is a new event, reviewed once")
+	}
+	s.EndCrew(m.Slug, "c1", "exit 0")
+	if !mark() {
+		t.Fatal("ending is a new event")
+	}
+}

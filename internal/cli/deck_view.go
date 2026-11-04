@@ -218,6 +218,12 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 	if dm.M.From != "" {
 		b.WriteString(indent + ui.Dim.Render("Raised from: "+dm.M.From) + "\n")
 	}
+	if f := dm.M.Flag; f != nil {
+		b.WriteString("\n" + indent + ui.Orange.Render("! Needs you: ") + f.Text + ui.Dim.Render(" ("+f.By+") · F dismisses") + "\n")
+	}
+	if c := dm.M.Conclude; c != nil && dm.State != mission.Archived {
+		b.WriteString("\n" + indent + ui.Green.Render("✓ Suggested conclusion: ") + c.Text + ui.Dim.Render(" ("+c.By+") · x archives") + "\n")
+	}
 
 	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")
 	if len(dm.Capsules) == 0 {
@@ -360,6 +366,9 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 				marker = ui.Orange.Render("▸ ")
 			}
 			state := stateStyle(dm.State).Render(string(dm.State))
+			if dm.M.Flag != nil {
+				state = ui.Orange.Render("!") + " " + state
+			}
 			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
 				state = m.missionMark(runs) + " " + state
 			} else if m.launching[dm.M.Slug] {
@@ -458,6 +467,7 @@ func (m deckModel) renderHelp() string {
 		{"tab", "Focus the mission's live crew terminal"},
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
+		{"F", "Dismiss the selected mission's flag"},
 		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what it is; a briefing agent writes the brief and lifts capsules"},

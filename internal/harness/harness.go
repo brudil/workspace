@@ -141,3 +141,9 @@ func briefingPrompt(b Brief) string {
 	s.WriteString("7. When they agree, run `ws mission ready` (add `--slug <short-slug>` if the current slug is poor). That marks the mission ready and ends this session; work crew is launched from the deck.\n")
 	return s.String()
 }
+
+// Reviewer is a harness that can run a one-shot, headless review: a prompt
+// in, the agent acts with its tools, and exits.
+type Reviewer interface {
+	Review(prompt, dir, model string) (Launch, error)
+}

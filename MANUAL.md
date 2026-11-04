@@ -360,7 +360,27 @@ The same commands work by hand: `ws mission brief` prints or replaces a brief, `
 - **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, so they stop when it quits.
 - If a deck server dies, crew records it left open are marked `lost` the next time a deck opens.
 
-**Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
+**Review.** When crew report done, or end by themselves (not when you stop them), the deck runs a reviewer: a headless agent (`cursor-agent -p`) that reads the brief, the log, each capsule's diff and PR checks, and the end of the crew's output, then decides what's next. It acts only through `ws` commands, so a mistake comes back as an error it can correct:
+
+| Command | Means | In the deck |
+|---|---|---|
+| `ws mission note "Review: …"` | Its verdict, always one | In the log |
+| `ws mission flag "<why>"` | Something only you can decide | `!` on the mission row, *Needs you* in the mission view; `F` dismisses, launching crew clears it |
+| `ws mission resume-with <crew> "<what's left>"` | That crew should carry on | `⏎`/`R` offers to resume it and types the message in |
+| `ws mission new "<follow-up>"` | Separate work worth doing | A new mission waiting to be briefed, raised from this one |
+| `ws mission conclude "<why>"` | Looks finished | *Suggested conclusion* in the mission view; `x` archives |
+
+The reviewer may look around read-only (`git diff`, `gh pr checks`) but doesn't change code, push, or launch or stop crew. Each crew event is reviewed once. Its output goes to `.ws/missions/<slug>/review.log`. `ws mission review` runs one by hand (`--crew c2` to focus on one crew, `--print-prompt` to see what it would be told). Crew output is saved to `crew-<id>.log` in the mission's folder when a run ends, so the reviewer can read it later.
+
+Configure it in `ws.toml` or `ws.local.toml`:
+
+```toml
+[review]
+model = "claude-haiku-5-5-medium"   # the default
+enabled = true                      # false turns the automatic reviews off
+```
+
+**Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`, and crew and review output). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 
 ---
 
@@ -436,6 +456,8 @@ backend = [".ground"]
 | Field | Description |
 |---|---|
 | `git` | Clone protocol: `"ssh"` or `"https"` (default). |
+
+**Review overrides:** `[review] model` and `enabled` replace the shared values (see [Missions](#missions)).
 
 **Repo overrides:**
 

@@ -462,3 +462,9 @@ func (t *Term) LastChange() time.Time {
 	}
 	return time.UnixMilli(t.frame.Changed)
 }
+
+// Transcript returns a running crew's output so far, as plain text.
+func (c *Client) Transcript(key string) (string, error) {
+	m, err := c.call(request{Op: "transcript", Crew: key})
+	return m.Text, err
+}

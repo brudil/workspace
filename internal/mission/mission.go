@@ -74,6 +74,13 @@ type Crew struct {
 	Status   string     `toml:"status,omitempty"`
 	Note     string     `toml:"note,omitempty"`
 	StatusAt *time.Time `toml:"status_at,omitempty"`
+	// ResumeWith is a message to send when this crew is next resumed
+	// (ws mission resume-with); it's used once.
+	ResumeWith string `toml:"resume_with,omitempty"`
+	// Reviewed identifies the crew event (a run ending, a done or ask) last
+	// reviewed, so each is reviewed once. Times alone can't tell events apart:
+	// they're stored to the second.
+	Reviewed string `toml:"reviewed,omitempty"`
 }
 
 // Crew statuses.
@@ -96,9 +103,21 @@ type Mission struct {
 	From     string    `toml:"from,omitempty"`
 	Capsules []Capsule `toml:"capsules,omitempty"`
 	Crew     []Crew    `toml:"crew,omitempty"`
+	// Flag marks the mission as needing the user, with why (ws mission flag).
+	Flag *Proposal `toml:"flag,omitempty"`
+	// Conclude is a suggestion that the mission is finished (ws mission
+	// conclude); archiving it is the user's call.
+	Conclude *Proposal `toml:"conclude,omitempty"`
 	// Artifacts are outputs ws can't infer (capsules' PRs it finds itself):
 	// a PR from a branch outside the mission, a design doc, a dashboard.
 	Artifacts []Artifact `toml:"artifacts,omitempty"`
+}
+
+// Proposal is something raised for the user: why, who by, when.
+type Proposal struct {
+	Text string    `toml:"text"`
+	By   string    `toml:"by,omitempty"`
+	At   time.Time `toml:"at"`
 }
 
 // Artifact is a link a mission produced.

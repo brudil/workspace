@@ -42,6 +42,10 @@ With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
 	cmd.AddCommand(newMissionAskCmd())
 	cmd.AddCommand(newMissionDoneCmd())
 	cmd.AddCommand(newMissionArtifactCmd())
+	cmd.AddCommand(newMissionFlagCmd())
+	cmd.AddCommand(newMissionResumeWithCmd())
+	cmd.AddCommand(newMissionConcludeCmd())
+	cmd.AddCommand(newMissionReviewCmd())
 	cmd.AddCommand(newMissionAttachCmd())
 	cmd.AddCommand(newMissionDetachCmd())
 	cmd.AddCommand(newMissionStateCmd("park", mission.Parked, "Park a mission (paused work)"))
@@ -365,6 +369,17 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 	}
 	if v.M.From != "" {
 		fmt.Fprintf(&b, "Raised from: %s\n", v.M.From)
+	}
+	if v.M.Flag != nil {
+		fmt.Fprintf(&b, "Flagged (%s): %s\n", v.M.Flag.By, v.M.Flag.Text)
+	}
+	if v.M.Conclude != nil {
+		fmt.Fprintf(&b, "Suggested conclusion (%s): %s\n", v.M.Conclude.By, v.M.Conclude.Text)
+	}
+	for _, c := range v.M.Crew {
+		if c.ResumeWith != "" {
+			fmt.Fprintf(&b, "Suggested: resume %s with: %s\n", c.ID, c.ResumeWith)
+		}
 	}
 	fmt.Fprintf(&b, "Brief file: %s\n", briefPath)
 	if len(v.Capsules) == 0 {

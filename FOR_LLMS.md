@@ -71,6 +71,8 @@ Use this to orient yourself before starting work.
 
 If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
 
+If `WS_ROLE=reviewer` is set, you are reviewing a mission: follow the instructions you were given, act only through `ws mission note/flag/resume-with/new/conclude`, and don't change code.
+
 If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.
 
 ## Searching code

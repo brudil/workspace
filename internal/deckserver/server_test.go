@@ -262,3 +262,52 @@ func TestSocketPath_LongRootFallsBack(t *testing.T) {
 		t.Error("fallback isn't stable")
 	}
 }
+
+func TestServer_CrewEndHookAndTranscript(t *testing.T) {
+	s, root := startServer(t, time.Minute)
+	type end struct {
+		exit    string
+		stopped bool
+	}
+	ends := make(chan end, 4)
+	s.OnCrewEnded = func(spec Spec, exit string, stopped bool) { ends <- end{exit, stopped} }
+
+	spec := crewOn(t, root, `printf 'hello-transcript\r\n'; sleep 0.3; exit 2`)
+	c := dialT(t, root)
+	term, _ := c.Launch(spec)
+	waitText(t, term, "hello-transcript")
+	if tr, err := c.Transcript(spec.Key()); err != nil || !strings.Contains(tr, "hello-transcript") {
+		t.Errorf("live transcript = %q, %v", tr, err)
+	}
+	select {
+	case e := <-ends:
+		if e.exit != "exit 2" || e.stopped {
+			t.Errorf("end = %+v", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no end hook")
+	}
+	data, _ := os.ReadFile(mission.Store{Root: root}.TranscriptPath(spec.Slug, spec.CrewID))
+	if !strings.Contains(string(data), "hello-transcript") {
+		t.Errorf("saved transcript = %q", data)
+	}
+
+	spec2 := crewOn2(t, root, `sleep 30`)
+	term2, _ := c.Launch(spec2)
+	term2.Close(2 * time.Second)
+	select {
+	case e := <-ends:
+		if !e.stopped {
+			t.Errorf("a stopped crew reported stopped=false: %+v", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no end hook for stopped crew")
+	}
+}
+
+func crewOn2(t *testing.T, root, script string) Spec {
+	t.Helper()
+	store := mission.Store{Root: root}
+	c, _ := store.StartCrew("served", "shell", "")
+	return Spec{Slug: "served", CrewID: c.ID, Harness: "shell", Args: []string{"sh", "-c", script}, Dir: root, Env: os.Environ(), Width: 40, Height: 6}
+}

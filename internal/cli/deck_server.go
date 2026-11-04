@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/brudil/workspace/internal/deckserver"
+	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -127,6 +128,10 @@ func newDeckServerRunCmd() *cobra.Command {
 				root = ctx.WS.Root
 			}
 			s := &deckserver.Server{Root: root, Log: log.New(os.Stderr, "deck-server ", log.LstdFlags)}
+			store := mission.Store{Root: root}
+			s.OnCrewEnded = func(spec deckserver.Spec, exit string, stopped bool) {
+				maybeReviewAfterEnd(root, store, spec.Slug, spec.CrewID, spec.Role, stopped)
+			}
 			if err := s.Listen(); err != nil {
 				return err
 			}

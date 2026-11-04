@@ -111,3 +111,21 @@ func (c *Cursor) createChat(bin string) string {
 	}
 	return ""
 }
+
+// GUESS: print mode runs one prompt headless and exits (-p / --print),
+// --force lets it run shell commands without asking, --model picks the
+// model, and --output-format text prints its final message.
+var cursorReviewArgs = []string{"-p", "--force", "--output-format", "text"}
+
+// Review runs a headless review with Cursor's print mode.
+func (c *Cursor) Review(prompt, dir, model string) (Launch, error) {
+	bin, err := c.bin()
+	if err != nil {
+		return Launch{}, err
+	}
+	args := append([]string{bin}, cursorReviewArgs...)
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	return Launch{Args: append(args, prompt), Dir: dir}, nil
+}

@@ -859,3 +859,110 @@ func TestDeck_CrewHyperlinksSurvive(t *testing.T) {
 		t.Errorf("hyperlink lost on the way to the deck's screen: %q", pane)
 	}
 }
+
+type spawned struct{ slug, crew, trigger string }
+
+func captureReviews(t *testing.T) *[]spawned {
+	t.Helper()
+	var calls []spawned
+	old := reviewSpawner
+	reviewSpawner = func(root, slug, crewID, trigger string) { calls = append(calls, spawned{slug, crewID, trigger}) }
+	t.Cleanup(func() { reviewSpawner = old })
+	return &calls
+}
+
+func TestReviewTrigger_OnlyForCrewEndingByThemselves(t *testing.T) {
+	calls := captureReviews(t)
+	m, slug := shellCrewDeck(t)
+	store := m.store
+
+	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", "", true) // stopped
+	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", mission.RoleBriefing, false)
+	if len(*calls) != 0 {
+		t.Fatalf("reviewed a stopped or briefing crew: %v", *calls)
+	}
+	store.StartCrew(slug, "cursor", "conv")
+	store.SetCrewStatus(slug, "c1", mission.CrewDone, "x")
+	maybeReviewAfterEnd(m.ws.Root, store, slug, "c1", "", false)
+	if len(*calls) != 0 {
+		t.Fatalf("reviewed again after done: %v", *calls)
+	}
+	store.StartCrew(slug, "cursor", "conv2")
+	maybeReviewAfterEnd(m.ws.Root, store, slug, "c2", "", false)
+	if len(*calls) != 1 || (*calls)[0] != (spawned{slug, "c2", "ended"}) {
+		t.Errorf("calls = %v", *calls)
+	}
+}
+
+func TestDeckCrew_ExitSavesTranscriptAndTriggersReview(t *testing.T) {
+	calls := captureReviews(t)
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	m = typeText(m, "echo remember-me; exit 3")
+	<-r.term.Done()
+	next, _ := m.Update(deckPaneMsg{run: r})
+	m = next.(deckModel)
+
+	data, err := os.ReadFile(m.store.TranscriptPath(slug, "c1"))
+	if err != nil || !strings.Contains(string(data), "remember-me") || !strings.Contains(string(data), "=== c1 run ended") {
+		t.Errorf("transcript = %q, %v", data, err)
+	}
+	if len(*calls) != 1 || (*calls)[0].trigger != "ended" {
+		t.Errorf("review calls = %v", *calls)
+	}
+}
+
+func TestDeckCrew_StoppedCrewNotReviewed(t *testing.T) {
+	calls := captureReviews(t)
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	stopRun(t, m, r)
+	if len(*calls) != 0 {
+		t.Errorf("stopped crew reviewed: %v", *calls)
+	}
+}
+
+func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
+	m, slug := resumableDeck(t)
+	m = launch(t, m)
+	r1, _ := liveRun(m, slug)
+	m = stopRun(t, m, r1)
+
+	// The reviewer's proposals.
+	m.store.SetResumeWith(slug, "c1", "add a test for the error path")
+	m.store.SetFlag(slug, "CI is red", "reviewer")
+	m, _ = reloadRecords(m)
+	m, _ = press(t, m, "g")
+	view := plainView(m)
+	for _, want := range []string{"! Needs you: CI is red (reviewer)", "Suggested: resume c1 with: add a test for the error path"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q:\n%s", want, view)
+		}
+	}
+
+	// R resumes c1 and types the suggestion in; the flag clears on acting.
+	m, cmd := press(t, m, "R")
+	ready := cmd().(deckLaunchReadyMsg)
+	if ready.crewID != "c1" || ready.prompt != "add a test for the error path" {
+		t.Errorf("resume launch = crew %s prompt %q", ready.crewID, ready.prompt)
+	}
+	got, _ := m.store.Load(slug)
+	if got.Crew[0].ResumeWith != "" || got.Flag != nil {
+		t.Errorf("after resume: resume-with %q flag %+v", got.Crew[0].ResumeWith, got.Flag)
+	}
+	next, _ := m.Update(ready)
+	m = next.(deckModel)
+
+	// F dismisses a flag.
+	m.store.SetFlag(slug, "look at this", "reviewer")
+	m, _ = reloadRecords(m)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m, _ = press(t, m, "g")
+	m, cmd = press(t, m, "F")
+	cmd()
+	if got, _ := m.store.Load(slug); got.Flag != nil {
+		t.Error("F didn't dismiss the flag")
+	}
+}

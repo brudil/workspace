@@ -10,6 +10,8 @@ import (
 
 func TestMain(m *testing.M) {
 	ui.Profile = colorprofile.NoTTY
+	// Never spawn real reviews from tests: os.Executable is the test binary.
+	reviewSpawner = func(root, slug, crewID, trigger string) {}
 	os.Exit(m.Run())
 }
 

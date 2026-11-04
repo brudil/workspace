@@ -17,6 +17,7 @@ type Config struct {
 	Workspace WorkspaceConfig        `toml:"workspace"`
 	Repos     map[string]RepoConfig  `toml:"repos"`
 	Groups    map[string]GroupConfig `toml:"groups"`
+	Review    ReviewConfig           `toml:"review"`
 	Boarded   map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
 	Git       string                 `toml:"-"` // from ws.local.toml only
 	Silo      map[string]string      `toml:"-"` // from ws.local.toml [silo] section
@@ -28,6 +29,31 @@ type LocalConfig struct {
 	Groups  map[string]GroupConfig `toml:"groups,omitempty"`
 	Boarded map[string][]string    `toml:"boarded"`
 	Silo    map[string]string      `toml:"silo"`
+	Review  ReviewConfig           `toml:"review,omitempty"`
+}
+
+// ReviewConfig controls the reviewer: a headless agent run when crew report
+// done or end, which reads what happened and proposes what's next.
+// ws.local.toml settings override ws.toml's.
+type ReviewConfig struct {
+	Model   string `toml:"model,omitempty"`
+	Enabled *bool  `toml:"enabled,omitempty"`
+}
+
+// DefaultReviewModel is the reviewer's model when none is configured.
+const DefaultReviewModel = "claude-haiku-5-5-medium"
+
+// ReviewModel is the configured reviewer model, or the default.
+func (c *Config) ReviewModel() string {
+	if c.Review.Model != "" {
+		return c.Review.Model
+	}
+	return DefaultReviewModel
+}
+
+// ReviewEnabled reports whether crew are reviewed automatically (default on).
+func (c *Config) ReviewEnabled() bool {
+	return c.Review.Enabled == nil || *c.Review.Enabled
 }
 
 // GroupConfig controls a repo group. Hidden groups are left out of commands
@@ -115,6 +141,7 @@ func Discover(startDir string) (string, error) {
 func Merge(base, local *Config) *Config {
 	merged := &Config{
 		Workspace: base.Workspace,
+		Review:    base.Review,
 		Repos:     make(map[string]RepoConfig, len(base.Repos)),
 		Groups:    make(map[string]GroupConfig, len(base.Groups)),
 	}
@@ -185,6 +212,12 @@ func Load(startDir string) (*Config, string, error) {
 
 		if local.Git != "" {
 			cfg.Git = local.Git
+		}
+		if local.Review.Model != "" {
+			cfg.Review.Model = local.Review.Model
+		}
+		if local.Review.Enabled != nil {
+			cfg.Review.Enabled = local.Review.Enabled
 		}
 	}
 

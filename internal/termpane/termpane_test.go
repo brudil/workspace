@@ -236,3 +236,12 @@ func TestPane_LastChangeTracksScreenText(t *testing.T) {
 		t.Error("new text didn't count as a change")
 	}
 }
+
+func TestPane_TranscriptHasHistoryAndScreen(t *testing.T) {
+	p := start(t, 20, 4, "sh", "-c", `i=1; while [ $i -le 12 ]; do printf 'line%02d\r\n' $i; i=$((i+1)); done; printf 'last'; sleep 5`)
+	waitFor(t, p, "last", func(s string) bool { return strings.Contains(s, "last") })
+	tr := p.Transcript()
+	if !strings.Contains(tr, "line01\n") || !strings.Contains(tr, "line12\n") || !strings.HasSuffix(tr, "last\n") {
+		t.Errorf("transcript = %q", tr)
+	}
+}

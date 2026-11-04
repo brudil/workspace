@@ -77,6 +77,7 @@ type message struct {
 	Frame *Frame `json:"frame,omitempty"`
 	Data  []byte `json:"data,omitempty"`
 	Exit  string `json:"exit,omitempty"`
+	Text  string `json:"text,omitempty"`
 }
 
 // Frame is one rendering of a crew's screen for one attached deck.

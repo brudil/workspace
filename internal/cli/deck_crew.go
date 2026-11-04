@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,6 +45,9 @@ type deckCrewRun struct {
 	wasWorking bool
 	// notified is the crew status (and when it was set) already announced.
 	notified string
+	// stopped: the deck stopped this crew (not the crew ending by itself).
+	stopped         atomic.Bool
+	transcriptSaved atomic.Bool
 
 	// recordOnce makes sure the crew's end is written to the mission once,
 	// whichever path (exit, stop, quit, deck dying) gets there first.
@@ -207,6 +211,12 @@ func (m deckModel) resumableCrew(dm *deckMission) (mission.Crew, bool) {
 	for _, r := range m.reg.live(dm.M.Slug) {
 		live[r.crewID] = true
 	}
+	// A crew the reviewer suggested resuming comes first.
+	for i := len(dm.M.Crew) - 1; i >= 0; i-- {
+		if c := dm.M.Crew[i]; c.ResumeWith != "" && c.Conversation != "" && !live[c.ID] && !c.Done(dm.M) {
+			return c, true
+		}
+	}
 	return dm.M.LastResumableCrew(func(id string) bool { return live[id] })
 }
 
@@ -273,6 +283,9 @@ func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 	when := ""
 	if c, found := crewRecord(dm.M, last.ID); found && c.Ended != nil {
 		when = ", ended " + agoText(*c.Ended)
+	}
+	if last.ResumeWith != "" {
+		when += ": " + last.ResumeWith
 	}
 	m.openPick("Launch crew on "+dm.M.Slug, []string{
 		fmt.Sprintf("Resume %s (%s%s)", last.ID, last.Harness, when),
@@ -416,6 +429,10 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, 
 		var crew mission.Crew
 		if resumeID != "" {
 			crew, err = store.ResumeCrew(slug, resumeID)
+			if err == nil && crew.ResumeWith != "" {
+				msg.prompt = crew.ResumeWith
+				store.SetResumeWith(slug, resumeID, "")
+			}
 		} else {
 			crew, err = store.StartCrewAs(slug, harnessName, l.Conversation, role)
 		}
@@ -435,6 +452,9 @@ func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID, role string, 
 			return msg
 		}
 		store.SetCrewProcess(slug, crew.ID, term.Pid(), capsule)
+		if mm, err := store.Load(slug); err == nil && mm.Flag != nil {
+			store.SetFlag(slug, "", "") // you're acting on it
+		}
 		msg.term = term
 		return msg
 	}
@@ -533,7 +553,9 @@ func (m deckModel) handlePaneMsg(msg deckPaneMsg) (tea.Model, tea.Cmd) {
 		return m, nil // the stop command records these
 	}
 	if m.host.OwnsLifecycle() {
+		saveTranscript(m.store, r, r.exit)
 		r.record(m.store, r.exit)
+		maybeReviewAfterEnd(m.ws.Root, m.store, r.slug, r.crewID, r.role, r.stopped.Load())
 	}
 	if sel, ok := m.selected(); ok && sel.kind == deckRowCrew && sel.run == r {
 		m.focusTerm = false
@@ -695,6 +717,7 @@ func (m deckModel) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 
 func (m deckModel) confirmStop(r *deckCrewRun) (tea.Model, tea.Cmd) {
 	m.openConfirm(fmt.Sprintf("Stop crew %s on %s?", r.crewID, r.slug), func() tea.Msg {
+		r.stopped.Store(true)
 		r.term.Close(deckStopGrace)
 		return deckPaneMsg{run: r}
 	})
@@ -768,8 +791,10 @@ func (m deckModel) stopAll() (tea.Model, tea.Cmd) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				r.stopped.Store(true)
 				r.term.Close(deckStopGrace)
 				if owns {
+					saveTranscript(store, r, "stopped: "+r.term.ExitSummary())
 					r.record(store, "stopped: "+r.term.ExitSummary())
 				}
 			}()
@@ -794,10 +819,12 @@ func (m deckModel) stopLeftovers() {
 		go func() {
 			defer wg.Done()
 			if r.term.Exited() {
+				saveTranscript(m.store, r, r.term.ExitSummary())
 				r.record(m.store, r.term.ExitSummary())
 				return
 			}
 			r.term.Close(deckStopGrace)
+			saveTranscript(m.store, r, "stopped: deck exited")
 			r.record(m.store, "stopped: deck exited")
 		}()
 	}
@@ -852,6 +879,9 @@ func (m deckModel) crewSummary(dm deckMission) string {
 	hint := "⏎ launch " + harness.Default() + " · L choose harness"
 	if c, ok := m.resumableCrew(&dm); ok {
 		hint = "⏎ resume " + c.ID + " or launch new · R resume " + c.ID + " · L choose harness"
+		if c.ResumeWith != "" {
+			lines = append(lines, ui.Orange.Render("↻ ")+fmt.Sprintf("Suggested: resume %s with: %s", c.ID, c.ResumeWith)+ui.Dim.Render(" · R"))
+		}
 	}
 	briefedLast := last != nil && last.role == mission.RoleBriefing && dm.M.State != mission.Briefing
 	switch {
@@ -1153,4 +1183,12 @@ func (m deckModel) toggleMouse() deckModel {
 		m.flash = "mouse: the deck takes clicks and the wheel when the sidebar has focus"
 	}
 	return m
+}
+
+// saveTranscript keeps an in-process crew's output (a server-hosted crew's
+// is saved by the server), once per run.
+func saveTranscript(store mission.Store, r *deckCrewRun, exit string) {
+	if t, ok := r.term.(interface{ Transcript() string }); ok && !r.transcriptSaved.Swap(true) {
+		store.SaveTranscript(r.slug, r.crewID, exit, t.Transcript())
+	}
 }

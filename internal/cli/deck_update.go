@@ -190,6 +190,14 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.stopSelected()
 	case "M":
 		return m.toggleMouse(), nil
+	case "F":
+		if dm, ok := m.selectedMission(); ok && dm.M.Flag != nil {
+			store, slug := m.store, dm.M.Slug
+			return m, func() tea.Msg {
+				store.SetFlag(slug, "", "")
+				return deckReloadMsg{flash: "flag dismissed"}
+			}
+		}
 	case "s":
 		m.sidebarHidden = !m.sidebarHidden
 		m.resizePanes()

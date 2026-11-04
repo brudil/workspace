@@ -21,6 +21,10 @@ const (
 	EventCrewAsked     = "crew_asked"
 	EventCrewDone      = "crew_done"
 	EventArtifact      = "artifact"
+	EventFlag          = "flag"
+	EventConclude      = "conclude_suggested"
+	EventResumeWith    = "resume_with"
+	EventReview        = "review"
 	EventState         = "state"
 )
 

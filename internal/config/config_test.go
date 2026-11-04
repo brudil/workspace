@@ -911,3 +911,28 @@ group = "platform"
 		t.Errorf("ws.local.toml still mentions platform after reset:\n%s", data)
 	}
 }
+
+func TestReviewConfig(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n"), 0o644)
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReviewModel() != "claude-haiku-5-5-medium" || !cfg.ReviewEnabled() {
+		t.Errorf("defaults: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	}
+
+	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n[review]\nmodel = \"team-model\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[review]\nenabled = false\n"), 0o644)
+	cfg, _, _ = Load(root)
+	if cfg.ReviewModel() != "team-model" || cfg.ReviewEnabled() {
+		t.Errorf("team model + local off: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	}
+
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[review]\nmodel = \"mine\"\n"), 0o644)
+	cfg, _, _ = Load(root)
+	if cfg.ReviewModel() != "mine" || !cfg.ReviewEnabled() {
+		t.Errorf("local model: %q %v", cfg.ReviewModel(), cfg.ReviewEnabled())
+	}
+}

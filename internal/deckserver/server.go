@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/brudil/workspace/internal/mission"
@@ -27,6 +28,10 @@ type Server struct {
 	// IdleTimeout is how long the server stays up with no crew and no decks.
 	IdleTimeout time.Duration
 	Log         *log.Logger
+	// OnCrewEnded, if set, runs after a crew's end is recorded. stopped is
+	// true when the crew was stopped (by a deck or by shutdown) rather than
+	// ending by itself.
+	OnCrewEnded func(spec Spec, exit string, stopped bool)
 
 	store mission.Store
 	ln    net.Listener
@@ -44,6 +49,8 @@ type Server struct {
 type crew struct {
 	spec Spec
 	pane *termpane.Pane
+
+	stopRequested atomic.Bool
 
 	mu   sync.Mutex
 	subs map[*conn]*sub
@@ -256,6 +263,8 @@ func (s *Server) do(c *conn, req request) message {
 		return fail(err)
 	}
 	switch req.Op {
+	case "transcript":
+		return message{Text: cr.pane.Transcript()}
 	case "attach":
 		cr.attach(c)
 	case "detach":
@@ -286,6 +295,7 @@ func (s *Server) do(c *conn, req request) message {
 		}
 		// Hang up in the background: this connection may carry input for
 		// other crew. The deck learns of the end from the exit event.
+		cr.stopRequested.Store(true)
 		go cr.pane.Close(grace)
 	default:
 		return fail(fmt.Errorf("unknown op %q", req.Op))
@@ -339,10 +349,16 @@ func (s *Server) watch(cr *crew) {
 	if closing {
 		exit = "stopped: " + exit
 	}
+	if err := s.store.SaveTranscript(cr.spec.Slug, cr.spec.CrewID, exit, cr.pane.Transcript()); err != nil {
+		s.Log.Printf("saving transcript of %s: %v", cr.spec.Key(), err)
+	}
 	if err := s.store.EndCrew(cr.spec.Slug, cr.spec.CrewID, exit); err != nil {
 		s.Log.Printf("recording end of %s: %v", cr.spec.Key(), err)
 	}
 	s.Log.Printf("%s ended: %s", cr.spec.Key(), exit)
+	if s.OnCrewEnded != nil {
+		s.OnCrewEnded(cr.spec, exit, closing || cr.stopRequested.Load())
+	}
 
 	cr.mu.Lock()
 	for c, sb := range cr.subs {

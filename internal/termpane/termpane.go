@@ -420,3 +420,19 @@ func hashText(s string) uint64 {
 	h.Write([]byte(s))
 	return h.Sum64()
 }
+
+// Transcript is everything the program has shown, as plain text: the main
+// screen's scrollback, then the current screen.
+func (p *Pane) Transcript() string {
+	p.emuMu.Lock()
+	defer p.emuMu.Unlock()
+	var b strings.Builder
+	if sb := p.emu.Scrollback(); sb != nil {
+		for i := 0; i < sb.Len(); i++ {
+			b.WriteString(strings.TrimRight(sb.Line(i).String(), " "))
+			b.WriteByte('\n')
+		}
+	}
+	b.WriteString(p.emu.String())
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}

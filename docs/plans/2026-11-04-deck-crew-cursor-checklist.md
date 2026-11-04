@@ -109,6 +109,22 @@ If the briefing agent tries to run `ws mission ready` before it has written a br
 | Done | Let it finish | It runs `ws mission done "…"`; row shows `✓c2 done`, mission view shows the summary |
 | Artifacts | After it opens a PR | Mission view's **Artifacts** lists the capsule's PR; anything it recorded with `ws mission artifact add` too |
 
+## 5d. Reviewer
+
+Headless mode is a guess: we run `cursor-agent -p --force --output-format text --model <model> "<prompt>"`. First paste `cursor-agent --help` (the print mode and model flags) and `cursor-agent --list-models` or whatever lists models, so we can confirm `claude-haiku-5-5-medium` is a name it accepts.
+
+| Check | How | Expected |
+|---|---|---|
+| Prompt | `./bin/workspace mission review -m crew-trial --print-prompt` | The brief, capsules with diffs, log and the command it would run. Anything missing or wrong? |
+| By hand | `./bin/workspace mission review -m crew-trial` | Prints *reviewing…*, then the reviewer's summary. `ws mission show crew-trial` has a `Review:` note |
+| After done | Let crew finish and run `ws mission done` | Within a minute or so the log has a review, and maybe a flag, suggestion or follow-up mission. `cat .ws/missions/crew-trial/review.log` if not |
+| Resume suggestion | If it ran `resume-with`, press `R` | Resumes that crew and types the suggestion in |
+| Flag | If it flagged | `!` on the mission row, *Needs you* in the view; `F` dismisses |
+| Stopped crew | Stop crew with `ctrl+g S` | No review runs |
+| Off | `[review] enabled = false` in `ws.local.toml` | Automatic reviews stop; `ws mission review` still works |
+
+Say whether its verdicts were sensible, and whether it ever did something it shouldn't (edited code, pushed).
+
 ## 6. Detach and reattach
 
 | Check | How | Expected |
@@ -126,4 +142,4 @@ For comparison, `WS_DECK_HARNESS=shell ./bin/workspace deck crew-trial` runs you
 
 ## What to send back
 
-For each numbered step and table row (sections 5 and 6), "ok" or what happened instead. Paste the command outputs from steps 1–4, and a screenshot of any rendering problem.
+For each numbered step and table row (sections 5 to 6), "ok" or what happened instead. Paste the command outputs from steps 1–4, and a screenshot of any rendering problem.
