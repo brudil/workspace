@@ -53,13 +53,15 @@ func (r *deckCrewRun) record(store mission.Store, exit string) {
 
 // --- messages ---
 
-// deckLaunchReadyMsg carries a prepared launch back to Update, which records
-// the crew and starts its terminal.
+// deckLaunchReadyMsg carries a started crew (or why it didn't start) back to
+// Update.
 type deckLaunchReadyMsg struct {
 	slug    string
 	harness string
 	capsule string
-	launch  harness.Launch
+	dir     string
+	crewID  string
+	term    crewTerm
 	err     error
 }
 
@@ -168,10 +170,7 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.dir}
-	launch := func() tea.Msg {
-		l, err := h.Start(b)
-		return deckLaunchReadyMsg{slug: slug, harness: harnessName, capsule: place.capsule, launch: l, err: err}
-	}
+	launch := m.launchCmd(slug, harnessName, place.capsule, func() (harness.Launch, error) { return h.Start(b) })
 
 	if place.sharedWith != nil {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.sharedWith.crewID, place.capsule),
@@ -233,10 +232,9 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	}
 	m.launching[slug] = true
 	m.flash = "resuming " + last.ID + " on " + slug + "…"
-	return m, func() tea.Msg {
-		l, err := h.Resume(place.dir, last.Conversation)
-		return deckLaunchReadyMsg{slug: slug, harness: last.Harness, capsule: place.capsule, launch: l, err: err}
-	}
+	return m, m.launchCmd(slug, last.Harness, place.capsule, func() (harness.Launch, error) {
+		return h.Resume(place.dir, last.Conversation)
+	})
 }
 
 func crewRecord(m *mission.Mission, id string) (mission.Crew, bool) {
@@ -267,33 +265,50 @@ func crewEnv(slug, crewID string) []string {
 	)
 }
 
-// finishLaunch records the crew and starts its terminal.
+// launchCmd does all of a launch off the UI thread: the harness may ask the
+// agent for a chat id, and a server host may have to start the server.
+func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (harness.Launch, error)) tea.Cmd {
+	store, host := m.store, m.host
+	w, h := m.mainWidth(), m.bodyHeight()
+	return func() tea.Msg {
+		msg := deckLaunchReadyMsg{slug: slug, harness: harnessName, capsule: capsule}
+		l, err := prepare()
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		msg.dir = l.Dir
+		crew, err := store.StartCrew(slug, harnessName, l.Conversation)
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		msg.crewID = crew.ID
+		term, err := host.Launch(crewSpec{
+			Slug: slug, CrewID: crew.ID, Harness: harnessName, Capsule: capsule,
+			Args: l.Args, Dir: l.Dir, Env: crewEnv(slug, crew.ID),
+			Width: w, Height: h,
+		})
+		if err != nil {
+			store.EndCrew(slug, crew.ID, "failed to start: "+err.Error())
+			msg.err = err
+			return msg
+		}
+		store.SetCrewPID(slug, crew.ID, term.Pid())
+		msg.term = term
+		return msg
+	}
+}
+
+// finishLaunch adds a started crew to the deck and focuses it.
 func (m deckModel) finishLaunch(msg deckLaunchReadyMsg) (tea.Model, tea.Cmd) {
 	delete(m.launching, msg.slug)
 	if msg.err != nil {
 		m.flash = "launch failed: " + msg.err.Error()
-		return m, nil
-	}
-	crew, err := m.store.StartCrew(msg.slug, msg.harness, msg.launch.Conversation)
-	if err != nil {
-		m.flash = "launch failed: " + err.Error()
-		return m, nil
-	}
-
-	spec := crewSpec{
-		Slug: msg.slug, CrewID: crew.ID, Harness: msg.harness, Capsule: msg.capsule,
-		Args: msg.launch.Args, Dir: msg.launch.Dir, Env: crewEnv(msg.slug, crew.ID),
-		Width: m.mainWidth(), Height: m.bodyHeight(),
-	}
-	term, err := m.host.Launch(spec)
-	if err != nil {
-		m.store.EndCrew(msg.slug, crew.ID, "failed to start: "+err.Error())
-		m.flash = "launch failed: " + err.Error()
 		return m, loadDeckCmd(m.ws, m.prs)
 	}
-
-	m.store.SetCrewPID(msg.slug, crew.ID, term.Pid())
-	r := &deckCrewRun{slug: msg.slug, crewID: crew.ID, harness: msg.harness, capsule: msg.capsule, dir: msg.launch.Dir, term: term}
+	r := &deckCrewRun{slug: msg.slug, crewID: msg.crewID, harness: msg.harness, capsule: msg.capsule, dir: msg.dir, term: msg.term}
+	r.term.Resize(m.mainWidth(), m.bodyHeight())
 	m.reg.add(r)
 	m.focusRun(r)
 	m.flash = ""
@@ -306,7 +321,11 @@ func (m *deckModel) adoptHosted() []tea.Cmd {
 	for _, h := range m.host.Running() {
 		r := &deckCrewRun{slug: h.Spec.Slug, crewID: h.Spec.CrewID, harness: h.Spec.Harness, capsule: h.Spec.Capsule, dir: h.Spec.Dir, term: h.Term}
 		m.reg.add(r)
-		h.Term.Resize(m.mainWidth(), m.bodyHeight())
+		// Before the first WindowSizeMsg the deck has no size; resizing now
+		// would squash the crew's screen to nothing. resizePanes follows.
+		if m.width > 0 {
+			h.Term.Resize(m.mainWidth(), m.bodyHeight())
+		}
 		cmds = append(cmds, waitPane(r))
 	}
 	return cmds
