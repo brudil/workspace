@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -247,17 +248,23 @@ func crewRecord(m *mission.Mission, id string) (mission.Crew, bool) {
 }
 
 // crewEnv is the environment for crew: ours, minus anything that would
-// mislead it, plus the mission and crew ids and a capable TERM.
-func crewEnv(slug, crewID string) []string {
+// mislead it, plus the mission and crew ids, a capable TERM, and a PATH on
+// which ws and workspace are this deck's own binary.
+func crewEnv(root, slug, crewID string) []string {
 	drop := map[string]bool{mission.EnvMission: true, mission.EnvCrew: true, ShellPWD: true, "TERM": true, "COLORTERM": true}
 	var env []string
+	path := os.Getenv("PATH")
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if !drop[k] {
+		if !drop[k] && k != "PATH" {
 			env = append(env, kv)
 		}
 	}
+	if dir, err := crewShimDir(root); err == nil {
+		path = prependPath(dir, path)
+	}
 	return append(env,
+		"PATH="+path,
 		mission.EnvMission+"="+slug,
 		mission.EnvCrew+"="+crewID,
 		"TERM=xterm-256color",
@@ -265,10 +272,60 @@ func crewEnv(slug, crewID string) []string {
 	)
 }
 
+// crewShimNames are the commands crew may use to reach ws: the binary's own
+// name, and the shell wrapper's (which agents' non-interactive shells often
+// don't load).
+var crewShimNames = []string{"ws", "workspace"}
+
+// crewShimDir keeps <root>/.ws/bin/{ws,workspace} pointing at the running
+// binary. Crew get it first on PATH, so the mission commands they're told to
+// run come from the same ws build as the deck, even when another (older)
+// ws is installed, as during a trial of a branch build.
+func crewShimDir(root string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Join(root, ".ws", "bin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	for _, name := range crewShimNames {
+		link := filepath.Join(dir, name)
+		if cur, err := os.Readlink(link); err == nil && cur == exe {
+			continue
+		}
+		// Replace atomically so concurrent launches never see a gap.
+		tmp := link + ".tmp"
+		os.Remove(tmp)
+		if err := os.Symlink(exe, tmp); err != nil {
+			return "", err
+		}
+		if err := os.Rename(tmp, link); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// prependPath puts dir first on a PATH value, dropping any later copy.
+func prependPath(dir, path string) string {
+	parts := []string{dir}
+	for _, p := range filepath.SplitList(path) {
+		if p != dir && p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
 // launchCmd does all of a launch off the UI thread: the harness may ask the
 // agent for a chat id, and a server host may have to start the server.
 func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (harness.Launch, error)) tea.Cmd {
-	store, host := m.store, m.host
+	store, host, root := m.store, m.host, m.ws.Root
 	w, h := m.mainWidth(), m.bodyHeight()
 	return func() tea.Msg {
 		msg := deckLaunchReadyMsg{slug: slug, harness: harnessName, capsule: capsule}
@@ -286,7 +343,7 @@ func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (
 		msg.crewID = crew.ID
 		term, err := host.Launch(crewSpec{
 			Slug: slug, CrewID: crew.ID, Harness: harnessName, Capsule: capsule,
-			Args: l.Args, Dir: l.Dir, Env: crewEnv(slug, crew.ID),
+			Args: l.Args, Dir: l.Dir, Env: crewEnv(root, slug, crew.ID),
 			Width: w, Height: h,
 		})
 		if err != nil {

@@ -321,7 +321,7 @@ ws mission note "Went with a mutex, not a channel"
 
 **The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` creates a mission, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
 
-**Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended.
+**Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended. Crew get `.ws/bin` first on `PATH`, where `ws` and `workspace` point at the deck's own binary, so the commands they're told to run always match the deck's version.
 
 - **Several crew.** Each crew gets its own row under its mission in the sidebar. The mission row shows the brief and lists who is working; a crew row shows that agent's terminal. `⏎` on the mission launches more crew, in a capsule nobody is working in, and asks before two crew share one.
 - **Focus.** `tab` (or `⏎`) on a crew row hands it the keyboard: every key and paste goes to the agent. `ctrl+g` is the deck's prefix key while an agent has focus:

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -451,4 +453,57 @@ func TestDeckCrew_ScrollUnavailableFullScreen(t *testing.T) {
 	if m.scrollMode || !strings.Contains(m.flash, "full-screen") {
 		t.Errorf("scrollMode=%v flash=%q", m.scrollMode, m.flash)
 	}
+}
+
+func TestCrewEnv_PutsThisBinaryFirstOnPath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", "/usr/bin:/bin")
+	env := crewEnv(root, "m", "c1")
+
+	shim := filepath.Join(root, ".ws", "bin")
+	var path string
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			if path != "" {
+				t.Fatal("PATH set twice")
+			}
+			path = v
+		}
+	}
+	if path != shim+":/usr/bin:/bin" {
+		t.Errorf("PATH = %q", path)
+	}
+	exe, _ := os.Executable()
+	exe, _ = filepath.EvalSymlinks(exe)
+	for _, name := range []string{"ws", "workspace"} {
+		if got, _ := os.Readlink(filepath.Join(shim, name)); got != exe {
+			t.Errorf("%s -> %q, want %q", name, got, exe)
+		}
+	}
+
+	// A stale link (an earlier build) is replaced; repeating is harmless.
+	link := filepath.Join(shim, "ws")
+	os.Remove(link)
+	os.Symlink("/old/workspace", link)
+	t.Setenv("PATH", shim+":/usr/bin")
+	env = crewEnv(root, "m", "c2")
+	if got, _ := os.Readlink(link); got != exe {
+		t.Errorf("stale link not replaced: %q", got)
+	}
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok && v != shim+":/usr/bin" {
+			t.Errorf("shim dir duplicated on PATH: %q", v)
+		}
+	}
+}
+
+func TestDeckCrew_CrewFindsTheDecksWs(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	waitScreen(t, r, "$")
+	// Only look the commands up: running the test binary as ws would rerun the tests.
+	shim := filepath.Join(m.ws.Root, ".ws", "bin")
+	m = typeText(m, `for c in ws workspace; do [ "$(command -v $c)" = "`+shim+`/$c" ] && echo "ok-$c"; done`)
+	waitScreen(t, r, "\nok-ws\nok-workspace")
 }

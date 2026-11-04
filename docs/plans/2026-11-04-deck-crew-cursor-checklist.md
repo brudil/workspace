@@ -67,6 +67,7 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Launches | `⏎` on the mission | Header shows `crew c1 · cursor`, the agent's UI fills the left pane, the sidebar shows `●c1` |
 | Opening prompt arrived | Look at the agent's first turn | It mentions the mission and runs `ws mission show -f llm` |
 | Env reaches the agent's shell | Ask it: "run `env \| grep WS_`" | `WS_MISSION=crew-trial` and `WS_CREW=c1` |
+| Agent runs the deck's ws | Ask it: "run `command -v ws workspace` and `ws mission show -f llm`" | Both paths are `<workspace root>/.ws/bin/…`, and the mission prints. If the paths are elsewhere, your shell's rc file is putting another directory first on `PATH`: tell me which |
 | Works in the capsule | Ask it: "run `pwd`" | The capsule path |
 | Typing | Type normally, use arrows, backspace, enter | Same as in a normal terminal |
 | Special keys | `ctrl+c`, `ctrl+r`, `shift+tab`, `alt+enter`, `esc`, `tab` | Each does what it does in Cursor outside the deck |
