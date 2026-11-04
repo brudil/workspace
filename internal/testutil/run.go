@@ -3,6 +3,7 @@ package testutil
 import (
 	"bytes"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/brudil/workspace/internal/cli"
@@ -36,31 +37,28 @@ func RunCommand(t *testing.T, root string, gh github.Client, args ...string) Res
 	cli.SetContextOverride(ctx)
 	defer cli.ClearContextOverride()
 
-	// Capture os.Stdout (commands write to it directly)
-	oldStdout := os.Stdout
+	// Capture os.Stdout and os.Stderr (commands write to them directly).
+	// Read while the command runs: output bigger than a pipe's buffer would
+	// otherwise block the command forever.
+	oldStdout, oldStderr := os.Stdout, os.Stderr
 	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Capture os.Stderr
-	oldStderr := os.Stderr
 	rErr, wErr, _ := os.Pipe()
-	os.Stderr = wErr
+	os.Stdout, os.Stderr = w, wErr
+	var stdout, stderr bytes.Buffer
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); stdout.ReadFrom(r) }()
+	go func() { defer wg.Done(); stderr.ReadFrom(rErr) }()
 
 	cmd := cli.NewRootCmd("test")
 	cmd.SetArgs(args)
 
 	runErr := cmd.Execute()
 
-	// Restore and read captured output
 	w.Close()
-	os.Stdout = oldStdout
-	var stdout bytes.Buffer
-	stdout.ReadFrom(r)
-
 	wErr.Close()
-	os.Stderr = oldStderr
-	var stderr bytes.Buffer
-	stderr.ReadFrom(rErr)
+	wg.Wait()
+	os.Stdout, os.Stderr = oldStdout, oldStderr
 
 	return Result{
 		Stdout: stdout.String(),

@@ -476,7 +476,7 @@ func (m deckModel) renderHelp() string {
 		{"tab", "Focus the mission's live crew terminal"},
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
-		{"F", "Dismiss a flag or queued crew"},
+		{"F", "Dismiss the flag, then any queued crew"},
 		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what it is; a briefing agent writes the brief and lifts capsules"},

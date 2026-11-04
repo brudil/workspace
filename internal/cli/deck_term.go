@@ -96,14 +96,20 @@ type crewRegistry struct {
 	adopting atomic.Bool
 }
 
-// liveKey reports whether a live run has the slug/crew key.
+// liveKey reports whether a live run has the slug/crew key. Like everything
+// that reads a run's state, call it on the deck's own goroutine; background
+// work gets a snapshot from liveKeys.
 func (g *crewRegistry) liveKey(key string) bool {
+	return g.liveKeys()[key]
+}
+
+// liveKeys is a snapshot of the live runs' slug/crew keys.
+func (g *crewRegistry) liveKeys() map[string]bool {
+	keys := map[string]bool{}
 	for _, r := range g.live("") {
-		if r.slug+"/"+r.crewID == key {
-			return true
-		}
+		keys[r.slug+"/"+r.crewID] = true
 	}
-	return false
+	return keys
 }
 
 func (g *crewRegistry) add(r *deckCrewRun) {

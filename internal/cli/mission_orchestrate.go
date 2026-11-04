@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/deckserver"
@@ -19,10 +21,28 @@ import (
 )
 
 const (
-	orchestrateTimeout         = 10 * time.Minute
 	orchestrateTranscriptLines = 200
 	orchestrateLogEvents       = 40
-	orchestrateOutputKeep      = 1500 // characters of the orchestrator's final message kept in the log
+	orchestrateOutputKeep      = 1500 // bytes of the orchestrator's final message kept in the log
+
+	// The prompt goes to the agent as one argument, and Linux caps a single
+	// argument at 128 KiB (MAX_ARG_STRLEN), so each section has a budget
+	// and the whole stays well under it. What's cut is a command away.
+	promptBriefMax      = 24 << 10
+	promptCapsulesMax   = 16 << 10
+	promptLogMax        = 16 << 10
+	promptCrewMax       = 8 << 10
+	promptHandoffMax    = 600
+	promptTranscriptMax = 32 << 10
+	promptMax           = 112 << 10
+)
+
+var (
+	// orchestrateTimeout bounds one run; tests shorten it.
+	orchestrateTimeout = 10 * time.Minute
+	// orchestrateWaitDelay is how long to wait for output after killing a
+	// run that timed out.
+	orchestrateWaitDelay = 5 * time.Second
 )
 
 func newMissionOrchestrateCmd() *cobra.Command {
@@ -106,10 +126,7 @@ you before it must flag you.`,
 			fmt.Fprintf(ui.Stderr, "  %s orchestrator looking at %s on %s with %s…\n", ui.Dim.Render("·"), what, m.Slug, model)
 
 			out, runErr := runOrchestrator(l, m.Slug)
-			summary := strings.TrimSpace(out)
-			if len(summary) > orchestrateOutputKeep {
-				summary = "…" + summary[len(summary)-orchestrateOutputKeep:]
-			}
+			summary := clipTail(strings.TrimSpace(out), orchestrateOutputKeep, "…")
 			if runErr != nil {
 				summary = "orchestrator failed: " + runErr.Error() + ifSome(" · "+summary, summary)
 			}
@@ -135,7 +152,9 @@ func ifSome(s, cond string) string {
 }
 
 // runOrchestrator runs the orchestrator with its role, returning what it
-// printed.
+// printed. It runs in its own process group so a timeout kills everything it
+// started (a shell, a `gh pr checks --watch`), not just the agent: anything
+// left holding its output would keep Run waiting forever.
 func runOrchestrator(l harness.Launch, slug string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), orchestrateTimeout)
 	defer cancel()
@@ -143,6 +162,9 @@ func runOrchestrator(l harness.Launch, slug string) (string, error) {
 	c.Dir = l.Dir
 	env := crewEnv(l.Dir, slug, "")
 	c.Env = append(env, EnvRole+"="+roleOrchestrator)
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
+	c.WaitDelay = orchestrateWaitDelay
 	var out bytes.Buffer
 	c.Stdout, c.Stderr = &out, &out
 	err := c.Run()
@@ -183,81 +205,122 @@ If the next crew needs a capsule the mission doesn't have yet, create it first w
 You may investigate read-only: ws mission show -f llm, git diff/log in the capsule paths below, gh pr view/checks. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
 
 `)
-	fmt.Fprintf(&b, "## Brief\n\n%s\n\n", strings.TrimSpace(firstNonEmpty(brief, "(empty)")))
+	fmt.Fprintf(&b, "## Brief\n\n%s\n\n", clipHead(strings.TrimSpace(firstNonEmpty(brief, "(empty)")), promptBriefMax,
+		"\n… (the brief continues: ws mission brief prints it whole)"))
 
 	b.WriteString("## Capsules\n\n")
 	if len(v.Capsules) == 0 {
 		b.WriteString("(none)\n")
 	}
+	var caps strings.Builder
 	for _, c := range v.Capsules {
-		fmt.Fprintf(&b, "- %s/%s", c.Repo, c.Name)
+		fmt.Fprintf(&caps, "- %s/%s", c.Repo, c.Name)
 		if c.Exists {
-			fmt.Fprintf(&b, " at %s (branch %s)", c.Path, c.Branch)
+			fmt.Fprintf(&caps, " at %s (branch %s)", c.Path, c.Branch)
 		} else {
-			b.WriteString(" (burned)")
+			caps.WriteString(" (burned)")
 		}
 		if c.PR != nil {
 			state := "open"
 			if c.PRS == mission.PRMerged {
 				state = "merged"
 			}
-			fmt.Fprintf(&b, " — PR #%d %s", c.PR.Number, state)
+			fmt.Fprintf(&caps, " — PR #%d %s", c.PR.Number, state)
 			if c.PR.StatusRollup != "" {
-				fmt.Fprintf(&b, ", checks %s", c.PR.StatusRollup)
+				fmt.Fprintf(&caps, ", checks %s", c.PR.StatusRollup)
 			}
 			if c.PR.URL != "" {
-				fmt.Fprintf(&b, " %s", c.PR.URL)
+				fmt.Fprintf(&caps, " %s", c.PR.URL)
 			}
 		}
-		b.WriteByte('\n')
+		caps.WriteByte('\n')
 		if c.Exists {
 			if stat := diffStat(c.Path, "origin/"+ctx.WS.DefaultBranch); stat != "" {
 				for _, line := range strings.Split(stat, "\n") {
-					b.WriteString("    " + line + "\n")
+					caps.WriteString("    " + line + "\n")
 				}
 			}
 		}
 	}
+	b.WriteString(clipHead(caps.String(), promptCapsulesMax, "… (more: ws mission show -f llm, and git diff --stat in each capsule)\n"))
 
 	if len(events) > 0 {
 		b.WriteString("\n## Recent log\n\n")
+		var log strings.Builder
 		for _, e := range events {
-			b.WriteString(formatEventLine(e, true) + "\n")
+			log.WriteString(formatEventLine(e, true) + "\n")
 		}
+		b.WriteString(clipTail(log.String(), promptLogMax, "… (earlier: ws mission show -f llm)\n"))
 	}
 
 	if len(m.Crew) > 0 {
 		b.WriteString("\n## Crew\n\n")
+		var crew strings.Builder
 		for _, c := range m.Crew {
-			fmt.Fprintf(&b, "- %s", c.ID)
+			fmt.Fprintf(&crew, "- %s", c.ID)
 			if c.Role != "" {
-				fmt.Fprintf(&b, " (%s)", c.Role)
+				fmt.Fprintf(&crew, " (%s)", c.Role)
 			}
 			if c.Capsule != "" {
-				fmt.Fprintf(&b, " in %s", c.Capsule)
+				fmt.Fprintf(&crew, " in %s", c.Capsule)
 			}
 			switch {
 			case c.Ended != nil:
-				fmt.Fprintf(&b, ", ended (%s)", c.Exit)
+				fmt.Fprintf(&crew, ", ended (%s)", c.Exit)
 			default:
-				b.WriteString(", running")
+				crew.WriteString(", running")
 			}
 			if c.Status != "" {
-				fmt.Fprintf(&b, ", %s: %s", c.Status, c.Note)
+				fmt.Fprintf(&crew, ", %s: %s", c.Status, c.Note)
 			}
 			if c.Handoff != "" {
-				fmt.Fprintf(&b, "\n    dispatched with: %s", c.Handoff)
+				fmt.Fprintf(&crew, "\n    dispatched with: %s", clipHead(c.Handoff, promptHandoffMax, "…"))
 			}
-			b.WriteByte('\n')
+			crew.WriteByte('\n')
 		}
+		b.WriteString(clipTail(crew.String(), promptCrewMax, "… (earlier crew: ws mission show -f llm)\n"))
 	}
 
 	if crewID != "" {
 		if tail := crewOutputTail(ctx, m.Slug, crewID); tail != "" {
-			fmt.Fprintf(&b, "\n## The end of %s's output\n\n```\n%s\n```\n", crewID, tail)
+			fmt.Fprintf(&b, "\n## The end of %s's output\n\n```\n%s\n```\n", crewID, clipTail(tail, promptTranscriptMax, "…\n"))
 		}
 	}
-	return b.String()
+	return clipHead(b.String(), promptMax, "\n… (cut to fit)")
+}
+
+// clipHead keeps the start of s within limit bytes, at a line break where one
+// is near, never splitting a character, and appends more if anything went.
+func clipHead(s string, limit int, more string) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := max(0, limit-len(more))
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	head := s[:cut]
+	if i := strings.LastIndexByte(head, '\n'); i > len(head)/2 {
+		head = head[:i+1]
+	}
+	return head + more
+}
+
+// clipTail keeps the end of s within limit bytes, from a line break where one
+// is near, never splitting a character, and prepends more if anything went.
+func clipTail(s string, limit int, more string) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := len(s) - limit + len(more)
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	tail := s[cut:]
+	if i := strings.IndexByte(tail, '\n'); i >= 0 && i < len(tail)/2 {
+		tail = tail[i+1:]
+	}
+	return more + tail
 }
 
 func firstNonEmpty(s, fallback string) string {

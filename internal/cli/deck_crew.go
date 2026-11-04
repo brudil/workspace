@@ -157,6 +157,16 @@ func (m deckModel) crewPlaceFor(dm *deckMission) (crewPlace, bool) {
 	return crewPlace{}, false
 }
 
+// liveIn is live crew working in dir, if any.
+func (m deckModel) liveIn(dir string) *deckCrewRun {
+	for _, r := range m.reg.live("") {
+		if r.dir == dir {
+			return r
+		}
+	}
+	return nil
+}
+
 // startCrew launches crew with the named harness on the selected mission,
 // asking first if every capsule already has crew working in it.
 func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
@@ -192,7 +202,7 @@ func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Mode
 	place, ok := m.crewPlaceFor(dm)
 	for _, c := range dm.Capsules {
 		if capsule != "" && c.Exists && c.Repo+"/"+c.Name == capsule {
-			place, ok = crewPlace{dir: c.Path, capsule: capsule}, true
+			place, ok = crewPlace{dir: c.Path, capsule: capsule, sharedWith: m.liveIn(c.Path)}, true
 		}
 	}
 	if !ok {
@@ -556,7 +566,8 @@ func typePrompt(t crewTerm, prompt string) bool {
 
 // adoptHosted takes over crew a server host was already running.
 func (m *deckModel) adoptHosted() []tea.Cmd {
-	return m.adopt(m.host.Running(m.reg.liveKey))
+	known := m.reg.liveKeys()
+	return m.adopt(m.host.Running(func(key string) bool { return known[key] }))
 }
 
 func (m *deckModel) adopt(hosted []hostedCrew) []tea.Cmd {
@@ -601,10 +612,13 @@ func (m deckModel) adoptNewCmd(missions map[string]*mission.Mission) tea.Cmd {
 	if !missing || !m.reg.adopting.CompareAndSwap(false, true) {
 		return nil
 	}
-	host, reg := m.host, m.reg
+	// Run states are the deck goroutine's to read: hand the lookup a
+	// snapshot. Crew being launched right now aren't in it, but the server
+	// client refuses to follow crew twice, so they can't be attached again.
+	host, reg, known := m.host, m.reg, m.reg.liveKeys()
 	return func() tea.Msg {
 		defer reg.adopting.Store(false)
-		return deckAdoptMsg{hosted: host.Running(reg.liveKey)}
+		return deckAdoptMsg{hosted: host.Running(func(key string) bool { return known[key] })}
 	}
 }
 

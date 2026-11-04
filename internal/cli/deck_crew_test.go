@@ -1057,3 +1057,67 @@ func findMsg[T any](cmd tea.Cmd) (T, bool) {
 	}
 	return zero, false
 }
+
+func TestDeckAdopt_LookupDoesntReadRunsConcurrently(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	running := &deckCrewRun{slug: slug, crewID: "c1", term: &fakeTerm{done: make(chan struct{})}}
+	m.reg.add(running)
+	m.host = fakeHost{running: []hostedCrew{
+		{Spec: crewSpec{Slug: slug, CrewID: "c1"}, Term: &fakeTerm{done: make(chan struct{})}},
+		{Spec: crewSpec{Slug: slug, CrewID: "c2"}, Term: &fakeTerm{done: make(chan struct{})}},
+	}}
+	m.store.StartCrew(slug, "shell", "")
+	m.store.StartCrew(slug, "shell", "")
+	m.store.SetCrewProcess(slug, "c2", 4242, "frontend/work")
+	records := loadRecordsCmd(m.store)().(deckRecordsMsg)
+
+	cmd := m.adoptNewCmd(records.missions)
+	if cmd == nil {
+		t.Fatal("no lookup for the missing crew")
+	}
+	got := make(chan tea.Msg)
+	go func() { got <- cmd() }()
+	running.ended = true // c1 ends on the deck's goroutine meanwhile (go test -race checks this)
+	msg := (<-got).(deckAdoptMsg)
+	if len(msg.hosted) != 1 || msg.hosted[0].Spec.CrewID != "c2" {
+		t.Errorf("found %+v; c1 was live when the lookup started", msg.hosted)
+	}
+}
+
+func TestDeckF_FlagFirstThenQueuedCrew(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m.store.SetFlag(slug, "decide something", "orchestrator")
+	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "next stage", By: "orchestrator"})
+	m, _ = reloadRecords(m)
+	m, _ = press(t, m, "g")
+
+	m, cmd := press(t, m, "F")
+	if msg := cmd().(deckReloadMsg); msg.flash != "flag dismissed" {
+		t.Errorf("flash = %q", msg.flash)
+	}
+	got, _ := m.store.Load(slug)
+	if got.Flag != nil || got.Dispatch == nil {
+		t.Fatalf("after one F: flag %+v, dispatch %+v", got.Flag, got.Dispatch)
+	}
+	m, _ = reloadRecords(m)
+	m, cmd = press(t, m, "F")
+	if msg := cmd().(deckReloadMsg); msg.flash != "queued crew dismissed" {
+		t.Errorf("flash = %q", msg.flash)
+	}
+	if got, _ := m.store.Load(slug); got.Dispatch != nil {
+		t.Error("second F didn't dismiss the queued crew")
+	}
+}
+
+func TestDeckDispatch_QueuedIntoBusyCapsuleAsks(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m) // c1 works in frontend/work
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "next stage", Capsule: "frontend/work", By: "orchestrator"})
+	m, _ = reloadRecords(m)
+	m, _ = press(t, m, "g")
+	m, _ = press(t, m, "enter")
+	if m.confirm == nil || !strings.Contains(plainView(m), "c1 is already working in frontend/work") {
+		t.Errorf("launched into a busy capsule without asking; flash %q", m.flash)
+	}
+}

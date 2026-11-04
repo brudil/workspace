@@ -194,17 +194,18 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "M":
 		return m.toggleMouse(), nil
 	case "F":
+		// One thing at a time, the flag first: answering a flag mustn't
+		// throw away queued crew you haven't seen.
 		if dm, ok := m.selectedMission(); ok && (dm.M.Flag != nil || dm.M.Dispatch != nil) {
-			store, slug := m.store, dm.M.Slug
-			what := "flag"
-			if dm.M.Flag == nil {
-				what = "queued dispatch"
-			}
+			store, slug, flag := m.store, dm.M.Slug, dm.M.Flag != nil
 			return m, func() tea.Msg {
-				store.SetFlag(slug, "", "")
-				store.QueueDispatch(slug, nil)
 				store.UserActed(slug)
-				return deckReloadMsg{flash: what + " dismissed"}
+				if flag {
+					store.SetFlag(slug, "", "")
+					return deckReloadMsg{flash: "flag dismissed"}
+				}
+				store.QueueDispatch(slug, nil)
+				return deckReloadMsg{flash: "queued crew dismissed"}
 			}
 		}
 	case "s":

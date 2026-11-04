@@ -164,8 +164,12 @@ func newMissionFlagCmd() *cobra.Command {
 			if clear {
 				text = ""
 			}
-			if err := missionStore(ctx).SetFlag(m.Slug, text, raisedBy()); err != nil {
+			store := missionStore(ctx)
+			if err := store.SetFlag(m.Slug, text, raisedBy()); err != nil {
 				return err
+			}
+			if clear && raisedBy() == "you" {
+				store.UserActed(m.Slug) // as dismissing it in the deck does
 			}
 			if clear {
 				fmt.Fprintf(ui.Stderr, "  %s flag cleared on %s\n", ui.Green.Render("✓"), m.Slug)

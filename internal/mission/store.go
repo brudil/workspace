@@ -782,6 +782,18 @@ func (s Store) CountDispatch(slug string, max int) error {
 	return err
 }
 
+// ReleaseDispatch gives back a count taken for a dispatch that then failed
+// to launch, so failures don't use up the orchestrator's allowance.
+func (s Store) ReleaseDispatch(slug string) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		if m.Dispatches > 0 {
+			m.Dispatches--
+		}
+		return nil
+	})
+	return err
+}
+
 // UserActed records that the user stepped in (launched crew, dismissed a
 // flag): the orchestrator's dispatch count starts again.
 func (s Store) UserActed(slug string) error {
@@ -792,9 +804,17 @@ func (s Store) UserActed(slug string) error {
 	return err
 }
 
-// QueueDispatch stores a dispatch for the user to launch (nil clears it).
+// ErrDispatchQueued is returned when queueing a dispatch while another one
+// is still waiting for the user: one would silently replace the other.
+var ErrDispatchQueued = errors.New("a dispatch is already queued")
+
+// QueueDispatch stores a dispatch for the user to launch (nil clears it). It
+// refuses to replace one that's still waiting.
 func (s Store) QueueDispatch(slug string, d *Dispatch) error {
 	if _, err := s.Update(slug, func(m *Mission) error {
+		if d != nil && m.Dispatch != nil {
+			return fmt.Errorf("%w on %s, waiting for the user: %s", ErrDispatchQueued, slug, m.Dispatch.Text)
+		}
 		if d != nil && d.At.IsZero() {
 			d.At = now()
 		}

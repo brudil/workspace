@@ -261,7 +261,10 @@ func (c *Client) Shutdown() error {
 
 // Launch starts crew on the server and attaches to it.
 func (c *Client) Launch(spec Spec) (*Term, error) {
-	t := c.newTerm(spec)
+	t, err := c.newTerm(spec)
+	if err != nil {
+		return nil, err
+	}
 	m, err := c.call(request{Op: "launch", Spec: &spec})
 	if err != nil {
 		c.dropTerm(spec.Key())
@@ -274,9 +277,14 @@ func (c *Client) Launch(spec Spec) (*Term, error) {
 	return t, nil
 }
 
-// Attach follows crew already running on the server.
+// Attach follows crew already running on the server. It refuses crew this
+// client already follows (being launched, or attached before): one Term per
+// crew, so frames and the exit can't go to a copy nobody is watching.
 func (c *Client) Attach(info CrewInfo) (*Term, error) {
-	t := c.newTerm(info.Spec)
+	t, err := c.newTerm(info.Spec)
+	if err != nil {
+		return nil, err
+	}
 	t.pid = info.Pid
 	if _, err := c.call(request{Op: "attach", Crew: info.Spec.Key()}); err != nil {
 		c.dropTerm(info.Spec.Key())
@@ -285,12 +293,18 @@ func (c *Client) Attach(info CrewInfo) (*Term, error) {
 	return t, nil
 }
 
-func (c *Client) newTerm(spec Spec) *Term {
+// ErrFollowing is returned for crew this client already has a Term for.
+var ErrFollowing = errors.New("already following that crew")
+
+func (c *Client) newTerm(spec Spec) (*Term, error) {
 	t := &Term{c: c, key: spec.Key(), updates: make(chan struct{}, 1), done: make(chan struct{}), w: spec.Width, h: spec.Height}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.terms[spec.Key()]; ok {
+		return nil, fmt.Errorf("%w: %s", ErrFollowing, spec.Key())
+	}
 	c.terms[spec.Key()] = t
-	c.mu.Unlock()
-	return t
+	return t, nil
 }
 
 func (c *Client) dropTerm(key string) {

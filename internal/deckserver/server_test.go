@@ -1,6 +1,7 @@
 package deckserver
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -244,7 +245,9 @@ func TestServer_DuplicateCrewRefused(t *testing.T) {
 	if _, err := c.Launch(spec); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Launch(spec); err == nil || !strings.Contains(err.Error(), "already running") {
+	// Another deck launching the same crew is refused by the server (this
+	// client refuses before asking: see TestClient_FollowsCrewOnce).
+	if _, err := dialT(t, root).Launch(spec); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -310,4 +313,38 @@ func crewOn2(t *testing.T, root, script string) Spec {
 	store := mission.Store{Root: root}
 	c, _ := store.StartCrew("served", "shell", "")
 	return Spec{Slug: "served", CrewID: c.ID, Harness: "shell", Args: []string{"sh", "-c", script}, Dir: root, Env: os.Environ(), Width: 40, Height: 6}
+}
+
+func TestClient_FollowsCrewOnce(t *testing.T) {
+	_, root := startServer(t, time.Minute)
+	spec := crewOn(t, root, `sleep 10`)
+	c := dialT(t, root)
+	term, err := c.Launch(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second Term for the same crew (an adoption racing the launch) is
+	// refused, and the first keeps getting the crew's frames.
+	list, _ := c.List()
+	if _, err := c.Attach(list[0]); !errors.Is(err, ErrFollowing) {
+		t.Fatalf("second attach: %v", err)
+	}
+	if _, err := c.Launch(spec); !errors.Is(err, ErrFollowing) {
+		t.Fatalf("second launch: %v", err)
+	}
+	term.Close(2 * time.Second)
+	if !term.Exited() {
+		t.Error("the first Term lost the crew's exit")
+	}
+	// Another client can still follow it.
+	other := dialT(t, root)
+	spec2 := crewOn2(t, root, `sleep 10`)
+	c.Launch(spec2)
+	list, _ = other.List()
+	if len(list) != 1 {
+		t.Fatalf("list = %+v", list)
+	}
+	if _, err := other.Attach(list[0]); err != nil {
+		t.Errorf("another client attaching: %v", err)
+	}
 }

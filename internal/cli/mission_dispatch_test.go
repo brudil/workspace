@@ -1,11 +1,14 @@
 package cli_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/brudil/workspace/internal/cli"
 	"github.com/brudil/workspace/internal/harness"
@@ -84,6 +87,7 @@ func TestDispatch_LimitThenFlag(t *testing.T) {
 	w, store, _ := dispatchFixture(t)
 	os.WriteFile(filepath.Join(w.Root, "ws.local.toml"), []byte("[orchestrator]\nmax_dispatches = 1\n"), 0o644)
 	run(t, w, nil, "mission", "dispatch", "first")
+	store.EndCrew("cache", "c2", "exit 0") // done, so the capsule is free again
 	r := testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "second")
 	if r.Err == nil || !strings.Contains(r.Err.Error(), "ws mission flag") {
 		t.Fatalf("second dispatch: %v", r.Err)
@@ -120,5 +124,107 @@ func TestDispatch_MistakesAreCorrectable(t *testing.T) {
 	r = testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "x")
 	if r.Err == nil || !strings.Contains(r.Err.Error(), "crew don't dispatch") {
 		t.Errorf("crew dispatching: %v", r.Err)
+	}
+}
+
+func TestDispatch_SecondQueuedIsRefused(t *testing.T) {
+	w, store, _ := dispatchFixture(t)
+	os.WriteFile(filepath.Join(w.Root, "ws.local.toml"), []byte("[orchestrator]\ndispatch = \"ask\"\n"), 0o644)
+	run(t, w, nil, "mission", "dispatch", "first stage two")
+	r := testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "something else")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "already queued on cache, waiting for the user: first stage two") || !strings.Contains(r.Err.Error(), "ws mission flag") {
+		t.Fatalf("second queue: %v", r.Err)
+	}
+	if m, _ := store.Load("cache"); m.Dispatch.Text != "first stage two" {
+		t.Errorf("queued = %q", m.Dispatch.Text)
+	}
+}
+
+// brokenHarness can't start crew (as when cursor-agent can't reach Cursor).
+type brokenHarness struct{}
+
+func (brokenHarness) Name() string     { return "broken" }
+func (brokenHarness) Available() error { return nil }
+func (brokenHarness) Start(harness.Brief) (harness.Launch, error) {
+	return harness.Launch{}, errors.New("cursor is down")
+}
+func (brokenHarness) Resume(string, string) (harness.Launch, error) {
+	return harness.Launch{}, harness.ErrNoResume
+}
+
+func TestDispatch_FailedLaunchDoesntUseTheAllowance(t *testing.T) {
+	w, store, _ := dispatchFixture(t)
+	harness.Register(brokenHarness{})
+	for range 4 {
+		r := testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "--harness", "broken", "x")
+		if r.Err == nil || !strings.Contains(r.Err.Error(), "cursor is down") {
+			t.Fatalf("err = %v", r.Err)
+		}
+	}
+	if m, _ := store.Load("cache"); m.Dispatches != 0 {
+		t.Errorf("failed launches counted: %d", m.Dispatches)
+	}
+}
+
+func TestFlagClear_ByYouResetsTheCount(t *testing.T) {
+	_, store, _ := dispatchFixture(t)
+	w := &testutil.Workspace{Root: store.Root}
+	store.CountDispatch("cache", 3)
+	store.SetFlag("cache", "out of dispatches", "orchestrator")
+
+	run(t, w, nil, "mission", "flag", "--clear") // the orchestrator clearing it doesn't count
+	if m, _ := store.Load("cache"); m.Dispatches != 1 {
+		t.Errorf("orchestrator's clear reset the count: %d", m.Dispatches)
+	}
+	t.Setenv("WS_ROLE", "")
+	run(t, w, nil, "mission", "flag", "--clear")
+	if m, _ := store.Load("cache"); m.Dispatches != 0 {
+		t.Errorf("your clear didn't reset the count: %d", m.Dispatches)
+	}
+}
+
+func TestDispatch_BusyCapsuleRefusedUnlessQueued(t *testing.T) {
+	w, store, _ := dispatchFixture(t)
+	// c2 is working in the mission's only capsule (this test process stands
+	// in for it).
+	store.StartCrew("cache", "shell", "")
+	store.SetCrewProcess("cache", "c2", os.Getpid(), "backend/cache-lookup")
+
+	r := testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "--capsule", "backend/cache-lookup", "x")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "c2 is still working in backend/cache-lookup") {
+		t.Errorf("named busy capsule: %v", r.Err)
+	}
+	r = testutil.RunCommand(t, w.Root, nil, "mission", "dispatch", "x")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "crew are working in every capsule") {
+		t.Errorf("all busy: %v", r.Err)
+	}
+	// Queued, the deck asks before sharing.
+	run(t, w, nil, "mission", "dispatch", "--queue", "x")
+	// A record whose process is gone doesn't block.
+	store.SetCrewProcess("cache", "c2", 999999, "backend/cache-lookup")
+	store.QueueDispatch("cache", nil)
+	run(t, w, nil, "mission", "dispatch", "--capsule", "backend/cache-lookup", "x")
+}
+
+func TestOrchestrate_PromptFitsInOneArgument(t *testing.T) {
+	w, store := orchestrateFixture(t)
+	huge := strings.Repeat("A long line of the brief, with “quotes” and ─ rules…\n", 8000)
+	store.WriteBrief("cache", "## Goal\n"+huge)
+	store.SaveTranscript("cache", "c1", "exit 0", strings.Repeat(strings.Repeat("│ wide tui row ", 30)+"\n", 2000)+"the last thing it said\n")
+	for i := range 60 {
+		store.AppendLog("cache", mission.Event{Kind: mission.EventNote, Text: strings.Repeat("n", 2000) + strconv.Itoa(i)})
+	}
+	r := run(t, w, nil, "mission", "orchestrate", "-m", "cache", "--crew", "c1", "--print-prompt")
+	prompt := r.Stdout
+	if len(prompt) > 128<<10 {
+		t.Fatalf("prompt is %d bytes, over the 128 KiB argument limit", len(prompt))
+	}
+	if !utf8.ValidString(prompt) {
+		t.Error("prompt has a split character")
+	}
+	for _, want := range []string{"the brief continues: ws mission brief", "the last thing it said", "## Crew"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q", want)
+		}
 	}
 }
