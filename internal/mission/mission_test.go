@@ -288,3 +288,79 @@ func TestIsExcluded_NonGitRoot(t *testing.T) {
 		t.Error("non-git root should count as excluded")
 	}
 }
+
+func TestCrewLifecycle(t *testing.T) {
+	fixedNow(t)
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Crewed")
+
+	c1, err := s.StartCrew(m.Slug, "cursor", "chat-1")
+	if err != nil || c1.ID != "c1" {
+		t.Fatalf("c1 = %+v, %v", c1, err)
+	}
+	c2, _ := s.StartCrew(m.Slug, "shell", "")
+	if c2.ID != "c2" {
+		t.Errorf("c2 id = %s", c2.ID)
+	}
+	if err := s.EndCrew(m.Slug, "c1", "ok"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EndCrew(m.Slug, "c9", "ok"); err == nil {
+		t.Error("ending unknown crew should fail")
+	}
+
+	got, _ := s.Load(m.Slug)
+	if got.Crew[0].Ended == nil || got.Crew[0].Exit != "ok" || got.Crew[1].Ended != nil {
+		t.Errorf("crew = %+v", got.Crew)
+	}
+	if c, ok := got.LastResumable("cursor"); !ok || c.Conversation != "chat-1" {
+		t.Errorf("LastResumable = %+v, %v", c, ok)
+	}
+	if _, ok := got.LastResumable("shell"); ok {
+		t.Error("shell crew has no conversation")
+	}
+
+	events, _ := s.ReadLog(m.Slug, 0)
+	kinds := []string{}
+	for _, e := range events {
+		kinds = append(kinds, e.Kind+":"+e.Crew)
+	}
+	if strings.Join(kinds, ",") != "created:,crew_started:c1,crew_started:c2,crew_ended:c1" {
+		t.Errorf("log = %v", kinds)
+	}
+}
+
+func TestReconcileCrew(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Reconcile")
+	s.StartCrew(m.Slug, "shell", "") // c1: no pid, deck died before start
+	s.StartCrew(m.Slug, "shell", "") // c2: pid alive
+	s.StartCrew(m.Slug, "shell", "") // c3: pid dead
+	s.StartCrew(m.Slug, "shell", "") // c4: already ended
+	s.SetCrewPID(m.Slug, "c2", 100)
+	s.SetCrewPID(m.Slug, "c3", 200)
+	s.EndCrew(m.Slug, "c4", "ok")
+
+	n := s.ReconcileCrew(func(pid int) bool { return pid == 100 })
+	if n != 2 {
+		t.Errorf("closed %d, want 2", n)
+	}
+	got, _ := s.Load(m.Slug)
+	exits := []string{}
+	for _, c := range got.Crew {
+		exits = append(exits, c.Exit)
+	}
+	if strings.Join(exits, ",") != "lost,,lost,ok" {
+		t.Errorf("exits = %v", exits)
+	}
+}
+
+func TestCrewPIDOmittedWhenZero(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Pid")
+	s.StartCrew(m.Slug, "shell", "")
+	data, _ := os.ReadFile(filepath.Join(s.missionDir(m.Slug), missionFile))
+	if strings.Contains(string(data), "pid") {
+		t.Errorf("zero pid written:\n%s", data)
+	}
+}

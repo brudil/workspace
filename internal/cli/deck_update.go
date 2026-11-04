@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 )
@@ -13,7 +14,33 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.resizePanes()
 		return m, nil
+
+	case deckLaunchReadyMsg:
+		return m.finishLaunch(msg)
+
+	case deckLaunchWithMsg:
+		return m.startCrew(msg.harness)
+
+	case deckPaneMsg:
+		return m.handlePaneMsg(msg)
+
+	case deckQuitConfirmedMsg:
+		return m.stopAll()
+
+	case deckStoppedMsg:
+		return m, tea.Quit
+
+	case tea.PasteMsg:
+		if m.focusTerm && m.mode == deckModeNormal {
+			if dm, ok := m.selectedMission(); ok {
+				if r, live := m.liveRun(dm.M.Slug); live {
+					r.pane.Paste(msg.Content)
+				}
+			}
+			return m, nil
+		}
 
 	case deckLoadedMsg:
 		m.loaded = true
@@ -67,8 +94,14 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+	if m.stopping {
+		return m, nil
+	}
+	if m.focusTerm && m.mode == deckModeNormal && !m.showHelp {
+		return m.handleTermKey(msg)
+	}
+	if msg.String() == "ctrl+c" && m.mode != deckModeConfirm {
+		return m.requestQuit()
 	}
 	switch m.mode {
 	case deckModeNewTitle:
@@ -89,7 +122,7 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.flash = ""
 	switch msg.String() {
 	case "q":
-		return m, tea.Quit
+		return m.requestQuit()
 	case "?":
 		m.showHelp = true
 	case "j", "down":
@@ -113,12 +146,28 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.syncMain()
 		m.mainVP.HalfPageUp()
 	case "enter", "space":
-		if r, ok := m.selected(); ok && r.kind == deckRowLooseHeader {
+		r, ok := m.selected()
+		if ok && r.kind == deckRowLooseHeader {
 			m.looseOpen = !m.looseOpen
 			m.rebuildRows()
+		} else if ok && (r.kind == deckRowMission || r.kind == deckRowCapsule) && msg.String() == "enter" {
+			return m.startCrew(harness.Default())
 		}
+	case "tab", "l", "right":
+		if dm, ok := m.selectedMission(); ok {
+			if _, live := m.liveRun(dm.M.Slug); live {
+				m.focusTerm = true
+			}
+		}
+	case "L":
+		return m.chooseHarness()
+	case "R":
+		return m.resumeCrew()
+	case "S":
+		return m.stopSelected()
 	case "s":
 		m.sidebarHidden = !m.sidebarHidden
+		m.resizePanes()
 	case "A":
 		m.showArchived = !m.showArchived
 		m.rebuildRows()

@@ -1,6 +1,12 @@
   Deck
 
   j/k ↑/↓    Move through missions and capsules
+  ⏎          Launch crew (cursor) on the mission, or focus its live crew
+  L          Launch crew with a chosen harness
+  R          Resume the mission's last crew conversation
+  tab        Focus the mission's live crew terminal
+  ctrl+g     In a crew terminal: then tab returns here, s hides the sidebar, S stops crew
+  S          Stop the mission's live crew
   J/K        Scroll the main pane (also ctrl+d/u, mouse wheel)
   n          New mission (then edit its brief)
   e          Edit the selected mission's brief in $EDITOR
@@ -9,7 +15,7 @@
   p          Park / reopen the selected mission
   x          Archive / reopen the selected mission
   A          Show or hide archived missions
-  ⏎          Expand loose capsules
+  ⏎ (loose)  Expand loose capsules
   s          Toggle the sidebar
   r          Refresh (including PRs)
   ?          Toggle this help

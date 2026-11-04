@@ -99,6 +99,13 @@ type deckModel struct {
 
 	flash string
 
+	// Crew the deck launched, by mission slug, and launches in progress.
+	crew      map[string]*deckCrewRun
+	launching map[string]bool
+	focusTerm bool // keys go to the selected mission's crew terminal
+	prefix    bool // the prefix key was pressed; next key is a deck command
+	stopping  bool // quitting: stopAll records crew ends
+
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes
 	md      *markdownCache
@@ -109,13 +116,15 @@ func newDeckModel(ws *workspace.Workspace, gh github.Client, focus string) deckM
 	ti.Placeholder = "Mission title"
 	ti.CharLimit = 120
 	m := deckModel{
-		ws:     ws,
-		gh:     gh,
-		store:  mission.Store{Root: ws.Root},
-		prs:    prIndex{},
-		input:  ti,
-		mainVP: viewport.New(),
-		md:     newMarkdownCache(),
+		ws:        ws,
+		gh:        gh,
+		store:     mission.Store{Root: ws.Root},
+		prs:       prIndex{},
+		input:     ti,
+		mainVP:    viewport.New(),
+		md:        newMarkdownCache(),
+		crew:      map[string]*deckCrewRun{},
+		launching: map[string]bool{},
 	}
 	if focus != "" {
 		m.cursorKey = "m:" + focus

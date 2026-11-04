@@ -3,11 +3,12 @@
                                                                            │ MISSIONS                         
   Fix token refresh race                                                   │ ▸ fix-token-refresh-race active  
    fix-token-refresh-race   active                                         │     frontend/token-race          
-                                                                           │     backend/token-race #88       
-  Capsules                                                                 │                                  
-    Frontend (frontend)   token-race                                       │   billing-export          draft  
-    /ws/repos/frontend/token-race                                          │                                  
-    API (backend)         token-race   #88                                 │ ▸ loose capsules (1)             
+  no crew yet · ⏎ launch cursor · L choose harness                         │     backend/token-race #88       
+                                                                           │                                  
+  Capsules                                                                 │   billing-export          draft  
+    Frontend (frontend)   token-race                                       │                                  
+    /ws/repos/frontend/token-race                                          │ ▸ loose capsules (1)             
+    API (backend)         token-race   #88                                 │                                  
     /ws/repos/backend/token-race                                           │                                  
                                                                            │                                  
   Brief  e to edit                                                         │                                  
@@ -20,5 +21,4 @@
   • keep the public API                                                    │                                  
   • add a regression test                                                  │                                  
                                                                            │                                  
-  Log                                                                      │                                  
- j/k move  n new  e brief  a attach  d detach  p park  x archive  s sidebar  r refresh  ? help  q quit
+ j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit

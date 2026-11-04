@@ -319,3 +319,95 @@ func excludePath(root string) (string, bool) {
 
 // EnsureExcluded is the exported form of ensureExcluded, for ws doctor --fix.
 func EnsureExcluded(root string) { ensureExcluded(root) }
+
+// StartCrew records new crew on a mission and logs it. IDs are c1, c2, … in
+// order of launch, so they stay short enough to show in the sidebar.
+func (s Store) StartCrew(slug, harness, conversation string) (Crew, error) {
+	var crew Crew
+	_, err := s.Update(slug, func(m *Mission) error {
+		crew = Crew{
+			ID:           fmt.Sprintf("c%d", len(m.Crew)+1),
+			Harness:      harness,
+			Conversation: conversation,
+			Started:      now(),
+		}
+		m.Crew = append(m.Crew, crew)
+		return nil
+	})
+	if err != nil {
+		return Crew{}, err
+	}
+	text := harness
+	if conversation != "" {
+		text += " " + conversation
+	}
+	return crew, s.AppendLog(slug, Event{Kind: EventCrewStarted, Crew: crew.ID, Text: text})
+}
+
+// EndCrew records that crew stopped, with a short exit summary.
+func (s Store) EndCrew(slug, id, exit string) error {
+	found := false
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				t := now()
+				m.Crew[i].Ended = &t
+				m.Crew[i].Exit = exit
+				found = true
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("mission %s has no crew %s", slug, id)
+	}
+	return s.AppendLog(slug, Event{Kind: EventCrewEnded, Crew: id, Text: exit})
+}
+
+// LastResumable returns the most recent crew of the given harness that has a
+// conversation id, if any.
+func (m *Mission) LastResumable(harness string) (Crew, bool) {
+	for i := len(m.Crew) - 1; i >= 0; i-- {
+		if c := m.Crew[i]; c.Harness == harness && c.Conversation != "" {
+			return c, true
+		}
+	}
+	return Crew{}, false
+}
+
+// SetCrewPID records the process id of running crew.
+func (s Store) SetCrewPID(slug, id string, pid int) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				m.Crew[i].PID = pid
+			}
+		}
+		return nil
+	})
+	return err
+}
+
+// ReconcileCrew closes crew records left open by a deck that died without
+// recording their end: any open crew whose process isn't alive is ended as
+// "lost". It returns how many were closed.
+func (s Store) ReconcileCrew(alive func(pid int) bool) int {
+	missions, err := s.List()
+	if err != nil {
+		return 0
+	}
+	closed := 0
+	for _, m := range missions {
+		for _, c := range m.Crew {
+			if c.Ended != nil || (c.PID != 0 && alive(c.PID)) {
+				continue
+			}
+			if s.EndCrew(m.Slug, c.ID, "lost") == nil {
+				closed++
+			}
+		}
+	}
+	return closed
+}

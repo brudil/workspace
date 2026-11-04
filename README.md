@@ -63,7 +63,7 @@ ws debrief                     # clean up anything that's landed
 | `ws debrief` | Remove landed and stale capsules |
 | `ws group` | List repo groups and choose which are hidden |
 | `ws mission` | Track a unit of work: its brief, capsules across repos, and log |
-| `ws deck` | Missions dashboard: briefs, capsules and state in one TUI |
+| `ws deck` | Missions dashboard: briefs, capsules, and agents running on them, in one TUI |
 | `ws open` | Open workspace in Cursor, VS Code, or IntelliJ |
 | `ws board` | Add a capsule to your IDE workspace |
 | `ws doctor` | Health check your workspace |

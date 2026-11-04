@@ -26,7 +26,10 @@ Pass a mission slug to open with it selected.`,
 				return err
 			}
 			m := newDeckModel(ctx.WS, ctx.GitHub, firstArg(args))
+			// Close crew records a previous deck left open when it died.
+			m.store.ReconcileCrew(processAlive)
 			_, err = tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
+			m.stopLeftovers()
 			return err
 		},
 	}

@@ -9,6 +9,7 @@ import (
 	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
@@ -31,7 +32,38 @@ func (m deckModel) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "Deck"
+	// With a crew terminal focused, put the real cursor where the agent's is.
+	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal {
+		if x, y, visible := r.pane.Cursor(); visible {
+			v.Cursor = tea.NewCursor(x, y+2) // below header and rule
+		}
+	}
 	return v
+}
+
+// focusedRun is the live crew whose terminal has focus, if any.
+func (m deckModel) focusedRun() (*deckCrewRun, bool) {
+	if !m.focusTerm {
+		return nil, false
+	}
+	dm, ok := m.selectedMission()
+	if !ok {
+		return nil, false
+	}
+	return m.liveRun(dm.M.Slug)
+}
+
+// shownRun is the live crew whose terminal the main pane shows: the selected
+// mission's, unless a picker is open.
+func (m deckModel) shownRun() (*deckCrewRun, bool) {
+	if m.mode == deckModePick {
+		return nil, false
+	}
+	dm, ok := m.selectedMission()
+	if !ok {
+		return nil, false
+	}
+	return m.liveRun(dm.M.Slug)
 }
 
 func (m deckModel) sidebarShown() bool {
@@ -58,8 +90,13 @@ func (m deckModel) render() string {
 	header := m.renderHeader()
 	bodyH := m.bodyHeight()
 
-	m.syncMain()
-	main := m.mainVP.View()
+	var main string
+	if r, ok := m.shownRun(); ok {
+		main = renderPane(r.pane, m.mainWidth(), bodyH)
+	} else {
+		m.syncMain()
+		main = m.mainVP.View()
+	}
 
 	body := main
 	if m.sidebarShown() {
@@ -72,6 +109,17 @@ func (m deckModel) render() string {
 
 func (m deckModel) renderHeader() string {
 	title := " " + ui.Bold.Render(m.ws.Title()) + ui.Dim.Render(" deck")
+	if r, ok := m.shownRun(); ok {
+		label := fmt.Sprintf("  %s · crew %s · %s", r.slug, r.crewID, r.harness)
+		if t := r.pane.Title(); t != "" {
+			label += " · " + t
+		}
+		if m.focusTerm {
+			title += ui.Green.Render(label)
+		} else {
+			title += ui.Dim.Render(label)
+		}
+	}
 	right := ""
 	if m.loaded {
 		right = ui.Dim.Render(m.counts()) + " "
@@ -89,10 +137,19 @@ func (m deckModel) renderFooter() string {
 	case deckModePick:
 		return ui.Dim.Render(" j/k move  ⏎ choose  esc cancel")
 	}
+	if m.focusTerm {
+		if m.prefix {
+			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(" then: tab sidebar · s hide sidebar · S stop crew · q quit · ? help · "+deckPrefixKey+" send "+deckPrefixKey)
+		}
+		if m.flash != "" {
+			return " " + m.flash
+		}
+		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
+	}
 	if m.flash != "" {
 		return " " + m.flash
 	}
-	hints := " j/k move  n new  e brief  a attach  d detach  p park  x archive  s sidebar  r refresh  ? help  q quit"
+	hints := " j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit"
 	return ui.Dim.Render(ansi.Truncate(hints, m.width, "…"))
 }
 
@@ -158,6 +215,7 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 	var b strings.Builder
 	b.WriteString("\n" + indent + ui.Bold.Render(dm.M.Title) + "\n")
 	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + stateStyle(dm.State).Render(string(dm.State)) + "\n")
+	b.WriteString(indent + m.crewSummary(dm) + "\n")
 
 	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")
 	if len(dm.Capsules) == 0 {
@@ -295,6 +353,11 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 				marker = ui.Orange.Render("▸ ")
 			}
 			state := stateStyle(dm.State).Render(string(dm.State))
+			if r, live := m.liveRun(dm.M.Slug); live {
+				state = ui.Green.Render("●"+r.crewID) + " " + state
+			} else if m.launching[dm.M.Slug] {
+				state = ui.Dim.Render("…") + " " + state
+			}
 			left := " " + marker + ui.Bold.Render(dm.M.Slug)
 			avail := width - lipgloss.Width(state) - 2
 			left = ansi.Truncate(left, avail, "…")
@@ -372,6 +435,12 @@ func (m deckModel) sidebarRowAt(x, y int) (int, bool) {
 func (m deckModel) renderHelp() string {
 	help := []struct{ key, desc string }{
 		{"j/k ↑/↓", "Move through missions and capsules"},
+		{"⏎", "Launch crew (" + harness.Default() + ") on the mission, or focus its live crew"},
+		{"L", "Launch crew with a chosen harness"},
+		{"R", "Resume the mission's last crew conversation"},
+		{"tab", "Focus the mission's live crew terminal"},
+		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
+		{"S", "Stop the mission's live crew"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission (then edit its brief)"},
 		{"e", "Edit the selected mission's brief in $EDITOR"},
@@ -380,7 +449,7 @@ func (m deckModel) renderHelp() string {
 		{"p", "Park / reopen the selected mission"},
 		{"x", "Archive / reopen the selected mission"},
 		{"A", "Show or hide archived missions"},
-		{"⏎", "Expand loose capsules"},
+		{"⏎ (loose)", "Expand loose capsules"},
 		{"s", "Toggle the sidebar"},
 		{"r", "Refresh (including PRs)"},
 		{"?", "Toggle this help"},

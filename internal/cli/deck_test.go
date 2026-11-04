@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 	"github.com/charmbracelet/x/exp/golden"
@@ -36,6 +37,7 @@ func deckWorkspace(t *testing.T, capsules map[string][]string) *workspace.Worksp
 
 func utcLocal(t *testing.T) {
 	t.Helper()
+	t.Setenv(harness.EnvDefault, "")
 	old := time.Local
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = old })
@@ -424,6 +426,7 @@ func TestGolden_Deck_AttachPicker(t *testing.T) {
 }
 
 func TestGolden_Deck_Empty(t *testing.T) {
+	utcLocal(t)
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
 	m := loadedDeck(t, ws, prIndex{})
 	golden.RequireEqual(t, plainView(m))

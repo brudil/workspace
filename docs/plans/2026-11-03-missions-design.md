@@ -1,7 +1,7 @@
 # Missions: Workspace Owns the Work, Agents Run It
 
 **Date:** 2026-11-03
-**Status:** Draft, open for discussion
+**Status:** Phases 1–3 implemented (#8, #9, deck crew). Cursor CLI details pending local verification, see `2026-11-04-deck-crew-cursor-checklist.md`.
 
 ## Problem
 

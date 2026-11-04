@@ -53,6 +53,10 @@ type Crew struct {
 	Started      time.Time  `toml:"started"`
 	Ended        *time.Time `toml:"ended,omitempty"`
 	Exit         string     `toml:"exit,omitempty"`
+	// PID of the crew process while it runs, so a later deck can tell a
+	// crew that is still running from one whose deck died without recording
+	// its end.
+	PID int `toml:"pid,omitzero"`
 }
 
 // Mission is the contents of mission.toml plus its slug.
