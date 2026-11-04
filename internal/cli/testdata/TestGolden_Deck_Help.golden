@@ -1,0 +1,18 @@
+  Deck
+
+  j/k ↑/↓    Move through missions and capsules
+  J/K        Scroll the main pane (also ctrl+d/u, mouse wheel)
+  n          New mission (then edit its brief)
+  e          Edit the selected mission's brief in $EDITOR
+  a          Attach: a loose capsule to this mission, or this loose capsule to a mission
+  d          Detach the selected capsule from its mission
+  p          Park / reopen the selected mission
+  x          Archive / reopen the selected mission
+  A          Show or hide archived missions
+  ⏎          Expand loose capsules
+  s          Toggle the sidebar
+  r          Refresh (including PRs)
+  ?          Toggle this help
+  q          Quit
+
+  Press ? to close

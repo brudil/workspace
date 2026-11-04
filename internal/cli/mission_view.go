@@ -71,35 +71,59 @@ type missionView struct {
 	Capsules []missionCapsuleView
 }
 
+// prIndex holds open and merged PRs per repo, keyed by head branch.
+type prIndex map[string]repoPRs
+
+type repoPRs struct{ open, merged map[string]*github.PR }
+
+// fetchPRIndex fetches open and merged PRs for the given repos, once each and
+// in parallel. A nil gh returns an empty index.
+func fetchPRIndex(ws *workspace.Workspace, gh github.Client, repos []string) prIndex {
+	prs := make(prIndex, len(repos))
+	if gh == nil {
+		return prs
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, repo := range repos {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r := repoPRs{open: indexPRs(gh.PRsForRepo(ws.Org, repo))}
+			r.merged = indexPRs(gh.MergedPRsForRepo(ws.Org, repo))
+			mu.Lock()
+			prs[repo] = r
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return prs
+}
+
+// missionRepos lists the distinct repos the missions' capsules live in.
+func missionRepos(missions []*mission.Mission) []string {
+	seen := map[string]bool{}
+	var repos []string
+	for _, m := range missions {
+		for _, c := range m.Capsules {
+			if !seen[c.Repo] {
+				seen[c.Repo] = true
+				repos = append(repos, c.Repo)
+			}
+		}
+	}
+	return repos
+}
+
 // buildMissionViews gathers git and (when gh is non-nil) GitHub facts for
 // every capsule of the given missions, fetching each repo's PRs once.
 func buildMissionViews(ws *workspace.Workspace, gh github.Client, missions []*mission.Mission) []missionView {
-	repos := map[string]bool{}
-	for _, m := range missions {
-		for _, c := range m.Capsules {
-			repos[c.Repo] = true
-		}
-	}
+	return buildMissionViewsFrom(ws, fetchPRIndex(ws, gh, missionRepos(missions)), missions)
+}
 
-	type repoPRs struct{ open, merged map[string]*github.PR }
-	prs := make(map[string]repoPRs, len(repos))
-	if gh != nil {
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for repo := range repos {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				r := repoPRs{open: indexPRs(gh.PRsForRepo(ws.Org, repo))}
-				r.merged = indexPRs(gh.MergedPRsForRepo(ws.Org, repo))
-				mu.Lock()
-				prs[repo] = r
-				mu.Unlock()
-			}()
-		}
-		wg.Wait()
-	}
-
+// buildMissionViewsFrom is buildMissionViews with PRs supplied by the caller,
+// so a TUI can refresh git facts often while fetching PRs rarely.
+func buildMissionViewsFrom(ws *workspace.Workspace, prs prIndex, missions []*mission.Mission) []missionView {
 	views := make([]missionView, len(missions))
 	for i, m := range missions {
 		v := missionView{M: m}
@@ -154,7 +178,7 @@ func attachToEnvMission(ctx *Context, repo, capsule string) {
 	if m == nil {
 		return
 	}
-	if err := attachCapsule(ctx, m.Slug, repo, capsule); err != nil {
+	if err := attachCapsule(ctx.WS, m.Slug, repo, capsule); err != nil {
 		fmt.Fprintf(ui.Stderr, "  %s attaching to mission %s: %v\n", ui.Orange.Render("⚠"), m.Slug, err)
 		return
 	}

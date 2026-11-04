@@ -1,0 +1,24 @@
+ acme deck                                                                                2 missions · 1 live 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                           │ MISSIONS                         
+  Fix token refresh race                                                   │ ▸ fix-token-refresh-race active  
+   fix-token-refresh-race   active                                         │     frontend/token-race          
+                                                                           │     backend/token-race #88       
+  Capsules                                                                 │                                  
+    Frontend (frontend)   token-race                                       │   billing-export          draft  
+    /ws/repos/frontend/token-race                                          │                                  
+    API (backend)         token-race   #88                                 │ ▸ loose capsules (1)             
+    /ws/repos/backend/token-race                                           │                                  
+                                                                           │                                  
+  Brief  e to edit                                                         │                                  
+   Fix token refresh race                                                  │                                  
+                                                                           │                                  
+  ## Goal                                                                  │                                  
+                                                                           │                                  
+  Stop concurrent refreshes clobbering each other.                         │                                  
+                                                                           │                                  
+  • keep the public API                                                    │                                  
+  • add a regression test                                                  │                                  
+                                                                           │                                  
+  Log                                                                      │                                  
+ j/k move  n new  e brief  a attach  d detach  p park  x archive  s sidebar  r refresh  ? help  q quit

@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
+	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -120,13 +122,19 @@ editor, e.g. from a script or an agent.`,
 }
 
 func openEditor(path string) error {
+	c := editorCmd(path)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stderr, os.Stderr
+	return c.Run()
+}
+
+// editorCmd builds a command running $EDITOR (which may carry arguments, e.g.
+// "code -w") on path, defaulting to vim.
+func editorCmd(path string) *exec.Cmd {
 	editor := strings.Fields(os.Getenv("EDITOR"))
 	if len(editor) == 0 {
 		editor = []string{"vim"}
 	}
-	c := exec.Command(editor[0], append(editor[1:], path)...)
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stderr, os.Stderr
-	return c.Run()
+	return exec.Command(editor[0], append(editor[1:], path)...)
 }
 
 // --- list ---
@@ -488,7 +496,7 @@ func newMissionAttachCmd() *cobra.Command {
 				store.AppendLog(owner.Slug, mission.Event{Kind: mission.EventCapsuleRemove, Repo: repo, Capsule: capsule, Text: "moved to " + m.Slug})
 			}
 
-			if err := attachCapsule(ctx, m.Slug, repo, capsule); err != nil {
+			if err := attachCapsule(ctx.WS, m.Slug, repo, capsule); err != nil {
 				return err
 			}
 			fmt.Fprintf(ui.Stderr, "  %s %s %s → mission %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule), m.Slug)
@@ -501,9 +509,9 @@ func newMissionAttachCmd() *cobra.Command {
 }
 
 // attachCapsule adds a capsule (with its current branch) to a mission and logs it.
-func attachCapsule(ctx *Context, slug, repo, capsule string) error {
-	store := missionStore(ctx)
-	branch := gitBranchOf(ctx, repo, capsule)
+func attachCapsule(ws *workspace.Workspace, slug, repo, capsule string) error {
+	store := mission.Store{Root: ws.Root}
+	branch := workspace.GitCurrentBranch(filepath.Join(ws.RepoDir(repo), capsule))
 	added := false
 	if _, err := store.Update(slug, func(m *mission.Mission) error {
 		added = m.AddCapsuleBranch(repo, capsule, branch)
@@ -515,6 +523,36 @@ func attachCapsule(ctx *Context, slug, repo, capsule string) error {
 		return store.AppendLog(slug, mission.Event{Kind: mission.EventCapsuleAdded, Repo: repo, Capsule: capsule})
 	}
 	return nil
+}
+
+// detachCapsule removes a capsule from a mission and logs it. It reports
+// whether the mission owned the capsule.
+func detachCapsule(ws *workspace.Workspace, slug, repo, capsule string) (bool, error) {
+	store := mission.Store{Root: ws.Root}
+	removed := false
+	if _, err := store.Update(slug, func(m *mission.Mission) error {
+		removed = m.RemoveCapsule(repo, capsule)
+		return nil
+	}); err != nil || !removed {
+		return removed, err
+	}
+	return true, store.AppendLog(slug, mission.Event{Kind: mission.EventCapsuleRemove, Repo: repo, Capsule: capsule})
+}
+
+// setMissionState stores a manual state ("" reopens) and logs it.
+func setMissionState(ws *workspace.Workspace, slug string, state mission.State) (string, error) {
+	store := mission.Store{Root: ws.Root}
+	if _, err := store.Update(slug, func(m *mission.Mission) error {
+		m.State = state
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	label := string(state)
+	if state == "" {
+		label = "reopened"
+	}
+	return label, store.AppendLog(slug, mission.Event{Kind: mission.EventState, Text: label})
 }
 
 func newMissionDetachCmd() *cobra.Command {
@@ -542,18 +580,13 @@ func newMissionDetachCmd() *cobra.Command {
 				repo = args[0]
 			}
 			capsule := args[1]
-			removed := false
-			store := missionStore(ctx)
-			if _, err := store.Update(m.Slug, func(m *mission.Mission) error {
-				removed = m.RemoveCapsule(repo, capsule)
-				return nil
-			}); err != nil {
+			removed, err := detachCapsule(ctx.WS, m.Slug, repo, capsule)
+			if err != nil {
 				return err
 			}
 			if !removed {
 				return fmt.Errorf("%s/%s is not part of mission %s", repo, capsule, m.Slug)
 			}
-			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventCapsuleRemove, Repo: repo, Capsule: capsule})
 			fmt.Fprintf(ui.Stderr, "  %s %s %s detached from %s\n", ui.Green.Render("✓"), ctx.WS.FormatRepoName(repo), ui.TagDim.Render(capsule), m.Slug)
 			return nil
 		},
@@ -579,18 +612,10 @@ func newMissionStateCmd(name string, state mission.State, short string) *cobra.C
 			if err != nil {
 				return err
 			}
-			store := missionStore(ctx)
-			if _, err := store.Update(m.Slug, func(m *mission.Mission) error {
-				m.State = state
-				return nil
-			}); err != nil {
+			label, err := setMissionState(ctx.WS, m.Slug, state)
+			if err != nil {
 				return err
 			}
-			label := string(state)
-			if state == "" {
-				label = "reopened"
-			}
-			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventState, Text: label})
 			fmt.Fprintf(ui.Stderr, "  %s %s %s\n", ui.Green.Render("✓"), m.Slug, label)
 			return nil
 		},

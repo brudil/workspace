@@ -1,0 +1,24 @@
+ acme deck                                                                                2 missions · 1 live 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                           │ MISSIONS                         
+  Frontend (frontend)   feat-x                                             │   fix-token-refresh-race active  
+  /ws/repos/frontend/feat-x                                                │     frontend/token-race          
+                                                                           │     backend/token-race #88       
+  Not part of a mission. Press a to attach it to one.                      │                                  
+                                                                           │   billing-export          draft  
+                                                                           │                                  
+                                                                           │ ▾ loose capsules (1)             
+                                                                           │     frontend/feat-x              
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+ j/k move  n new  e brief  a attach  d detach  p park  x archive  s sidebar  r refresh  ? help  q quit
