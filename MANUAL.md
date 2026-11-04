@@ -331,6 +331,8 @@ ws mission note "Went with a mutex, not a channel"
 
 `ws mission ready` refuses until the brief is written and a capsule exists (`--no-capsules` if none is needed), can rename the mission (`--slug`), records the briefing agent as `briefed` and ends its session. The deck then lands on the ready mission, and `⏎` launches crew to do the work. Briefing missions sit at the top of the sidebar while they wait on you. Stop a briefing early and `⏎` offers to resume it.
 
+`ws mission new "<what it is>"` does the same from a shell, or from an agent: the mission waits to be briefed (`⏎` on it in the deck starts the briefing agent). Crew that spot something outside their mission are taught to raise it this way; the new mission records which mission and crew raised it. To create a mission ready, with a brief you write yourself, pass `--brief`, `--brief-file`, `--edit` (opens `$EDITOR`) or `--no-edit` (the template).
+
 The same commands work by hand: `ws mission brief` prints or replaces a brief, `ws mission title` retitles, and `ws mission ready` finishes a briefing. Crew can only change the brief or title while briefing; after that they belong to you.
 
 **Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended. Crew get `.ws/bin` first on `PATH`, where `ws` and `workspace` point at the deck's own binary, so the commands they're told to run always match the deck's version.

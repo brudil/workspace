@@ -206,10 +206,17 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + stateStyle(dm.State).Render(string(dm.State)) + "\n")
 	b.WriteString(indent + m.crewSummary(dm) + "\n")
 	if dm.State == mission.Briefing {
-		b.WriteString("\n" + indent + ui.Orange.Render("Being briefed") + ui.Dim.Render(" · an agent is turning the request into a brief and capsules; it finishes with ws mission ready") + "\n")
+		if len(m.reg.live(dm.M.Slug)) > 0 {
+			b.WriteString("\n" + indent + ui.Orange.Render("Being briefed") + ui.Dim.Render(" · an agent is turning the request into a brief and capsules; it finishes with ws mission ready") + "\n")
+		} else {
+			b.WriteString("\n" + indent + ui.Orange.Render("Waiting to be briefed") + ui.Dim.Render(" · ⏎ starts a briefing agent") + "\n")
+		}
 		if dm.M.Request != "" {
 			b.WriteString(indent + ui.Dim.Render("Requested: ") + strings.ReplaceAll(dm.M.Request, "\n", " ") + "\n")
 		}
+	}
+	if dm.M.From != "" {
+		b.WriteString(indent + ui.Dim.Render("Raised from: "+dm.M.From) + "\n")
 	}
 
 	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")

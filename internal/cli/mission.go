@@ -67,14 +67,22 @@ func completeMissionSlugs(cmd *cobra.Command, args []string, toComplete string) 
 
 func newMissionNewCmd() *cobra.Command {
 	var brief, briefFile string
-	var noEdit bool
+	var noEdit, edit bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
-		Short: "Create a mission",
-		Long: `Create a mission and open its brief in $EDITOR.
+		Use:   "new <what the mission is>",
+		Short: "Create a mission: say what it is, and a briefing agent sets it up",
+		Long: `Create a mission from a plain description, e.g.
 
-Pass --brief or --brief-file (- for stdin) to write the brief without an
-editor, e.g. from a script or an agent.`,
+  ws mission new "fe issue 45"
+  ws mission new "the token refresh test is flaky: the clock should be injected"
+
+It waits to be briefed: in ws deck, ⏎ on it starts a briefing agent that
+writes the brief and creates the capsules. Run by crew inside another
+mission, the new mission records where it came from.
+
+To create a mission ready straight away, with a brief you write yourself:
+--brief "...", --brief-file <path|->, --edit (opens $EDITOR), or --no-edit
+(the template brief). The arguments are then the title.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
@@ -84,6 +92,20 @@ editor, e.g. from a script or an agent.`,
 			if brief != "" && briefFile != "" {
 				return errors.New("use either --brief or --brief-file, not both")
 			}
+			text := strings.Join(args, " ")
+			store := missionStore(ctx)
+
+			if brief == "" && briefFile == "" && !edit && !noEdit {
+				m, err := store.CreateBriefing(text)
+				if err != nil {
+					return err
+				}
+				noteOrigin(store, m.Slug, text)
+				fmt.Fprintf(ui.Stderr, "  %s Mission %s is waiting to be briefed: in ws deck, ⏎ on it starts a briefing agent\n", ui.Green.Render("✓"), ui.Bold.Render(m.Slug))
+				fmt.Println(m.Slug)
+				return nil
+			}
+
 			body := brief
 			if briefFile != "" {
 				var data []byte
@@ -97,34 +119,52 @@ editor, e.g. from a script or an agent.`,
 				}
 				body = string(data)
 			}
-
-			store := missionStore(ctx)
-			m, err := store.Create(strings.Join(args, " "))
+			m, err := store.Create(text)
 			if err != nil {
 				return err
 			}
+			noteOrigin(store, m.Slug, text)
 			if body != "" {
-				if !strings.HasSuffix(body, "\n") {
-					body += "\n"
-				}
-				if err := os.WriteFile(store.BriefPath(m.Slug), []byte(body), 0o644); err != nil {
+				if err := store.WriteBrief(m.Slug, body); err != nil {
 					return err
 				}
-			} else if !noEdit && ui.IsInteractive() {
+			} else if edit && ui.IsInteractive() {
 				if err := openEditor(store.BriefPath(m.Slug)); err != nil {
 					fmt.Fprintf(ui.Stderr, "  %s editor: %v\n", ui.Orange.Render("⚠"), err)
 				}
 			}
-
 			fmt.Fprintf(ui.Stderr, "  %s Mission %s created\n", ui.Green.Render("✓"), ui.Bold.Render(m.Slug))
 			fmt.Fprintf(ui.Stderr, "  %s brief: %s\n", ui.Dim.Render("·"), store.BriefPath(m.Slug))
+			fmt.Println(m.Slug)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&brief, "brief", "", "brief markdown (skips the editor)")
-	cmd.Flags().StringVar(&briefFile, "brief-file", "", "read the brief from a file, or - for stdin")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "don't open $EDITOR")
+	cmd.Flags().StringVar(&brief, "brief", "", "create it ready with this brief (markdown)")
+	cmd.Flags().StringVar(&briefFile, "brief-file", "", "create it ready with the brief from a file, or - for stdin")
+	cmd.Flags().BoolVar(&edit, "edit", false, "create it ready and write the brief in $EDITOR")
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "create it ready with the template brief")
 	return cmd
+}
+
+// noteOrigin links a mission created by crew to the mission it came from:
+// the new one records From, the parent's log says what was raised.
+func noteOrigin(store mission.Store, slug, text string) {
+	parent, crew := os.Getenv(mission.EnvMission), os.Getenv(mission.EnvCrew)
+	if parent == "" || parent == slug {
+		return
+	}
+	if _, err := store.Load(parent); err != nil {
+		return
+	}
+	from := parent
+	if crew != "" {
+		from += "/" + crew
+	}
+	store.Update(slug, func(m *mission.Mission) error {
+		m.From = from
+		return nil
+	})
+	store.AppendLog(parent, mission.Event{Kind: mission.EventNote, Text: "raised mission " + slug + ": " + text})
 }
 
 func openEditor(path string) error {
@@ -322,6 +362,9 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 	fmt.Fprintf(&b, "State: %s\n", v.State)
 	if v.M.Request != "" {
 		fmt.Fprintf(&b, "Requested as: %s\n", strings.ReplaceAll(v.M.Request, "\n", " "))
+	}
+	if v.M.From != "" {
+		fmt.Fprintf(&b, "Raised from: %s\n", v.M.From)
 	}
 	fmt.Fprintf(&b, "Brief file: %s\n", briefPath)
 	if len(v.Capsules) == 0 {

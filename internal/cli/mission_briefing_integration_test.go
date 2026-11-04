@@ -154,3 +154,51 @@ func TestSignals_BriefingCrewIsToldToUseReady(t *testing.T) {
 		t.Errorf("briefing crew done: %v", r.Err)
 	}
 }
+
+func TestMissionNew_PlainTextWaitsForBriefing(t *testing.T) {
+	w := missionWorkspace(t)
+	r := run(t, w, nil, "mission", "new", "fe", "issue", "45")
+	if strings.TrimSpace(r.Stdout) != "fe-issue-45" || !strings.Contains(r.Stderr, "waiting to be briefed") {
+		t.Errorf("stdout %q stderr %q", r.Stdout, r.Stderr)
+	}
+	m, _ := mission.Store{Root: w.Root}.Load("fe-issue-45")
+	if m.State != mission.Briefing || m.Request != "fe issue 45" || m.From != "" {
+		t.Errorf("mission = %+v", m)
+	}
+}
+
+func TestMissionNew_FromCrewRecordsOrigin(t *testing.T) {
+	w := missionWorkspace(t)
+	store := mission.Store{Root: w.Root}
+	run(t, w, nil, "mission", "new", "Parent", "--no-edit")
+	store.StartCrew("parent", "cursor", "")
+	t.Setenv(mission.EnvMission, "parent")
+	t.Setenv(mission.EnvCrew, "c1")
+
+	run(t, w, nil, "mission", "new", "the token refresh test is flaky")
+	child, err := store.Load("the-token-refresh-test-is-flaky")
+	if err != nil || child.State != mission.Briefing || child.From != "parent/c1" {
+		t.Fatalf("child = %+v, %v", child, err)
+	}
+	events, _ := store.ReadLog("parent", 0)
+	last := events[len(events)-1]
+	if last.Kind != mission.EventNote || last.Crew != "c1" || !strings.Contains(last.Text, "raised mission the-token-refresh-test-is-flaky") {
+		t.Errorf("parent log = %+v", last)
+	}
+	if show := run(t, w, nil, "mission", "show", "the-token-refresh-test-is-flaky", "-f", "llm"); !strings.Contains(show.Stdout, "Raised from: parent/c1") {
+		t.Errorf("show:\n%s", show.Stdout)
+	}
+	// It didn't attach the new mission to the parent's capsules or vice versa.
+	if p, _ := store.Load("parent"); p.State == mission.Briefing {
+		t.Error("parent changed state")
+	}
+}
+
+func TestMissionNew_BriefFlagStillMakesItReady(t *testing.T) {
+	w := missionWorkspace(t)
+	run(t, w, nil, "mission", "new", "Ready", "one", "--brief", "## Goal\nNow.")
+	m, _ := mission.Store{Root: w.Root}.Load("ready-one")
+	if m.State != "" {
+		t.Errorf("state = %q", m.State)
+	}
+}

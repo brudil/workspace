@@ -90,7 +90,10 @@ type Mission struct {
 	State   State     `toml:"state,omitempty"` // stored override: "", briefing, parked or archived
 	// Request is what the user asked for, verbatim, when a briefing crew
 	// created the mission from it.
-	Request  string    `toml:"request,omitempty"`
+	Request string `toml:"request,omitempty"`
+	// From is the mission/crew ("parent/c2") that raised this one, when
+	// crew created it from inside another mission.
+	From     string    `toml:"from,omitempty"`
 	Capsules []Capsule `toml:"capsules,omitempty"`
 	Crew     []Crew    `toml:"crew,omitempty"`
 	// Artifacts are outputs ws can't infer (capsules' PRs it finds itself):
