@@ -337,8 +337,8 @@ func TestReconcileCrew(t *testing.T) {
 	s.StartCrew(m.Slug, "shell", "") // c2: pid alive
 	s.StartCrew(m.Slug, "shell", "") // c3: pid dead
 	s.StartCrew(m.Slug, "shell", "") // c4: already ended
-	s.SetCrewPID(m.Slug, "c2", 100)
-	s.SetCrewPID(m.Slug, "c3", 200)
+	s.SetCrewProcess(m.Slug, "c2", 100, "")
+	s.SetCrewProcess(m.Slug, "c3", 200, "")
 	s.EndCrew(m.Slug, "c4", "ok")
 
 	n := s.ReconcileCrew(func(pid int) bool { return pid == 100 })
@@ -362,5 +362,39 @@ func TestCrewPIDOmittedWhenZero(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(s.missionDir(m.Slug), missionFile))
 	if strings.Contains(string(data), "pid") {
 		t.Errorf("zero pid written:\n%s", data)
+	}
+}
+
+func TestResumeCrew(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.Create("Resumable")
+	s.StartCrew(m.Slug, "cursor", "chat-1")
+	s.SetCrewProcess(m.Slug, "c1", 42, "fe/work")
+	s.EndCrew(m.Slug, "c1", "stopped: hangup")
+	s.StartCrew(m.Slug, "shell", "") // c2: nothing to resume
+
+	got, _ := s.Load(m.Slug)
+	c, ok := got.LastResumableCrew(func(string) bool { return false })
+	if !ok || c.ID != "c1" || c.Capsule != "fe/work" {
+		t.Fatalf("LastResumableCrew = %+v, %v", c, ok)
+	}
+	if _, ok := got.LastResumableCrew(func(id string) bool { return id == "c1" }); ok {
+		t.Error("live crew offered for resume")
+	}
+
+	resumed, err := s.ResumeCrew(m.Slug, "c1")
+	if err != nil || resumed.ID != "c1" || resumed.Conversation != "chat-1" {
+		t.Fatalf("ResumeCrew = %+v, %v", resumed, err)
+	}
+	got, _ = s.Load(m.Slug)
+	if len(got.Crew) != 2 || got.Crew[0].Ended != nil || got.Crew[0].Exit != "" || got.Crew[0].PID != 0 {
+		t.Errorf("crew after resume = %+v", got.Crew)
+	}
+	events, _ := s.ReadLog(m.Slug, 1)
+	if events[0].Kind != EventCrewResumed || events[0].Crew != "c1" {
+		t.Errorf("last event = %+v", events[0])
+	}
+	if _, err := s.ResumeCrew(m.Slug, "c9"); err == nil {
+		t.Error("resuming unknown crew should fail")
 	}
 }

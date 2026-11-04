@@ -81,7 +81,7 @@ Press `⏎` to launch Cursor on the mission. Then check:
 | Zoom | `ctrl+g z`, use the agent, `ctrl+g z` | The agent takes the whole terminal with no deck chrome; everything works exactly as outside the deck; `ctrl+g z` brings the deck back intact. **If anything renders or types wrong in the pane, check whether it's right when zoomed** |
 | Second crew | `ctrl+g tab`, `g` (mission row), `⏎` | If the mission has one capsule: asks before sharing it; `y` launches `c2`. `ctrl+g n` / `p` switch between them |
 | Stop | `ctrl+g` then `S`, `y` | Agent exits; mission view says `c1 (cursor) ended: …` |
-| Resume | `R` on the mission | Same conversation comes back (needs step 2 to have worked) |
+| Resume | After stopping crew (or quitting with **Stop crew**), `⏎` on the mission | Asks **Resume c1** / **New crew**; resume brings back the same conversation as `c1` (not `c2`), in the same capsule. `R` does the same without asking |
 
 ## 6. Detach and reattach
 

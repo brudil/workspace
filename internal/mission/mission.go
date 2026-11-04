@@ -57,6 +57,8 @@ type Crew struct {
 	// crew that is still running from one whose deck died without recording
 	// its end.
 	PID int `toml:"pid,omitzero"`
+	// Capsule (repo/name) the crew worked in, so resuming goes back there.
+	Capsule string `toml:"capsule,omitempty"`
 }
 
 // Mission is the contents of mission.toml plus its slug.

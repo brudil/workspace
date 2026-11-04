@@ -507,3 +507,109 @@ func TestDeckCrew_CrewFindsTheDecksWs(t *testing.T) {
 	m = typeText(m, `for c in ws workspace; do [ "$(command -v $c)" = "`+shim+`/$c" ] && echo "ok-$c"; done`)
 	waitScreen(t, r, "\nok-ws\nok-workspace")
 }
+
+// resumableHarness is a shell that hands out conversation ids, so resume can
+// be tested without an agent.
+type resumableHarness struct{}
+
+func (resumableHarness) Name() string     { return "resumable" }
+func (resumableHarness) Available() error { return nil }
+func (resumableHarness) Start(b harness.Brief) (harness.Launch, error) {
+	return harness.Launch{Args: []string{"/bin/sh", "-i"}, Dir: b.Dir, Conversation: "conv-" + filepath.Base(b.Dir)}, nil
+}
+func (resumableHarness) Resume(dir, conv string) (harness.Launch, error) {
+	return harness.Launch{Args: []string{"/bin/sh", "-i"}, Dir: dir, Conversation: conv}, nil
+}
+
+func resumableDeck(t *testing.T, capsules ...string) (deckModel, string) {
+	t.Helper()
+	m, slug := shellCrewDeck(t, capsules...)
+	harness.Register(resumableHarness{})
+	t.Setenv(harness.EnvDefault, "resumable")
+	return m, slug
+}
+
+func stopRun(t *testing.T, m deckModel, r *deckCrewRun) deckModel {
+	t.Helper()
+	m.focusRun(r)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: 'S', Text: "S"})
+	m, cmd := press(t, m, "y")
+	next, reload := m.Update(cmd())
+	// The deck reloads missions after crew end, as the real program does.
+	if reload != nil {
+		next, _ = next.Update(reload())
+	}
+	return next.(deckModel)
+}
+
+// choose picks item i in an open picker and completes the launch it starts.
+func choose(t *testing.T, m deckModel, i int) deckModel {
+	t.Helper()
+	if m.mode != deckModePick {
+		t.Fatalf("no picker open (mode %v)", m.mode)
+	}
+	for range i {
+		m, _ = press(t, m, "j")
+	}
+	m, cmd := press(t, m, "enter")
+	next, launch := m.Update(cmd())
+	return completeLaunch(t, next.(deckModel), launch)
+}
+
+func TestDeckCrew_EnterOffersResumeAndKeepsCrewID(t *testing.T) {
+	m, slug := resumableDeck(t)
+	m = launch(t, m) // nothing to resume yet: launches straight away
+	r1, _ := liveRun(m, slug)
+	m = stopRun(t, m, r1)
+
+	// ⏎ on the mission now asks, with resume first.
+	m, _ = press(t, m, "g", "enter")
+	if m.mode != deckModePick || !strings.HasPrefix(m.pick.items[0], "Resume c1 (resumable") || !strings.HasPrefix(m.pick.items[1], "New crew") {
+		t.Fatalf("picker = %+v", m.pick)
+	}
+	m = choose(t, m, 0)
+
+	r, ok := liveRun(m, slug)
+	if !ok || r.crewID != "c1" {
+		t.Fatalf("resume should continue c1, got %+v", r)
+	}
+	got, _ := m.store.Load(slug)
+	if len(got.Crew) != 1 || got.Crew[0].Ended != nil || got.Crew[0].Conversation != "conv-work" {
+		t.Errorf("crew after resume = %+v", got.Crew)
+	}
+	events, _ := m.store.ReadLog(slug, 0)
+	if last := events[len(events)-1]; last.Kind != "crew_resumed" && events[len(events)-2].Kind != "crew_resumed" {
+		t.Errorf("no crew_resumed in log tail: %+v", events[len(events)-2:])
+	}
+	waitScreen(t, r, "$")
+	m = typeText(m, `echo "crew=$WS_CREW"`)
+	waitScreen(t, r, "\ncrew=c1")
+
+	// Choosing "New crew" still makes c2.
+	m = stopRun(t, m, r)
+	m, _ = press(t, m, "g", "enter")
+	m = choose(t, m, 1)
+	if r2, _ := liveRun(m, slug); r2.crewID != "c2" {
+		t.Errorf("new crew id = %s", r2.crewID)
+	}
+}
+
+func TestDeckCrew_ResumeReturnsToItsCapsule(t *testing.T) {
+	m, slug := resumableDeck(t, "one", "two")
+	m = launch(t, m) // c1 in one
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m, _ = press(t, m, "g")
+	m = launch(t, m) // c2 in two
+	runs := m.reg.live(slug)
+	m = stopRun(t, m, runs[1])
+	m = stopRun(t, m, runs[0])
+
+	// The most recent resumable crew is c2; "one" is free, but c2 worked in two.
+	m, _ = press(t, m, "g")
+	m, cmd := press(t, m, "R")
+	m = completeLaunch(t, m, cmd)
+	r, _ := liveRun(m, slug)
+	if r.crewID != "c2" || r.capsule != "frontend/two" {
+		t.Errorf("resumed %s in %s, want c2 in frontend/two", r.crewID, r.capsule)
+	}
+}

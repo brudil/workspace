@@ -17,6 +17,7 @@ const (
 	EventNote          = "note"
 	EventCrewStarted   = "crew_started"
 	EventCrewEnded     = "crew_ended"
+	EventCrewResumed   = "crew_resumed"
 	EventState         = "state"
 )
 

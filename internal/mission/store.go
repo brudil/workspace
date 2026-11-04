@@ -377,17 +377,57 @@ func (m *Mission) LastResumable(harness string) (Crew, bool) {
 	return Crew{}, false
 }
 
-// SetCrewPID records the process id of running crew.
-func (s Store) SetCrewPID(slug, id string, pid int) error {
+// SetCrewProcess records where running crew run: its process id and the
+// capsule (repo/name) it works in.
+func (s Store) SetCrewProcess(slug, id string, pid int, capsule string) error {
 	_, err := s.Update(slug, func(m *Mission) error {
 		for i := range m.Crew {
 			if m.Crew[i].ID == id {
 				m.Crew[i].PID = pid
+				if capsule != "" {
+					m.Crew[i].Capsule = capsule
+				}
 			}
 		}
 		return nil
 	})
 	return err
+}
+
+// ResumeCrew reopens ended crew: the same crew, continuing its conversation,
+// rather than new crew. It clears the end and logs the resume.
+func (s Store) ResumeCrew(slug, id string) (Crew, error) {
+	var crew Crew
+	found := false
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			if m.Crew[i].ID == id {
+				m.Crew[i].Ended = nil
+				m.Crew[i].Exit = ""
+				m.Crew[i].PID = 0
+				crew, found = m.Crew[i], true
+			}
+		}
+		return nil
+	}); err != nil {
+		return Crew{}, err
+	}
+	if !found {
+		return Crew{}, fmt.Errorf("mission %s has no crew %s", slug, id)
+	}
+	return crew, s.AppendLog(slug, Event{Kind: EventCrewResumed, Crew: id, Text: crew.Harness + " " + crew.Conversation})
+}
+
+// LastResumableCrew is the most recent crew with a conversation id that
+// isn't running (per live), if any.
+func (m *Mission) LastResumableCrew(live func(id string) bool) (Crew, bool) {
+	for i := len(m.Crew) - 1; i >= 0; i-- {
+		c := m.Crew[i]
+		if c.Conversation != "" && !live(c.ID) {
+			return c, true
+		}
+	}
+	return Crew{}, false
 }
 
 // ReconcileCrew closes crew records left open by a deck that died without

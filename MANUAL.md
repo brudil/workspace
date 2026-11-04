@@ -338,7 +338,7 @@ ws mission note "Went with a mutex, not a channel"
   | `ctrl+g ctrl+g` | Send a literal `ctrl+g` to the agent |
 
   The mouse wheel scrolls history too, or goes to the agent when it draws full-screen.
-- **Harnesses.** `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`. `R` resumes the mission's last crew conversation, when the agent reported one.
+- **Harnesses.** `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`. If the mission's last crew can be resumed (the agent reported a conversation id), `⏎` asks whether to resume it or launch new crew, and `R` resumes it directly. Resuming continues the same crew: same `c1`, same conversation, back in the capsule it worked in.
 - **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, so they stop when it quits.
 - If a deck server dies, crew records it left open are marked `lost` the next time a deck opens.
 

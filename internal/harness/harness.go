@@ -52,6 +52,10 @@ var registry = map[string]Harness{}
 
 func register(h Harness) { registry[h.Name()] = h }
 
+// Register adds a harness (or replaces one of the same name). Built-in
+// harnesses register themselves; tests use this for fakes.
+func Register(h Harness) { register(h) }
+
 // Get returns a harness by name.
 func Get(name string) (Harness, error) {
 	if h, ok := registry[name]; ok {

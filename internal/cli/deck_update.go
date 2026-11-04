@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 )
@@ -22,6 +21,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case deckLaunchWithMsg:
 		return m.startCrew(msg.harness)
+
+	case deckLaunchChoiceMsg:
+		return m.handleLaunchChoice(msg)
 
 	case deckZoomDoneMsg:
 		return m.handleZoomDone(msg)
@@ -155,7 +157,7 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else if ok && r.kind == deckRowCrew {
 			m.focusTerm = true
 		} else if ok && (r.kind == deckRowMission || r.kind == deckRowCapsule) && msg.String() == "enter" {
-			return m.startCrew(harness.Default())
+			return m.launchOrOffer()
 		}
 	case "tab", "l", "right":
 		if r, ok := m.selectedRun(); ok {

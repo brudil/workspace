@@ -171,7 +171,7 @@ func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.dir}
-	launch := m.launchCmd(slug, harnessName, place.capsule, func() (harness.Launch, error) { return h.Start(b) })
+	launch := m.launchCmd(slug, harnessName, place.capsule, "", func() (harness.Launch, error) { return h.Start(b) })
 
 	if place.sharedWith != nil {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.sharedWith.crewID, place.capsule),
@@ -189,8 +189,18 @@ type deckLaunchNowMsg struct {
 	launch        tea.Cmd
 }
 
-// resumeCrew relaunches the mission's most recent crew that recorded a
-// conversation id.
+// resumableCrew is the mission's most recent crew that recorded a
+// conversation and isn't running now.
+func (m deckModel) resumableCrew(dm *deckMission) (mission.Crew, bool) {
+	live := map[string]bool{}
+	for _, r := range m.reg.live(dm.M.Slug) {
+		live[r.crewID] = true
+	}
+	return dm.M.LastResumableCrew(func(id string) bool { return live[id] })
+}
+
+// resumeCrew continues the mission's most recent resumable crew: same crew
+// id, same conversation, back in its capsule if that still exists.
 func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	dm, ok := m.selectedMission()
 	if !ok {
@@ -200,25 +210,17 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	if m.launching[slug] {
 		return m, nil
 	}
-	var last mission.Crew
-	found := false
-	for i := len(dm.M.Crew) - 1; i >= 0; i-- {
-		if dm.M.Crew[i].Conversation != "" {
-			last, found = dm.M.Crew[i], true
-			break
-		}
-	}
-	if !found {
-		m.flash = "no crew on " + slug + " recorded a conversation to resume"
+	last, ok := m.resumableCrew(dm)
+	if !ok {
+		m.flash = "no crew on " + slug + " to resume (none recorded a conversation, or they're running)"
 		return m, nil
 	}
-	for _, r := range m.reg.live(slug) {
-		if c, ok := crewRecord(dm.M, r.crewID); ok && c.Conversation == last.Conversation {
-			m.focusRun(r)
-			return m, nil
+	place, ok := m.crewPlaceFor(dm)
+	for _, c := range dm.Capsules {
+		if c.Exists && c.Repo+"/"+c.Name == last.Capsule {
+			place, ok = crewPlace{dir: c.Path, capsule: last.Capsule}, true
 		}
 	}
-	place, ok := m.crewPlaceFor(dm)
 	if !ok {
 		m.flash = "no capsule left to resume in"
 		return m, nil
@@ -233,9 +235,62 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	}
 	m.launching[slug] = true
 	m.flash = "resuming " + last.ID + " on " + slug + "…"
-	return m, m.launchCmd(slug, last.Harness, place.capsule, func() (harness.Launch, error) {
+	return m, m.launchCmd(slug, last.Harness, place.capsule, last.ID, func() (harness.Launch, error) {
 		return h.Resume(place.dir, last.Conversation)
 	})
+}
+
+// launchOrOffer is ⏎ on a mission: launch new crew straight away, unless
+// there is crew to resume, in which case ask (resume first).
+func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
+	dm, ok := m.selectedMission()
+	if !ok {
+		return m, nil
+	}
+	last, ok := m.resumableCrew(dm)
+	if !ok {
+		return m.startCrew(harness.Default())
+	}
+	when := ""
+	if c, found := crewRecord(dm.M, last.ID); found && c.Ended != nil {
+		when = ", ended " + agoText(*c.Ended)
+	}
+	m.openPick("Launch crew on "+dm.M.Slug, []string{
+		fmt.Sprintf("Resume %s (%s%s)", last.ID, last.Harness, when),
+		"New crew (" + harness.Default() + ")",
+		"New crew with another harness…",
+	}, func(i int) tea.Cmd {
+		return func() tea.Msg { return deckLaunchChoiceMsg{choice: i} }
+	})
+	return m, nil
+}
+
+// deckLaunchChoiceMsg is the answer to launchOrOffer's question.
+type deckLaunchChoiceMsg struct{ choice int }
+
+func (m deckModel) handleLaunchChoice(msg deckLaunchChoiceMsg) (tea.Model, tea.Cmd) {
+	switch msg.choice {
+	case 0:
+		return m.resumeCrew()
+	case 1:
+		return m.startCrew(harness.Default())
+	default:
+		return m.chooseHarness()
+	}
+}
+
+func agoText(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }
 
 func crewRecord(m *mission.Mission, id string) (mission.Crew, bool) {
@@ -324,7 +379,10 @@ func prependPath(dir, path string) string {
 
 // launchCmd does all of a launch off the UI thread: the harness may ask the
 // agent for a chat id, and a server host may have to start the server.
-func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (harness.Launch, error)) tea.Cmd {
+//
+// resumeID, when set, continues that crew (same id) instead of recording new
+// crew.
+func (m deckModel) launchCmd(slug, harnessName, capsule, resumeID string, prepare func() (harness.Launch, error)) tea.Cmd {
 	store, host, root := m.store, m.host, m.ws.Root
 	w, h := m.mainWidth(), m.bodyHeight()
 	return func() tea.Msg {
@@ -335,7 +393,12 @@ func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (
 			return msg
 		}
 		msg.dir = l.Dir
-		crew, err := store.StartCrew(slug, harnessName, l.Conversation)
+		var crew mission.Crew
+		if resumeID != "" {
+			crew, err = store.ResumeCrew(slug, resumeID)
+		} else {
+			crew, err = store.StartCrew(slug, harnessName, l.Conversation)
+		}
 		if err != nil {
 			msg.err = err
 			return msg
@@ -351,7 +414,7 @@ func (m deckModel) launchCmd(slug, harnessName, capsule string, prepare func() (
 			msg.err = err
 			return msg
 		}
-		store.SetCrewPID(slug, crew.ID, term.Pid())
+		store.SetCrewProcess(slug, crew.ID, term.Pid(), capsule)
 		msg.term = term
 		return msg
 	}
@@ -719,8 +782,8 @@ func (m deckModel) crewSummary(dm deckMission) string {
 		}
 	}
 	hint := "⏎ launch " + harness.Default() + " · L choose harness"
-	if canResume(dm.M) {
-		hint += " · R resume"
+	if c, ok := m.resumableCrew(&dm); ok {
+		hint = "⏎ resume " + c.ID + " or launch new · R resume " + c.ID + " · L choose harness"
 	}
 	switch {
 	case last != nil:
@@ -734,15 +797,6 @@ func (m deckModel) crewSummary(dm deckMission) string {
 		lines = append(lines, ui.Dim.Render(hint))
 	}
 	return strings.Join(lines, "\n  ")
-}
-
-func canResume(m *mission.Mission) bool {
-	for _, c := range m.Crew {
-		if c.Conversation != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // chooseHarness opens a picker of available harnesses.
