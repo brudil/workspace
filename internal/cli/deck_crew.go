@@ -841,11 +841,16 @@ func (m deckModel) crewSummary(dm deckMission) string {
 	if c, ok := m.resumableCrew(&dm); ok {
 		hint = "⏎ resume " + c.ID + " or launch new · R resume " + c.ID + " · L choose harness"
 	}
+	briefedLast := last != nil && last.role == mission.RoleBriefing && dm.M.State != mission.Briefing
 	switch {
-	case last != nil:
+	case last != nil && !briefedLast:
 		lines = append(lines, ui.Dim.Render(fmt.Sprintf("%s (%s) ended: %s · %s", last.crewID, last.harness, last.exit, hint)))
 	case len(dm.M.Crew) > 0 && len(lines) == 0:
 		prev := dm.M.Crew[len(dm.M.Crew)-1]
+		if prev.Done(dm.M) {
+			lines = append(lines, ui.Dim.Render(fmt.Sprintf("briefed by %s · no crew working yet · %s", prev.ID, hint)))
+			break
+		}
 		lines = append(lines, ui.Dim.Render(fmt.Sprintf("%d crew so far, last %s (%s) · %s", len(dm.M.Crew), prev.ID, prev.Harness, hint)))
 	case len(lines) == 0:
 		lines = append(lines, ui.Dim.Render("no crew yet · "+hint))

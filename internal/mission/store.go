@@ -435,14 +435,26 @@ func (s Store) ResumeCrew(slug, id string) (Crew, error) {
 
 // LastResumableCrew is the most recent crew with a conversation id that
 // isn't running (per live), if any.
+//
+// Briefing crew only count while the mission is still being briefed: once
+// it is ready, they have done their job and there is nothing to resume.
 func (m *Mission) LastResumableCrew(live func(id string) bool) (Crew, bool) {
 	for i := len(m.Crew) - 1; i >= 0; i-- {
 		c := m.Crew[i]
+		if c.Done(m) {
+			continue
+		}
 		if c.Conversation != "" && !live(c.ID) {
 			return c, true
 		}
 	}
 	return Crew{}, false
+}
+
+// Done reports whether crew has served its purpose on mission m: a briefing
+// crew once the mission is no longer being briefed.
+func (c Crew) Done(m *Mission) bool {
+	return c.Role == RoleBriefing && m.State != Briefing
 }
 
 // ReconcileCrew closes crew records left open by a deck that died without

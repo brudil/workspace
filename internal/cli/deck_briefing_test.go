@@ -121,12 +121,14 @@ func TestDeckBriefing_ReadyLandsOnTheReadyMission(t *testing.T) {
 	if got.Crew[0].Exit != "briefed" {
 		t.Errorf("briefing crew exit = %q", got.Crew[0].Exit)
 	}
-	// The next ⏎ offers to resume the briefing conversation or launch work
-	// crew; "New crew" is work crew in the capsule.
-	m, _ = press(t, m, "enter")
-	m = choose(t, m, 1)
+	// The briefing crew is done, not resumable: the mission says who briefed
+	// it, and the next ⏎ launches work crew in the capsule straight away.
+	if view := plainView(m); !strings.Contains(view, "briefed by c1") || strings.Contains(view, "resume c1") {
+		t.Errorf("mission view after briefing:\n%s", view)
+	}
+	m = launch(t, m)
 	work, _ := liveRun(m, "fe-45")
-	if work.role != "" || work.capsule != "frontend/work" {
+	if work.role != "" || work.capsule != "frontend/work" || work.crewID != "c2" {
 		t.Errorf("work crew = %+v", work)
 	}
 }

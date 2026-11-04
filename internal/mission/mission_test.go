@@ -479,3 +479,31 @@ func TestEndCrew_FirstEndWins(t *testing.T) {
 		t.Errorf("crew_ended logged %d times", ended)
 	}
 }
+
+func TestBriefingCrewIsDoneOnceReady(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.CreateBriefing("api: cache it")
+	s.StartCrewAs(m.Slug, "cursor", "conv-b", RoleBriefing)
+	s.EndCrew(m.Slug, "c1", "hangup")
+	never := func(string) bool { return false }
+
+	got, _ := s.Load(m.Slug)
+	if c, ok := got.LastResumableCrew(never); !ok || c.ID != "c1" {
+		t.Fatalf("a stopped briefing should be resumable while briefing: %+v %v", c, ok)
+	}
+	s.MarkReady(m.Slug)
+	got, _ = s.Load(m.Slug)
+	if c, ok := got.LastResumableCrew(never); ok {
+		t.Errorf("briefing crew offered for resume after ready: %+v", c)
+	}
+	if !got.Crew[0].Done(got) {
+		t.Error("briefing crew not done after ready")
+	}
+	// Work crew after briefing are resumable as usual.
+	s.StartCrew(m.Slug, "cursor", "conv-w")
+	s.EndCrew(m.Slug, "c2", "hangup")
+	got, _ = s.Load(m.Slug)
+	if c, ok := got.LastResumableCrew(never); !ok || c.ID != "c2" {
+		t.Errorf("work crew = %+v %v", c, ok)
+	}
+}
