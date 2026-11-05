@@ -63,6 +63,9 @@ type sub struct {
 	offset int
 	mirror bool
 	quit   chan struct{}
+	// copies is how many of the crew's clipboard copies this deck has been
+	// sent (or missed by attaching later); only push touches it.
+	copies uint64
 }
 
 type conn struct {
@@ -395,7 +398,9 @@ func (cr *crewProc) attach(c *conn) {
 	if _, ok := cr.subs[c]; ok {
 		return
 	}
-	sb := &sub{c: c, wake: make(chan struct{}, 1), quit: make(chan struct{})}
+	// A deck gets what crew copy while it's attached, not earlier copies.
+	copies, _ := cr.pane.Copied()
+	sb := &sub{c: c, wake: make(chan struct{}, 1), quit: make(chan struct{}), copies: copies}
 	cr.subs[c] = sb
 	sb.wake <- struct{}{} // first frame straight away
 	go cr.push(sb)
@@ -436,6 +441,9 @@ func (cr *crewProc) push(sb *sub) {
 			Title: cr.pane.Title(),
 			Width: w, Height: h,
 			Changed: cr.pane.LastChange().UnixMilli(),
+		}
+		if n, text := cr.pane.Copied(); n > sb.copies {
+			sb.copies, f.Copied = n, text
 		}
 		if err := sb.c.send(message{Ev: "frame", Crew: cr.spec.Key(), Frame: f}); err != nil {
 			return

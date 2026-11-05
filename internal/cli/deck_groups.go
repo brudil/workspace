@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/orchestrator"
 	"github.com/brudil/workspace/internal/ui"
@@ -29,6 +30,12 @@ type deckStatus struct {
 	label string   // short and styled, for the sidebar: "? asks", "● working"
 	why   []string // needing you: each reason, for the overview
 	rank  int      // order within the group, most pressing first
+	// waitsFor is what the most pressing reason waits on, when it's an
+	// answer or a permission (for the terminal's program status).
+	waitsFor tea.ProgramStatusKind
+	// moving: crew are working, launching or the orchestrator is deciding,
+	// rather than the mission waiting on review or on finished crew.
+	moving bool
 }
 
 // missionStatus works out a mission's group from its records and its live
@@ -37,9 +44,9 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	slug := dm.M.Slug
 	runs := m.reg.live(slug)
 	var st deckStatus
-	need := func(rank int, label, why string) {
+	need := func(rank int, label, why string, waitsFor tea.ProgramStatusKind) {
 		if len(st.why) == 0 {
-			st.rank, st.label = rank, label
+			st.rank, st.label, st.waitsFor = rank, label, waitsFor
 		}
 		st.why = append(st.why, why)
 	}
@@ -49,13 +56,13 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	for _, r := range runs {
 		switch status, note := m.crewStatus(r); {
 		case status == mission.CrewAsking:
-			need(0, ui.Orange.Render("? asks"), r.crewID+" asks: "+note)
+			need(0, ui.Orange.Render("? asks"), r.crewID+" asks: "+note, tea.ProgramStatusKindQuestion)
 		case status == "" && r.reported == mission.ActivityPermission:
 			why := r.crewID + " needs your permission"
 			if r.notice != "" {
 				why += ": " + r.notice
 			}
-			need(0, ui.Orange.Render("? permission"), why)
+			need(0, ui.Orange.Render("? permission"), why, tea.ProgramStatusKindPermission)
 		case status == mission.CrewDone:
 			done++
 		default:
@@ -73,10 +80,10 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	// Crew answering the question for you have it in hand: they say if
 	// they need you.
 	if f := dm.M.Flag; f != nil && !answering {
-		need(1, ui.Orange.Render("! asks you"), "the orchestrator asks: "+f.Text)
+		need(1, ui.Orange.Render("! asks you"), "the orchestrator asks: "+f.Text, tea.ProgramStatusKindQuestion)
 	}
 	if d := dm.M.Dispatch; d != nil {
-		need(2, ui.Orange.Render("→ next crew"), "next crew is queued: "+d.Text)
+		need(2, ui.Orange.Render("→ next crew"), "next crew is queued: "+d.Text, "")
 	}
 	for _, r := range waiting {
 		_, since := r.activity()
@@ -84,10 +91,10 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 		if said := replyLine(r.lastReply, 80); said != "" {
 			why += ": " + said
 		}
-		need(3, ui.Orange.Render("◐ waiting"), why)
+		need(3, ui.Orange.Render("◐ waiting"), why, "")
 	}
 	if c := dm.M.Conclude; c != nil && dm.State != mission.Archived && dm.State != mission.Landed {
-		need(4, ui.Green.Render("✓ wrap up"), "looks finished: "+c.Text)
+		need(4, ui.Green.Render("✓ wrap up"), "looks finished: "+c.Text, "")
 	}
 	if len(st.why) > 0 {
 		st.group = groupNeedsYou
@@ -97,17 +104,22 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	busy := func(rank int, label string) deckStatus {
 		return deckStatus{group: groupInProgress, rank: rank, label: label}
 	}
+	moving := func(rank int, label string) deckStatus {
+		st := busy(rank, label)
+		st.moving = true
+		return st
+	}
 	switch {
 	case working > 0 && dm.State == mission.Briefing:
-		return busy(0, ui.Green.Render("● briefing"))
+		return moving(0, ui.Green.Render("● briefing"))
 	case working > 0:
-		return busy(0, ui.Green.Render("● working"))
+		return moving(0, ui.Green.Render("● working"))
 	case len(runs) > 0 && done == len(runs):
 		return busy(1, ui.Green.Render("✓ done"))
 	case m.launching[slug]:
-		return busy(1, ui.Dim.Render("… starting"))
+		return moving(1, ui.Dim.Render("… starting"))
 	case orchestrating(dm.Events):
-		return busy(2, ui.Blue.Render("◆ deciding"))
+		return moving(2, ui.Blue.Render("◆ deciding"))
 	case dm.State == mission.Landed:
 		return deckStatus{group: groupPast, label: ui.Green.Render("landed")}
 	case dm.State == mission.Archived:
@@ -124,7 +136,7 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	// Crew have worked on it, nobody is now, and nothing is pending: it's
 	// stalled until you decide what's next.
 	st.group = groupNeedsYou
-	need(5, ui.Orange.Render("idle"), "nobody's working on it: ⏎ launches crew, p parks it")
+	need(5, ui.Orange.Render("idle"), "nobody's working on it: ⏎ launches crew, p parks it", "")
 	return st
 }
 

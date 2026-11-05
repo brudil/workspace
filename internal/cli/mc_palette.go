@@ -404,10 +404,7 @@ func paletteCmdCopyPath(m mcModel) (mcModel, tea.Cmd) {
 	if path == "" {
 		return m, nil
 	}
-	c := exec.Command("pbcopy")
-	c.Stdin = strings.NewReader(path)
-	_ = c.Run()
-	return m, nil
+	return m, clipboardCmd(path)
 }
 
 func paletteCmdOpenRepo(m mcModel) (mcModel, tea.Cmd) {

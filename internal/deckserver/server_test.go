@@ -348,3 +348,50 @@ func TestClient_FollowsCrewOnce(t *testing.T) {
 		t.Errorf("another client attaching: %v", err)
 	}
 }
+
+// copyText has the crew's shell copy text to the clipboard (OSC 52), then
+// print marker.
+func copyText(term *Term, base64Text, marker string) {
+	typeKeys(term, `printf '\033]52;c;`+base64Text+`\a'; echo `+marker[:2]+"''"+marker[2:])
+}
+
+func TestServer_ClipboardCopiesReachAttachedDecks(t *testing.T) {
+	_, root := startServer(t, time.Minute)
+	spec := crewOn(t, root, `exec sh -i`)
+	first := dialT(t, root)
+	term, err := first.Launch(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitText(t, term, "$")
+	copyText(term, "aGVsbG8=", "copied-one")
+	waitText(t, term, "\ncopied-one")
+	if text, ok := term.TakeCopied(); !ok || text != "hello" {
+		t.Errorf("copy = %q, %v; want hello", text, ok)
+	}
+	if _, ok := term.TakeCopied(); ok {
+		t.Error("the same copy was taken twice")
+	}
+
+	// A deck attaching later doesn't get copies made before it came.
+	second := dialT(t, root)
+	list, _ := second.List()
+	again, err := second.Attach(list[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitText(t, again, "copied-one")
+	if text, ok := again.TakeCopied(); ok {
+		t.Errorf("a later deck got an earlier copy: %q", text)
+	}
+
+	// Both get the next one.
+	copyText(term, "d29ybGQ=", "copied-two")
+	waitText(t, term, "\ncopied-two")
+	waitText(t, again, "\ncopied-two")
+	for name, tm := range map[string]*Term{"first": term, "second": again} {
+		if text, ok := tm.TakeCopied(); !ok || text != "world" {
+			t.Errorf("%s deck: copy = %q, %v; want world", name, text, ok)
+		}
+	}
+}

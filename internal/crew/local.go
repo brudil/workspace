@@ -33,6 +33,15 @@ type localTerm struct {
 	*termpane.Pane
 	stopped atomic.Bool
 	done    chan struct{}
+	copies  atomic.Uint64 // copies already taken
+}
+
+func (t *localTerm) TakeCopied() (string, bool) {
+	n, text := t.Pane.Copied()
+	if t.copies.Swap(n) == n {
+		return "", false
+	}
+	return text, true
 }
 
 func (t *localTerm) Done() <-chan struct{} { return t.done }

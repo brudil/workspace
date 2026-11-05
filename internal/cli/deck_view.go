@@ -35,6 +35,9 @@ func (m deckModel) View() tea.View {
 	if n := m.groupCounts()[groupNeedsYou]; m.loaded && n > 0 {
 		v.WindowTitle = fmt.Sprintf("Deck · %d need you", n)
 	}
+	v.ProgramStatus = m.programStatus()
+	// Focus reports let notifications wait until you're elsewhere.
+	v.ReportFocus = true
 	// With a crew terminal focused, put the real cursor where the agent's is.
 	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal && r.scroll == 0 {
 		if x, y, visible := r.term.Cursor(); visible {
@@ -42,6 +45,54 @@ func (m deckModel) View() tea.View {
 		}
 	}
 	return v
+}
+
+// programStatus is what the deck reports to terminals that show programs'
+// status on their tabs (OSC 7501): blocked while a mission needs you, with
+// the most pressing reason, working while crew work, launch or the
+// orchestrator decides, and nothing when all is quiet. Terminals drop
+// working and blocked reports when the program exits, so a deck that quits
+// or detaches leaves nothing behind.
+func (m deckModel) programStatus() *tea.ProgramStatus {
+	if !m.loaded {
+		return nil
+	}
+	needs, moving := 0, false
+	var top deckRow
+	// Rows are in the sidebar's order: the first needing you is the most
+	// pressing.
+	for _, r := range m.rows {
+		if r.kind != deckRowMission {
+			continue
+		}
+		switch {
+		case r.status.group == groupNeedsYou:
+			if needs == 0 {
+				top = r
+			}
+			needs++
+		case r.status.moving:
+			moving = true
+		}
+	}
+	ps := &tea.ProgramStatus{App: "ws", Title: m.ws.Title() + " deck"}
+	switch {
+	case needs > 0:
+		dm := m.data.Missions[top.mission]
+		ps.State, ps.Kind = tea.ProgramStateBlocked, top.status.waitsFor
+		ps.Message = firstNonEmpty(dm.M.Title, dm.M.Slug)
+		if len(top.status.why) > 0 {
+			ps.Message += ": " + top.status.why[0]
+		}
+		if needs > 1 {
+			ps.Message = fmt.Sprintf("%d need you · %s", needs, ps.Message)
+		}
+	case moving:
+		ps.State, ps.Message = tea.ProgramStateWorking, m.counts()
+	default:
+		return nil
+	}
+	return ps
 }
 
 func (m deckModel) sidebarShown() bool {

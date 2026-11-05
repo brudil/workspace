@@ -158,3 +158,50 @@ func TestDeckOverview_WhatDoYouWantToDo(t *testing.T) {
 		t.Errorf("no briefing crew: %+v", r)
 	}
 }
+
+func TestDeckProgramStatus(t *testing.T) {
+	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
+	store := mission.Store{Root: ws.Root}
+	seedMission(t, ws, "Ready one", "")
+	if ps := loadedDeck(t, ws, prIndex{}).programStatus(); ps != nil {
+		t.Errorf("all quiet, yet reported %+v", *ps)
+	}
+
+	deciding := seedMission(t, ws, "Deciding one", "")
+	store.StartCrew(deciding, "cursor", "conv")
+	store.EndCrew(deciding, "c1", "exit 0")
+	store.AppendLog(deciding, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at c1 (done) with x"})
+	ps := loadedDeck(t, ws, prIndex{}).programStatus()
+	if ps == nil || ps.State != tea.ProgramStateWorking || ps.Message != "1 in progress" {
+		t.Errorf("orchestrator deciding: %+v", ps)
+	}
+
+	flagged := seedMission(t, ws, "Flagged one", "")
+	store.StartCrew(flagged, "cursor", "conv")
+	store.EndCrew(flagged, "c1", "exit 0")
+	store.SetFlag(flagged, "ship it?", "orchestrator")
+	m := loadedDeck(t, ws, prIndex{})
+	ps = m.programStatus()
+	if ps == nil || ps.State != tea.ProgramStateBlocked || ps.Kind != tea.ProgramStatusKindQuestion ||
+		ps.Message != "Flagged one: the orchestrator asks: ship it?" || ps.App != "ws" {
+		t.Errorf("flagged: %+v", ps)
+	}
+	if v := m.View(); v.ProgramStatus == nil || !v.ReportFocus {
+		t.Errorf("view: status %+v, focus reports %v", v.ProgramStatus, v.ReportFocus)
+	}
+}
+
+func TestDeckNotify_OnlyWhileYoureAway(t *testing.T) {
+	m := deckModel{}
+	if m.notify("x") == nil {
+		t.Error("focus unknown (the terminal may not report it): no notification")
+	}
+	next, _ := m.Update(tea.FocusMsg{})
+	if m = next.(deckModel); m.notify("x") != nil {
+		t.Error("notified while you're looking at the deck")
+	}
+	next, _ = m.Update(tea.BlurMsg{})
+	if m = next.(deckModel); m.notify("x") == nil {
+		t.Error("no notification while you're elsewhere")
+	}
+}

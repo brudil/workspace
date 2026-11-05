@@ -81,6 +81,9 @@ type Frame struct {
 	Height        int    `json:"h"`
 	// Changed is when the screen's text last changed, in Unix milliseconds.
 	Changed int64 `json:"changed"`
+	// Copied is what the crew copied to the clipboard since this deck's
+	// last frame, if anything.
+	Copied string `json:"copied,omitempty"`
 }
 
 // maxSocketPath is under the smallest sun_path limit we run on (104 on macOS).

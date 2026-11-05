@@ -25,6 +25,10 @@ type Term interface {
 	// LastChange is when the screen's text last changed.
 	LastChange() time.Time
 
+	// TakeCopied returns what the crew copied to the clipboard since the
+	// last call, if it copied anything.
+	TakeCopied() (string, bool)
+
 	SendKey(uv.KeyPressEvent)
 	SendMouse(uv.MouseEvent)
 	Paste(string)

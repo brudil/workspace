@@ -245,3 +245,43 @@ func TestPane_TranscriptHasHistoryAndScreen(t *testing.T) {
 		t.Errorf("transcript = %q", tr)
 	}
 }
+
+func TestPane_KeepsClipboardCopies(t *testing.T) {
+	// "hello" copied, then a request to read the clipboard, which is ignored.
+	p := start(t, 40, 3, "sh", "-c", `printf '\033]52;c;aGVsbG8=\a\033]52;c;?\aok'`)
+	waitFor(t, p, "output", func(s string) bool { return strings.Contains(s, "ok") })
+	if n, text := p.Copied(); n != 1 || text != "hello" {
+		t.Errorf("copied = %d, %q; want 1, hello", n, text)
+	}
+}
+
+func TestPane_MirroredCopiesAreLeftToTheRealTerminal(t *testing.T) {
+	p := start(t, 40, 3, "sh", "-c", `read x; printf '\033]52;c;aGVsbG8=\aok'`)
+	var out lockedWriter
+	p.SetMirror(&out)
+	p.WriteRaw([]byte("\n"))
+	waitFor(t, p, "output", func(s string) bool { return strings.Contains(s, "ok") })
+	if n, _ := p.Copied(); n != 0 {
+		t.Errorf("a mirrored copy was kept too (%d)", n)
+	}
+	if !strings.Contains(out.String(), "\x1b]52;c;aGVsbG8=") {
+		t.Errorf("the mirror didn't get the copy: %q", out.String())
+	}
+}
+
+type lockedWriter struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *lockedWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}

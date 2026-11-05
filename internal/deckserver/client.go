@@ -334,6 +334,9 @@ type Term struct {
 	ended    bool
 	mirror   io.Writer
 	doneOnce sync.Once
+	// copied is what the crew copied, from a frame, until the deck takes it.
+	copied    string
+	hasCopied bool
 }
 
 func (t *Term) setFrame(f *Frame) {
@@ -342,8 +345,19 @@ func (t *Term) setFrame(f *Frame) {
 	}
 	t.mu.Lock()
 	t.frame = *f
+	if f.Copied != "" {
+		t.copied, t.hasCopied = f.Copied, true
+	}
 	t.mu.Unlock()
 	t.notify()
+}
+
+func (t *Term) TakeCopied() (string, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	text, ok := t.copied, t.hasCopied
+	t.copied, t.hasCopied = "", false
+	return text, ok
 }
 
 func (t *Term) notify() {

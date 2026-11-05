@@ -11,6 +11,8 @@
 package termpane
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"hash/fnv"
 	"io"
@@ -58,6 +60,10 @@ type Pane struct {
 	title   string
 	exitErr error
 	closing bool
+	// copied is the last text the program put on the clipboard (OSC 52),
+	// and copies counts its copies so far.
+	copied string
+	copies uint64
 }
 
 // Start runs cmd in a new pseudo-terminal of the given size. cmd's Stdin,
@@ -88,6 +94,7 @@ func Start(cmd *exec.Cmd, width, height int) (*Pane, error) {
 			p.mu.Unlock()
 		},
 	})
+	p.emu.RegisterOscHandler(52, p.handleClipboard)
 
 	go p.pumpOutput()
 	go p.pumpInput()
@@ -377,6 +384,49 @@ func (p *Pane) Title() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.title
+}
+
+// maxCopy is the most a program may copy at once; terminals have limits
+// of their own, and a frame carries it to every attached deck.
+const maxCopy = 1 << 20
+
+// handleClipboard keeps what the program copies to the clipboard with
+// OSC 52 ("52;<selection>;<base64>"), for the host to copy for real.
+// Requests to read the clipboard ("?") are ignored: crew don't get to see
+// what you copied. While the output is mirrored the real terminal got the
+// sequence itself. Called with emuMu held.
+func (p *Pane) handleClipboard(data []byte) bool {
+	_, rest, _ := bytes.Cut(data, []byte{';'})     // the command, 52
+	_, payload, ok := bytes.Cut(rest, []byte{';'}) // after the selection
+	if !ok || string(payload) == "?" || base64.StdEncoding.DecodedLen(len(payload)) > maxCopy {
+		return true
+	}
+	text, err := base64.StdEncoding.DecodeString(string(payload))
+	if err != nil {
+		text, err = base64.RawStdEncoding.DecodeString(string(payload))
+	}
+	if err != nil || len(text) == 0 {
+		return true
+	}
+	p.mirrorMu.Lock()
+	mirrored := p.mirror != nil
+	p.mirrorMu.Unlock()
+	if mirrored {
+		return true
+	}
+	p.mu.Lock()
+	p.copied, p.copies = string(text), p.copies+1
+	p.mu.Unlock()
+	return true
+}
+
+// Copied is how many times the program has copied to the clipboard and
+// the last text it copied, so a host can tell a new copy from one it has
+// seen.
+func (p *Pane) Copied() (n uint64, text string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.copies, p.copied
 }
 
 // Pid is the program's process id.

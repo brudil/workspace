@@ -1131,3 +1131,32 @@ func TestDeckDispatch_QueuedIntoBusyCapsuleAsks(t *testing.T) {
 		t.Errorf("launched into a busy capsule without asking; flash %q", m.flash)
 	}
 }
+
+func TestDeckCrewCopy_ReachesYourClipboard(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	r, _ := liveRun(m, slug)
+	waitScreen(t, r, "$")
+	r.term.(interface{ SendText(string) }).SendText(`printf '\033]52;c;aGVsbG8=\a'; echo co''pied` + "\r")
+	waitScreen(t, r, "\ncopied")
+	// Don't run the commands: they'd copy to this machine's clipboard.
+	next, cmd := m.handlePaneMsg(deckPaneMsg{run: r})
+	m = next.(deckModel)
+	if !strings.Contains(m.flash, `c1 copied "hello" to the clipboard`) || cmd == nil {
+		t.Errorf("flash %q, cmd %v", m.flash, cmd != nil)
+	}
+	m.flash = ""
+	next, _ = m.handlePaneMsg(deckPaneMsg{run: r})
+	if f := next.(deckModel).flash; f != "" {
+		t.Errorf("copied twice: %q", f)
+	}
+}
+
+func TestCopiedSummary(t *testing.T) {
+	if got := copiedSummary("one\ntwo\n"); got != "2 lines to the clipboard" {
+		t.Errorf("got %q", got)
+	}
+	if got := copiedSummary("  hello\n"); got != `"hello" to the clipboard` {
+		t.Errorf("got %q", got)
+	}
+}

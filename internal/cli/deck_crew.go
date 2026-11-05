@@ -538,7 +538,7 @@ func (m deckModel) handleAdopt(msg deckAdoptMsg) (tea.Model, tea.Cmd) {
 	}
 	text := strings.Join(names, ", ") + " joined (dispatched)"
 	m.flash = text
-	return m, tea.Batch(append(cmds, loadDeckCmd(m.ws, m.prs), notifyCmd(text))...)
+	return m, tea.Batch(append(cmds, loadDeckCmd(m.ws, m.prs), m.notify(text))...)
 }
 
 // waitPane blocks until the crew's terminal changes or exits.
@@ -557,8 +557,15 @@ func (m deckModel) handlePaneMsg(msg deckPaneMsg) (tea.Model, tea.Cmd) {
 	if r == nil || r.ended {
 		return m, nil
 	}
+	// Crew copying to the clipboard (OSC 52) reach the emulated screen,
+	// not your terminal: copy it for them.
+	var copied tea.Cmd
+	if text, ok := r.term.TakeCopied(); ok && !m.stopping {
+		copied = clipboardCmd(text)
+		m.flash = fmt.Sprintf("%s copied %s", r.crewID, copiedSummary(text))
+	}
 	if !r.term.Exited() {
-		return m, waitPane(r)
+		return m, tea.Batch(copied, waitPane(r))
 	}
 	r.ended = true
 	r.exit = r.term.ExitSummary()
@@ -577,7 +584,17 @@ func (m deckModel) handlePaneMsg(msg deckPaneMsg) (tea.Model, tea.Cmd) {
 	}
 	m.rebuildRows()
 	m.flash = fmt.Sprintf("crew %s on %s ended (%s)", r.crewID, r.slug, r.exit)
-	return m, loadDeckCmd(m.ws, m.prs)
+	return m, tea.Batch(copied, loadDeckCmd(m.ws, m.prs))
+}
+
+// copiedSummary describes copied text for the flash line: its first line,
+// short, or how many lines it has.
+func copiedSummary(text string) string {
+	lines := strings.Count(strings.TrimRight(text, "\n"), "\n") + 1
+	if lines > 1 {
+		return fmt.Sprintf("%d lines to the clipboard", lines)
+	}
+	return fmt.Sprintf("%q to the clipboard", ansi.Truncate(strings.TrimSpace(text), 40, "…"))
 }
 
 // resizePanes keeps every crew terminal the size of the main pane.
@@ -1067,7 +1084,7 @@ func (m deckModel) handleActivityTick() (tea.Model, tea.Cmd) {
 				msg += ": " + said
 			}
 			m.flash = ui.Orange.Render("◐") + " " + msg
-			cmds = append(cmds, notifyCmd("ws deck: "+msg))
+			cmds = append(cmds, m.notify("ws deck: "+msg))
 		}
 		r.wasWorking = working
 	}
@@ -1157,7 +1174,7 @@ func (m *deckModel) announceSignals() tea.Cmd {
 		default:
 			continue
 		}
-		cmds = append(cmds, notifyCmd("ws deck: "+msg))
+		cmds = append(cmds, m.notify("ws deck: "+msg))
 	}
 	return tea.Batch(cmds...)
 }
@@ -1186,6 +1203,16 @@ func (m deckModel) clearStatusCmd(r *deckCrewRun) tea.Cmd {
 		store.ClearCrewStatus(slug, id)
 		return nil
 	}
+}
+
+// notify tells you something happened while you're away from the deck. With
+// its window focused, the flash line is enough: no bell, no desktop
+// notification.
+func (m deckModel) notify(text string) tea.Cmd {
+	if m.windowFocused {
+		return nil
+	}
+	return notifyCmd(text)
 }
 
 // notifyCmd rings the terminal bell and asks for a desktop notification

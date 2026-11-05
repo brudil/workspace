@@ -148,6 +148,10 @@ type deckModel struct {
 	// mouseOff stops the deck capturing the mouse anywhere (M), so the
 	// terminal's own selection, copy and link-clicking work throughout.
 	mouseOff bool
+	// windowFocused is the terminal window having focus, as it last
+	// reported. Until it reports (or in terminals that never do) it's false,
+	// so notifications go out as they always did.
+	windowFocused bool
 
 	mainVP  viewport.Model
 	mainKey string // what the main pane shows; scroll resets when it changes

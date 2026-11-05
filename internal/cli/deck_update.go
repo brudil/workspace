@@ -16,6 +16,14 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizePanes()
 		return m, nil
 
+	case tea.FocusMsg:
+		m.windowFocused = true
+		return m, nil
+
+	case tea.BlurMsg:
+		m.windowFocused = false
+		return m, nil
+
 	case deckLaunchReadyMsg:
 		return m.finishLaunch(msg)
 
