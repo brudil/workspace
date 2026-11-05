@@ -1,7 +1,7 @@
 # Missions: the Workspace Owns the Work, Agents Do It
 
 **Date:** 2026-11-03. What and why rewritten 2026-11-05.
-**Status:** Phases 1–5 built (see [Built so far](#built-so-far)), and the first part of phase 8; phases 6–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
+**Status:** Phases 1–6 built (see [Built so far](#built-so-far)), and the first part of phase 8; phases 7–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
 ## Why
 
@@ -242,6 +242,7 @@ Add a **conditional** section to `FOR_LLMS.md`. It doesn't change any existing r
    - the orchestrator with dispatch, resume-with, flag and conclude
    - the Overview, which groups missions by what they need from you
 5. **Harness roles:** Cursor and Claude Code can each play every role (crew, briefing, orchestrator), chosen in `[crew]`, `[briefing]` and `[orchestrator]`. Claude Code's orchestrator is limited to an allowlist of `ws` and read-only commands; Cursor's runs with `--force`.
+6. **Artifacts** (phase 6 below): references to files (default branch, capsule, private), PRs and links, with kinds and a state worked out each time; `ws mission artifact add/rm`, `--read` on dispatch, the orchestrator's prompt, and `[missions] records`.
 
 ## Next phases
 
@@ -249,27 +250,55 @@ Where the build still falls short of the idea, in the order to close the gaps.
 
 ### 6. Artifacts as connective tissue
 
-Missions are personal: `.ws/` stays on one machine. An artifact is anything the mission produces or relies on, wherever it lives, and the mission keeps a pointer to each one.
+Missions are personal: `.ws/` stays on one machine. An artifact is anything the mission produces or relies on, wherever it lives, and the mission keeps a pointer to each one. Before this phase an artifact was a URL and a label, and the orchestrator never saw them.
 
-Today an artifact is a URL and a label. PRs are found from capsule branches, and `ws mission show -f llm` lists both, but the orchestrator's prompt doesn't. A file has no proper form at all.
-
-An artifact has a **location** and a **kind**:
-
-| Location | Example | Shared? | Notes |
+| Location | Reference | Resolves to | Shared? |
 |---|---|---|---|
-| File on a repo's default branch | `records:adr/0042-cache-tokens.md` | With anyone who has the repo | Read from `.ground` locally, or shared as a GitHub link |
-| File in one of the mission's capsules | `records/cache-adr:adr/0042-cache-tokens.md` | Once pushed | Work in progress. When the capsule's PR merges, it becomes the default-branch file above |
-| File in the mission's own folder | `mission:spike-notes.md` (in `.ws/missions/<slug>/files/`) | No | Personal working material: notes, scratch, handoffs (phase 7) |
-| PR or issue | `api#88` | Yes | PRs are found from capsule branches, or added. Shows state: open, checks, merged |
-| Link | any URL | Depends | Anything outside the workspace: designs, dashboards, external docs |
+| File on a repo's default branch | `records:adr/0042-cache-tokens.md` | `repos/records/.ground/adr/0042-cache-tokens.md`, and its GitHub link | With anyone who has the repo |
+| File in one of the mission's capsules | `records/cache-adr:adr/0042-cache-tokens.md` | The capsule's copy while it's a draft or in review; the default-branch file once the capsule's PR has merged | Once pushed |
+| Private mission file | `mission:spike-notes.md` | `.ws/missions/<slug>/files/spike-notes.md` | No |
+| PR or issue | `api#88` | Its GitHub page | Yes |
+| Link | `https://…` | Itself | Depends |
 
-- **Kind is what it is:** `proposal`, `adr`, `note`, `doc`, `plan`, `handoff`, `pr`, `issue`, `link`, and open to more. It's independent of location: the same ADR can be a private draft in the mission folder, then a file in a records capsule, then a landed file.
-- **One command adds any of them:** `ws mission artifact add <path|repo:path|PR|url> [--kind adr] ["label"]`. A filesystem path is classified by where it sits: in one of the mission's capsules, under a `.ground`, or in the mission folder. Agents don't need to learn the syntax.
-- **Files are followed as they move.** A capsule file shows the PR carrying it. Once that PR merges, the artifact resolves to the default branch, so it survives the capsule being burned. A file that has gone is shown as missing, not treated as an error.
-- **Records repo:** if `ws.toml` names one (`[missions] records = "records"`), shared proposals, ADRs and notes go there. Briefing agents and crew lift a capsule in it when a stage produces one, and the repo's README or AGENTS.md keeps its conventions (folders, templates, numbering).
-- **The orchestrator sees them.** Its prompt lists every artifact with its location and state. A dispatch names what the next crew should read first (`--read`), so a handoff points at real outputs instead of paraphrasing them. Private files read the same way, since everything runs on the one machine.
-- **The deck's mission view** groups artifacts by kind and shows where each lives and whether it has landed.
-- **Open:** may the next stage build on a capsule file still in review, or does it wait for the file to land? Either way, that point is a natural check-in.
+**Stored** in `mission.toml`, as one `[[artifacts]]` table each:
+
+```toml
+[[artifacts]]
+ref = "records/cache-adr:adr/0042-cache-tokens.md"
+kind = "adr"
+label = "Cache token lookups"
+crew = "c2"                     # who recorded it; empty for you
+added = 2026-11-05T15:00:00Z
+```
+
+Older entries with only `url` read as links. A reference is recorded once; adding it again updates its kind and label. Where an artifact is *now* is never stored. Like mission state, it's worked out from git and GitHub each time, so it can't drift.
+
+**Kinds:** `proposal`, `adr`, `note`, `doc`, `plan`, `handoff`, `pr`, `issue`, `link`, or any lowercase word. If none is given: `pr` for PRs, `link` for URLs, `doc` for files.
+
+**Adding:** `ws mission artifact add <what> [--kind adr] ["label"]`. `<what>` can be:
+- a reference (as in the table above)
+- a URL: a workspace repo's PR URL becomes `repo#N`
+- a plain path: ws classifies it by where it sits, in one of the mission's capsules, a `.ground`, or the mission's `files/`
+
+Anything else is refused, with what to do instead: copy it into the mission's files, or attach the capsule. `ws mission artifact rm <ref>` removes one.
+
+**State**, shown with every artifact:
+- **Capsule file:** `draft` (its capsule has no PR), `in review` (open PR), `landed` (the PR has merged, or the capsule is gone and the file is on the default branch; from then on it resolves there), or `missing`.
+- **Default-branch file:** `landed`, or `missing` if it isn't in `.ground` (which may be behind origin).
+- **Mission file:** `private`, or `missing`.
+- **PR:** `open` or `merged` when it's one of the capsules' PRs, else just `pr`.
+- **Link:** `link`.
+
+**Who sees them:**
+- `ws mission show -f llm` lists each artifact with its kind, state, the local path to read and its link, and names the mission's private files folder.
+- The orchestrator's prompt has the same list.
+- `ws mission dispatch --read <ref>` (repeatable) adds *Read these first*, with paths, to the handoff.
+- The deck's mission view groups artifacts by kind.
+- Crew are told to record what they make.
+
+**Records repo:** `[missions] records = "records"` in `ws.toml` names where shared proposals, ADRs and notes go. `ws mission show -f llm` tells crew and briefing agents to lift a capsule there when a stage produces one. The repo's README or AGENTS.md keeps its conventions.
+
+**Review gate (decided: build on it).** The next stage may read an artifact that's still a draft or in review, from its capsule. If a stage should wait for a record to land, the brief says so as a check-in ("check in with me once the proposal is merged"), and the orchestrator flags instead of dispatching.
 
 ### 7. Handoffs that carry what was learned
 

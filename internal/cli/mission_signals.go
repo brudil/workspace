@@ -68,8 +68,9 @@ func newMissionDoneCmd() *cobra.Command {
 		Use:   "done <summary>",
 		Short: "Crew: say you've finished your part, with a short summary",
 		Long: `For crew: report that your part of the mission is finished. ws finds the
-PRs from the mission's capsules itself; record other outputs with
-ws mission artifact add <url> "label".`,
+PRs from the mission's capsules itself; record other outputs (a proposal
+or ADR you wrote, notes, a link) with ws mission artifact add <file|url>
+--kind <kind> "label".`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, m, c, err := signallingCrew(slug)
@@ -92,12 +93,27 @@ ws mission artifact add <url> "label".`,
 func newMissionArtifactCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "artifact",
-		Short: "Record outputs of a mission that ws can't find itself",
+		Short: "Record what a mission produced or relies on: files, PRs, links",
+		Long: `Artifacts point at what a mission produced or relies on, so the next crew
+(and the orchestrator) can find it: ws mission show -f llm lists them with
+where to read each one. ws finds the capsules' own PRs itself.
+
+What you can record:
+  a file path       classified by where it is: one of the mission's capsules
+                    (repo/capsule:path, followed onto the default branch when
+                    its PR merges), a repo's .ground (repo:path), or the
+                    mission's private files folder (mission:path)
+  repo:path         a file on a repo's default branch
+  repo#N, PR URL    a PR or issue
+  https://…         anything else
+
+Kinds say what it is: proposal, adr, note, doc, plan, handoff, pr, issue,
+link, or any lowercase word.`,
 	}
-	var slug string
+	var slug, kind string
 	add := &cobra.Command{
-		Use:   "add <url> [label]",
-		Short: "Record a link the mission produced (a doc, a PR outside its capsules, …)",
+		Use:   "add <file|ref|url> [label]",
+		Short: "Record an artifact (adding it again updates its kind and label)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
@@ -108,16 +124,55 @@ func newMissionArtifactCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			label := strings.TrimSpace(strings.Join(args[1:], " "))
-			if err := missionStore(ctx).AddArtifact(m.Slug, args[0], label, os.Getenv(mission.EnvCrew)); err != nil {
+			if kind != "" && !kindShape.MatchString(kind) {
+				return fmt.Errorf("kind %q: use one lowercase word, like proposal, adr, note, doc or link", kind)
+			}
+			r, err := normalizeArtifact(ctx, m, args[0])
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(ui.Stderr, "  %s recorded on %s\n", ui.Green.Render("✓"), m.Slug)
+			if kind == "" {
+				kind = defaultKind(r)
+			}
+			a := mission.Artifact{Ref: r.String(), Kind: kind, Label: strings.TrimSpace(strings.Join(args[1:], " ")), Crew: os.Getenv(mission.EnvCrew)}
+			store := missionStore(ctx)
+			if err := store.AddArtifact(m.Slug, a); err != nil {
+				return err
+			}
+			fresh, _ := store.Load(m.Slug)
+			v := buildMissionViewsFrom(ctx.WS, nil, []*mission.Mission{fresh})[0]
+			for _, av := range resolveArtifacts(ctx.WS, store, v) {
+				if av.Ref == a.Ref {
+					fmt.Fprintf(ui.Stderr, "  %s recorded on %s: %s\n", ui.Green.Render("✓"), m.Slug, artifactLine(av))
+				}
+			}
 			return nil
 		},
 	}
+	add.Flags().StringVar(&kind, "kind", "", "what it is: proposal, adr, note, doc, plan, handoff, pr, issue, link… (default: pr, link or doc)")
 	addMissionFlag(add, &slug)
-	cmd.AddCommand(add)
+	rm := &cobra.Command{
+		Use:   "rm <ref>",
+		Short: "Forget an artifact, by its reference as ws mission show lists it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := LoadContext()
+			if err != nil {
+				return err
+			}
+			m, err := resolveMission(ctx, slug)
+			if err != nil {
+				return err
+			}
+			if err := missionStore(ctx).RemoveArtifact(m.Slug, strings.TrimSpace(args[0]), os.Getenv(mission.EnvCrew)); err != nil {
+				return err
+			}
+			fmt.Fprintf(ui.Stderr, "  %s removed from %s\n", ui.Green.Render("✓"), m.Slug)
+			return nil
+		},
+	}
+	addMissionFlag(rm, &slug)
+	cmd.AddCommand(add, rm)
 	return cmd
 }
 

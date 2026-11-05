@@ -139,8 +139,9 @@ type Mission struct {
 	// Dispatches counts crew the orchestrator dispatched since the user last
 	// stepped in; past [orchestrator] max_dispatches it must flag instead.
 	Dispatches int `toml:"dispatches,omitempty"`
-	// Artifacts are outputs ws can't infer (capsules' PRs it finds itself):
-	// a PR from a branch outside the mission, a design doc, a dashboard.
+	// Artifacts point at what the mission produced or relies on: files (on
+	// a default branch, in a capsule, or private to the mission), PRs and
+	// issues, and links. Capsules' own PRs are found, not recorded.
 	Artifacts []Artifact `toml:"artifacts,omitempty"`
 }
 
@@ -161,13 +162,31 @@ type Dispatch struct {
 	At      time.Time `toml:"at"`
 }
 
-// Artifact is a link a mission produced.
+// Artifact points at something a mission produced or relies on. Ref says
+// where, in one of these forms (the cli package parses and resolves them):
+//
+//	repo:path            a file on the repo's default branch
+//	repo/capsule:path    a file in one of the mission's capsules
+//	mission:path         a file in the mission's own files/ folder
+//	repo#N               a PR or issue
+//	https://…            a link
+//
+// Where it is now (draft, in review, landed…) isn't stored: it's worked
+// out from git and GitHub each time.
 type Artifact struct {
-	URL   string    `toml:"url"`
-	Label string    `toml:"label,omitempty"`
-	Crew  string    `toml:"crew,omitempty"`
+	Ref   string `toml:"ref,omitempty"`
+	Kind  string `toml:"kind,omitempty"` // proposal, adr, note, doc, pr, link…
+	Label string `toml:"label,omitempty"`
+	Crew  string `toml:"crew,omitempty"` // who recorded it; "" for the user
+	// URL is how artifacts were recorded before Ref: always a link. Loading
+	// moves it to Ref.
+	URL   string    `toml:"url,omitempty"`
 	Added time.Time `toml:"added"`
 }
+
+// MissionFilesDir is the folder, inside a mission's own, for its private
+// files (mission:path artifacts).
+const MissionFilesDir = "files"
 
 // HasCapsule reports whether the mission owns repo/name.
 func (m *Mission) HasCapsule(repo, name string) bool {

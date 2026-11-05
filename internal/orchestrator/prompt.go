@@ -33,8 +33,11 @@ type Input struct {
 	CrewID, Trigger string
 	Brief           string
 	Capsules        []Capsule
-	Log             []string // recent log lines, oldest first
-	Output          string   // the end of CrewID's output
+	// Artifacts are the mission's recorded artifacts, one line each: kind,
+	// where it is now, reference, label, and where to read it.
+	Artifacts []string
+	Log       []string // recent log lines, oldest first
+	Output    string   // the end of CrewID's output
 }
 
 // Capsule is one of the mission's capsules, with what's known about it.
@@ -66,13 +69,14 @@ func Prompt(in Input) string {
 Read the brief and the history below and decide what should happen next: is what just finished good, what does the brief still need, and who should do it? The brief may describe stages for separate crew (say, a proposal and then its implementation); the log and crew list show which are done. Act only through these commands (WS_MISSION is set for you):
 
 - ws mission note "Orchestrator: <what you found and decided, two or three sentences>"   (always, once; the next orchestrator run reads it)
-- ws mission dispatch "<handoff>" [--capsule <repo>/<name>]   (start new, fresh crew on the next piece of work. The handoff is all it knows beyond the brief: what to do, where earlier crew's output is (files, commits, PRs), what to watch for)
+- ws mission dispatch "<handoff>" [--capsule <repo>/<name>] [--read <artifact>]...   (start new, fresh crew on the next piece of work. The handoff is all it knows beyond the brief: what to do, where earlier crew's output is (files, commits, PRs), what to watch for. Name each artifact it should read first with --read and its reference from the Artifacts list; ws adds where to read it)
 - ws mission resume-with <crew> "<what's left>"   (that crew should carry on: unfinished, tests missing, CI failing. Better than dispatching when its context matters)
 - ws mission flag "<why the user is needed>"   (a decision or problem only the user can resolve, or the brief says to check with them before the next stage)
 - ws mission new "<follow-up, what and why>"   (separate work worth doing, outside this mission's scope)
 - ws mission conclude "<why it's finished>"   (everything in the brief is met; PRs merged or ready)
 - ws mission title "<terse name>"   (at most 50 characters, plain English; only when the title below is still the raw request, or no longer says what the mission is)
 
+An artifact still a draft or in review (its PR open) can be built on: the next crew reads it from its capsule. Only wait for it to land if the brief says to check in first; then flag instead.
 If the next crew needs a capsule the mission doesn't have yet, create it first with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule.
 You may investigate read-only: ws mission show -f llm, git -C <capsule path> diff/log/show/status for the capsule paths below, gh pr view/checks, and reading files. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
 
@@ -121,6 +125,15 @@ Run one command per shell call rather than chaining them with && or ;. You may o
 		}
 	}
 	b.WriteString(clipHead(caps.String(), promptCapsulesMax, "… (more: ws mission show -f llm, and git diff --stat in each capsule)\n"))
+
+	if len(in.Artifacts) > 0 {
+		b.WriteString("\n## Artifacts\n\nWhat the mission has produced or relies on, beyond the capsules' PRs: [kind, where it is now] reference — label — where to read it.\n\n")
+		var arts strings.Builder
+		for _, a := range in.Artifacts {
+			arts.WriteString("- " + a + "\n")
+		}
+		b.WriteString(clipHead(arts.String(), promptCapsulesMax, "… (more: ws mission show -f llm)\n"))
+	}
 
 	if len(in.Log) > 0 {
 		b.WriteString("\n## Recent log\n\n")

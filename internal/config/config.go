@@ -20,6 +20,7 @@ type Config struct {
 	Crew         AgentConfig            `toml:"crew"`
 	Briefing     AgentConfig            `toml:"briefing"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator"`
+	Missions     MissionsConfig         `toml:"missions"`
 	Boarded      map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
 	Git          string                 `toml:"-"` // from ws.local.toml only
 	Silo         map[string]string      `toml:"-"` // from ws.local.toml [silo] section
@@ -34,6 +35,15 @@ type LocalConfig struct {
 	Crew         AgentConfig            `toml:"crew,omitempty"`
 	Briefing     AgentConfig            `toml:"briefing,omitempty"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator,omitempty"`
+	Missions     MissionsConfig         `toml:"missions,omitempty"`
+}
+
+// MissionsConfig holds workspace-wide settings for missions.
+type MissionsConfig struct {
+	// Records names the repo where shared proposals, ADRs and notes go.
+	// Crew and briefing agents are told to lift a capsule there when a
+	// stage produces one.
+	Records string `toml:"records,omitempty"`
 }
 
 // AgentConfig says which harness (agent CLI: cursor, claude, shell) runs a
@@ -185,6 +195,7 @@ func Merge(base, local *Config) *Config {
 		Crew:         base.Crew,
 		Briefing:     base.Briefing,
 		Orchestrator: base.Orchestrator,
+		Missions:     base.Missions,
 		Repos:        make(map[string]RepoConfig, len(base.Repos)),
 		Groups:       make(map[string]GroupConfig, len(base.Groups)),
 	}
@@ -254,6 +265,9 @@ func Load(startDir string) (*Config, string, error) {
 			cfg.Git = local.Git
 		}
 		cfg.Crew.merge(local.Crew)
+		if local.Missions.Records != "" {
+			cfg.Missions.Records = local.Missions.Records
+		}
 		cfg.Briefing.merge(local.Briefing)
 		if local.Orchestrator.Harness != "" {
 			cfg.Orchestrator.Harness = local.Orchestrator.Harness

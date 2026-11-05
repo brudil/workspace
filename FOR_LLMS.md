@@ -68,7 +68,8 @@ Use this to orient yourself before starting work.
 - When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it.
 - If you notice something worth doing that's outside your mission, don't do it: run `ws mission new "<what it is and why>"` (plain text) and mention it in one line. It waits for the user to brief it, and records that it came from your mission.
 - If you were dispatched with a handoff, do that part only. If the brief describes stages for separate crew, do only the first one not yet done.
-- When your part is finished, run `ws mission done "<one-line summary>"`. ws finds PRs from the mission's capsules; record other outputs with `ws mission artifact add <url> "<label>"`.
+- Record what you make that the next crew or the user will need (a proposal, an ADR, notes, a doc) with `ws mission artifact add <file|url> --kind <proposal|adr|note|doc> "<label>"`. A file can be in one of the mission's capsules, a `.ground`, or the mission's private files folder (`ws mission show -f llm` names it, and the records repo for shared proposals and ADRs if there is one). It lists every artifact with where to read it.
+- When your part is finished, run `ws mission done "<one-line summary>"`. ws finds PRs from the mission's capsules itself.
 
 If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
 

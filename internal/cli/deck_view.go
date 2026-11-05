@@ -576,7 +576,8 @@ func (c *markdownCache) render(md string, width int) string {
 }
 
 // renderArtifacts lists what the mission has produced: each capsule's PR
-// (found from its branch) and links crew recorded.
+// (found from its branch), then recorded artifacts grouped by kind, each
+// with where it is now.
 func (m deckModel) renderArtifacts(dm deckMission, indent string) string {
 	var lines []string
 	for _, c := range dm.Capsules {
@@ -596,16 +597,20 @@ func (m deckModel) renderArtifacts(dm deckMission, indent string) string {
 		}
 		lines = append(lines, line)
 	}
-	for _, a := range dm.M.Artifacts {
-		label := a.Label
-		if label == "" {
-			label = a.URL
+	// Recorded artifacts, grouped by kind in the order kinds first appear.
+	avs := resolveArtifacts(m.ws, m.store, dm.missionView)
+	var kinds []string
+	byKind := map[string][]artifactView{}
+	for _, av := range avs {
+		if _, seen := byKind[av.Kind]; !seen {
+			kinds = append(kinds, av.Kind)
 		}
-		line := ui.Hyperlink(a.URL, label)
-		if a.Label != "" {
-			line += ui.Dim.Render("  " + a.URL)
+		byKind[av.Kind] = append(byKind[av.Kind], av)
+	}
+	for _, k := range kinds {
+		for _, av := range byKind[k] {
+			lines = append(lines, artifactText(av))
 		}
-		lines = append(lines, line)
 	}
 	if len(lines) == 0 {
 		return ""

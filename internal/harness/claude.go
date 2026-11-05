@@ -50,9 +50,14 @@ func (c *Claude) Available() error {
 // VERIFIED: the opening prompt goes in as the argument, not typed in. In a
 // folder Claude Code hasn't been trusted in, it opens on a trust dialog whose
 // default answer is "No, exit": a typed-in prompt's Enter would choose that.
-// A prompt argument waits for the user's answer and runs after it. Trust
-// covers subfolders, so trusting the workspace root once covers every
-// capsule. The session stays interactive afterwards.
+// A prompt argument waits for the user's answer and runs after it. The
+// session stays interactive afterwards.
+//
+// VERIFIED: in a git repo, trust is per repository. Trusting one capsule
+// covered that repo's later capsules (worktrees of the same repo), but
+// trusting the workspace root (the config repo) didn't cover the repos
+// under it, so the first crew in each repo asks once. Until someone answers,
+// that crew shows as waiting in the deck.
 //
 // VERIFIED: --name sets the session's display name, which is also the
 // terminal title the deck shows.

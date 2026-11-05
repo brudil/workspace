@@ -23,6 +23,7 @@ var dispatchHost = func(root string) crew.Host { return deckserver.NewHost(root)
 func newMissionDispatchCmd() *cobra.Command {
 	var slug, capsule, harnessName string
 	var queue bool
+	var reads []string
 	cmd := &cobra.Command{
 		Use:   "dispatch <handoff>",
 		Short: "Start new crew on a mission with a handoff (what to do, what earlier crew left)",
@@ -55,6 +56,13 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				return fmt.Errorf("mission %s is still being briefed", m.Slug)
 			}
 			handoff := strings.TrimSpace(strings.Join(args, " "))
+			if len(reads) > 0 {
+				list, err := readFirstList(ctx, m, reads)
+				if err != nil {
+					return err
+				}
+				handoff += "\n\nRead these first:\n" + list
+			}
 			crewPick := agentRoles(ctx.Config).ForCrew()
 			if harnessName == "" {
 				harnessName = crewPick.Harness
@@ -132,8 +140,32 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&capsule, "capsule", "", "capsule to work in, as repo/name (default: one no crew is working in)")
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: the crew's: $WS_DECK_HARNESS, [crew] harness, or cursor)")
+	cmd.Flags().StringArrayVar(&reads, "read", nil, "an artifact the crew should read first (repeatable): its reference, a file, or a URL; the handoff says where to read it")
 	cmd.Flags().BoolVar(&queue, "queue", false, "queue it for the user to launch from the deck instead of launching now")
 	return cmd
+}
+
+// readFirstList resolves what a dispatch names with --read into lines for
+// the handoff, with where to read each. A recorded artifact keeps its kind
+// and label.
+func readFirstList(ctx *Context, m *mission.Mission, reads []string) (string, error) {
+	v := buildMissionViewsFrom(ctx.WS, nil, []*mission.Mission{m})[0]
+	store := missionStore(ctx)
+	var b strings.Builder
+	for _, in := range reads {
+		r, err := normalizeArtifact(ctx, m, in)
+		if err != nil {
+			return "", fmt.Errorf("--read %s: %w", in, err)
+		}
+		a := mission.Artifact{Ref: r.String(), Kind: defaultKind(r)}
+		for _, rec := range m.Artifacts {
+			if rec.Ref == a.Ref {
+				a = rec
+			}
+		}
+		b.WriteString("- " + artifactLine(resolveArtifact(ctx.WS, store, v, a)) + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 // endHandedBack ends the sessions of crew that reported done in capsule but

@@ -404,15 +404,16 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 			b.WriteByte('\n')
 		}
 	}
-	if len(v.M.Artifacts) > 0 {
-		b.WriteString("Artifacts:\n")
-		for _, a := range v.M.Artifacts {
-			fmt.Fprintf(&b, "  %s", a.URL)
-			if a.Label != "" {
-				fmt.Fprintf(&b, " — %s", a.Label)
-			}
-			b.WriteByte('\n')
+	store := missionStore(ctx)
+	if avs := resolveArtifacts(ctx.WS, store, v); len(avs) > 0 {
+		b.WriteString("Artifacts (kind, where it is now; read the file named, or open the link):\n")
+		for _, av := range avs {
+			b.WriteString("  " + artifactLine(av) + "\n")
 		}
+	}
+	fmt.Fprintf(&b, "Private files: %s (notes and scratch for this mission only; record one with ws mission artifact add <file>)\n", store.FilesDir(v.M.Slug))
+	if records := ctx.Config.Missions.Records; records != "" {
+		fmt.Fprintf(&b, "Records repo: %s (proposals, ADRs and notes to share go here: lift a capsule in it with ws lift %s <branch>, follow its README/AGENTS.md, and record the file with ws mission artifact add)\n", records, records)
 	}
 	for _, c := range v.M.Crew {
 		if c.Status != "" && c.Ended == nil {
@@ -457,6 +458,13 @@ func printMissionText(ctx *Context, v missionView, briefPath, brief string, even
 			line += "  " + ui.Dim.Render(f)
 		}
 		fmt.Fprintln(w, line)
+	}
+
+	if avs := resolveArtifacts(ctx.WS, missionStore(ctx), v); len(avs) > 0 {
+		fmt.Fprintf(w, "\n  %s\n", ui.Bold.Render("Artifacts"))
+		for _, av := range avs {
+			fmt.Fprintf(w, "    %s\n", artifactText(av))
+		}
 	}
 
 	fmt.Fprintf(w, "\n  %s  %s\n", ui.Bold.Render("Brief"), ui.Dim.Render(briefPath))

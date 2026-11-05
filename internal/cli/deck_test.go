@@ -458,7 +458,7 @@ func TestDeck_ArtifactsAndConclusion(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": {"cache-ui"}, "backend": {"cache-api"}})
 	slug := seedMission(t, ws, "Cache", "## Goal\nCache it.", [2]string{"frontend", "cache-ui"}, [2]string{"backend", "cache-api"})
 	store := mission.Store{Root: ws.Root}
-	store.AddArtifact(slug, "https://example.com/design", "Design doc", "c1")
+	store.AddArtifact(slug, mission.Artifact{Ref: "https://example.com/design", Kind: "doc", Label: "Design doc", Crew: "c1"})
 
 	open := prIndex{
 		"frontend": {open: map[string]*github.PR{"cache-ui": {Number: 12, HeadRefName: "cache-ui", Title: "Cache UI"}}},

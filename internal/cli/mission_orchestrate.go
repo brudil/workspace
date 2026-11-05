@@ -151,6 +151,9 @@ func orchestratorInput(ctx *Context, m *mission.Mission, crewID, trigger string)
 		}
 		in.Capsules = append(in.Capsules, oc)
 	}
+	for _, av := range resolveArtifacts(ctx.WS, store, v) {
+		in.Artifacts = append(in.Artifacts, artifactLine(av))
+	}
 	for _, e := range events {
 		in.Log = append(in.Log, formatEventLine(e, true))
 	}

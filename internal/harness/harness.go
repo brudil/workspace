@@ -116,7 +116,8 @@ func InitialPrompt(b Brief) string {
 	s.WriteString("If you notice something worth doing outside this mission, don't do it: run `ws mission new \"<what it is and why>\"` (plain text; it waits for the user to brief it) and mention it in one line.\n\n")
 	s.WriteString("Tell the user's deck where you are, so they know when you need them:\n")
 	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`.\n")
-	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), run `ws mission done \"<one-line summary>\"`. ws finds PRs from the mission's capsules itself; record any other outputs (docs, links, PRs from other branches) with `ws mission artifact add <url> \"<label>\"`.\n")
+	s.WriteString("- When you make something the next crew or the user will need (a proposal, an ADR, notes, a doc), record it as you go: `ws mission artifact add <file> --kind <proposal|adr|note|doc> \"<label>\"` (a file in a capsule, in a .ground, or in the mission's private files folder; or a URL). `ws mission show -f llm` lists the mission's artifacts with where to read each, the private files folder, and the records repo for shared proposals and ADRs, if the workspace has one.\n")
+	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), run `ws mission done \"<one-line summary>\"`. ws finds PRs from the mission's capsules itself.\n")
 	if brief := strings.TrimSpace(b.Brief); brief != "" {
 		s.WriteString("\nThe brief:\n\n")
 		s.WriteString(brief)
@@ -145,7 +146,7 @@ func briefingPrompt(b Brief) string {
 	s.WriteString("   ws mission brief --set - <<'EOF'\n   ## Goal\n   ...\n   ## Context\n   (links to issues/PRs, relevant files)\n   ## Constraints\n   ...\n   ## Acceptance\n   ...\n   EOF\n\n")
 	s.WriteString("   If the work falls into stages that separate crew should do one after another (a proposal, then its implementation), list them in order under `## Stages`, saying where each one's output goes and where the user wants to check in before the next. ws's orchestrator reads the brief and dispatches crew stage by stage.\n")
 	s.WriteString("4. Name it: `ws mission title \"...\"`. A terse, plain-English name of at most 50 characters (it's how the mission reads in the user's deck), not the request or an issue number: \"Cache token lookups\", not \"fe issue 45\".\n")
-	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name.\n")
+	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name. If a stage produces a proposal, ADR or note to share and `ws mission show -f llm` names a records repo, that stage gets a capsule there too.\n")
 	s.WriteString("6. Show the user the brief and capsules (`ws mission show -f llm`) and check they're right.\n")
 	s.WriteString("7. When they agree, run `ws mission ready` (add `--slug <short-slug>` if the current slug is poor). That marks the mission ready and ends this session; work crew is launched from the deck.\n")
 	return s.String()

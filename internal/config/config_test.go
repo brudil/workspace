@@ -1019,3 +1019,19 @@ color = "red"
 		t.Errorf("local: crew %+v briefing %+v", cfg.Crew, cfg.Briefing)
 	}
 }
+
+// [missions] records names the records repo; ws.local.toml can override it,
+// and other local settings don't drop it.
+func TestMissionsRecordsConfig(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n\n[missions]\nrecords = \"records\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[crew]\nharness = \"claude\"\n"), 0o644)
+	cfg, _, err := Load(root)
+	if err != nil || cfg.Missions.Records != "records" {
+		t.Fatalf("records = %q, %v", cfg.Missions.Records, err)
+	}
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[missions]\nrecords = \"my-notes\"\n"), 0o644)
+	if cfg, _, _ = Load(root); cfg.Missions.Records != "my-notes" {
+		t.Errorf("local records = %q", cfg.Missions.Records)
+	}
+}

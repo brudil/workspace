@@ -103,7 +103,21 @@ func (s Store) Load(slug string) (*Mission, error) {
 		return nil, fmt.Errorf("mission %s: %w", slug, err)
 	}
 	m.Slug = slug
+	for i := range m.Artifacts {
+		if a := &m.Artifacts[i]; a.Ref == "" && a.URL != "" {
+			a.Ref, a.URL = a.URL, ""
+			if a.Kind == "" {
+				a.Kind = "link"
+			}
+		}
+	}
 	return &m, nil
+}
+
+// FilesDir is a mission's folder for private files: mission:path artifacts
+// resolve inside it.
+func (s Store) FilesDir(slug string) string {
+	return filepath.Join(s.missionDir(slug), MissionFilesDir)
 }
 
 // List returns every mission, oldest first. Unreadable missions are skipped.
@@ -641,32 +655,64 @@ func (s Store) ClearCrewStatus(slug, id string) (bool, error) {
 	return cleared, err
 }
 
-// AddArtifact records a link the mission produced (once per URL; a repeat
-// updates the label).
-func (s Store) AddArtifact(slug, url, label, crew string) error {
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return errors.New("artifact URL is empty")
+// AddArtifact records an artifact, once per Ref: adding one already
+// recorded updates its kind and label (when given) instead. The caller
+// normalises Ref.
+func (s Store) AddArtifact(slug string, a Artifact) error {
+	a.Ref = strings.TrimSpace(a.Ref)
+	if a.Ref == "" {
+		return errors.New("artifact reference is empty")
 	}
+	updated := false
 	if _, err := s.Update(slug, func(m *Mission) error {
 		for i := range m.Artifacts {
-			if m.Artifacts[i].URL == url {
-				if label != "" {
-					m.Artifacts[i].Label = label
+			if m.Artifacts[i].Ref == a.Ref {
+				if a.Kind != "" {
+					m.Artifacts[i].Kind = a.Kind
 				}
+				if a.Label != "" {
+					m.Artifacts[i].Label = a.Label
+				}
+				updated = true
 				return nil
 			}
 		}
-		m.Artifacts = append(m.Artifacts, Artifact{URL: url, Label: label, Crew: crew, Added: now()})
+		a.URL, a.Added = "", now()
+		m.Artifacts = append(m.Artifacts, a)
 		return nil
 	}); err != nil {
 		return err
 	}
-	text := url
-	if label != "" {
-		text = label + " " + url
+	text := a.Kind + " " + a.Ref
+	if a.Label != "" {
+		text = a.Kind + " " + a.Label + " · " + a.Ref
 	}
-	return s.AppendLog(slug, Event{Kind: EventArtifact, Crew: crew, Text: text})
+	if updated {
+		text += " (updated)"
+	}
+	return s.AppendLog(slug, Event{Kind: EventArtifact, Crew: a.Crew, Text: text})
+}
+
+// RemoveArtifact forgets an artifact by its Ref. It errors if there's no
+// such artifact.
+func (s Store) RemoveArtifact(slug, ref, by string) error {
+	removed := false
+	if _, err := s.Update(slug, func(m *Mission) error {
+		for i, a := range m.Artifacts {
+			if a.Ref == ref {
+				m.Artifacts = append(m.Artifacts[:i], m.Artifacts[i+1:]...)
+				removed = true
+				return nil
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !removed {
+		return fmt.Errorf("mission %s has no artifact %s", slug, ref)
+	}
+	return s.AppendLog(slug, Event{Kind: EventArtifact, Crew: by, Text: "removed " + ref})
 }
 
 // TranscriptPath is where a crew's output is kept.
