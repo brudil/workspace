@@ -20,6 +20,11 @@ import (
 // a deck command instead of input for the agent.
 const deckPrefixKey = "ctrl+g"
 
+// deckZoomKey zooms the crew in or out in one key: the same as the prefix
+// then z. Agents don't use it, and zoom watches for it in raw input
+// (zoomFilter).
+const deckZoomKey = "ctrl+]"
+
 // deckStopGrace is how long crew get to exit after SIGHUP before SIGKILL.
 const deckStopGrace = 3 * time.Second
 
@@ -647,6 +652,9 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if k.Prefix.matches(msg) {
 			m.prefix = true
 			return m, nil
+		}
+		if k.ZoomToggle.matches(msg) {
+			return m.zoom(r)
 		}
 		r.scroll = 0
 		r.term.SendKey(uv.KeyPressEvent(msg))

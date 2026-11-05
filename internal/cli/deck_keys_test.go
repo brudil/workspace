@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -49,5 +50,34 @@ func TestDeckKeys_HelpScreenIsComplete(t *testing.T) {
 				t.Errorf("footer key %q isn't on the help screen", b.Help().Key)
 			}
 		}
+	}
+}
+
+// ctrl+] zooms in one key: from the crew's terminal, and from the sidebar
+// (which focuses the crew first, so coming back out lands in it).
+func TestDeckKeys_ZoomToggle(t *testing.T) {
+	zoomed := func(cmd tea.Cmd) bool {
+		return cmd != nil && fmt.Sprintf("%T", cmd()) == "tea.execMsg"
+	}
+	ctrlBracket := tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}
+	if ctrlBracket.String() != deckZoomKey {
+		t.Fatalf("ctrl+] reads as %q", ctrlBracket.String())
+	}
+
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m) // focused
+	r, _ := liveRun(m, slug)
+	waitScreen(t, r, "$")
+	next, cmd := m.Update(ctrlBracket)
+	if !zoomed(cmd) {
+		t.Error("ctrl+] in the crew's terminal didn't zoom")
+	}
+
+	m = next.(deckModel)
+	m.focusTerm = false
+	m = selectMission(t, m, slug) // the mission row, not the crew's
+	next, cmd = m.Update(ctrlBracket)
+	if m = next.(deckModel); !zoomed(cmd) || !m.focusTerm {
+		t.Errorf("ctrl+] on the mission: zoomed %v, crew focused %v", cmd != nil, m.focusTerm)
 	}
 }

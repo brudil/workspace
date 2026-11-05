@@ -348,13 +348,14 @@ The same commands work by hand: `ws mission brief` prints or replaces a brief, `
 **Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended. Crew get `.ws/bin` first on `PATH`, where `ws` and `workspace` point at the deck's own binary, so the commands they're told to run always match the deck's version.
 
 - **Several crew.** Each crew gets its own row under its mission in the sidebar, saying what it's doing and what it was dispatched for. The mission row shows the mission; a crew row shows that agent's terminal. `⏎` on the mission launches more crew, in a capsule nobody is working in, and asks before two crew share one. Crew that have reported done (`✓`), or finished briefing, have handed their work back and don't count as working: launching in their capsule offers to end their session first (`R` resumes it later).
-- **Focus.** `tab` (or `⏎`) on a crew row hands it the keyboard: every key and paste goes to the agent. `ctrl+g` is the deck's prefix key while an agent has focus:
+- **Focus.** `tab` (or `⏎`) on a crew row hands it the keyboard: every key and paste goes to the agent, except `ctrl+]`, which zooms (below). `ctrl+g` is the deck's prefix key while an agent has focus:
 
   | Key | Does |
   |---|---|
   | `ctrl+g tab` | Back to the sidebar (the agent keeps running) |
   | `ctrl+g [` | Scroll back through the agent's history (`k`/`j`, `ctrl+u`/`ctrl+d`, `g`/`G`, `esc`) |
   | `ctrl+g z` | Zoom: give the agent the whole real terminal, unemulated, until `ctrl+g z` again |
+  | `ctrl+]` | Zoom in or out in one key, no prefix; from the sidebar it zooms the selected crew (or the mission's latest), and coming back out lands in its terminal |
   | `ctrl+g n` / `p` | Next / previous crew |
   | `ctrl+g s` | Hide or show the sidebar |
   | `ctrl+g S` | Stop this crew |

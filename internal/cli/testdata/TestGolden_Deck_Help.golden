@@ -6,6 +6,7 @@
   R          Resume the mission's last crew conversation
   tab        Focus the mission's live crew terminal
   ctrl+g     In a crew terminal: then tab returns here, s hides the sidebar, S stops crew
+  ctrl+]     Zoom: give the crew the whole terminal, unemulated; ctrl+] again comes back (or ctrl+g z)
   S          Stop the mission's live crew
   F          Dismiss the orchestrator's question, then any queued crew
   M          Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)

@@ -207,7 +207,7 @@ func (m deckModel) renderFooter() string {
 		if m.flash != "" {
 			return " " + m.flash
 		}
-		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · wheel scrolls · shift-drag selects · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
+		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · wheel scrolls · shift-drag selects · "+deckZoomKey+" zoom · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
 	}
 	if m.flash != "" {
 		return " " + m.flash

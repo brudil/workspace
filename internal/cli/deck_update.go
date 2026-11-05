@@ -191,12 +191,14 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.launchOrOffer()
 		}
 	case k.Focus.matches(msg):
-		if r, ok := m.selectedRun(); ok {
+		if r, ok := m.crewToFocus(); ok {
 			m.focusRun(r)
-		} else if dm, ok := m.selectedMission(); ok {
-			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
-				m.focusRun(runs[len(runs)-1])
-			}
+		}
+	case k.ZoomToggle.matches(msg):
+		// Zoom straight in; coming back out lands in its terminal.
+		if r, ok := m.crewToFocus(); ok {
+			m.focusRun(r)
+			return m.zoom(r)
 		}
 	case k.NextCrew.matches(msg):
 		return m.cycleRun(1)
@@ -268,6 +270,20 @@ func (m deckModel) askWhatToDo() (tea.Model, tea.Cmd) {
 	m.input.CharLimit = 1000
 	m.input.Placeholder = "an idea, or an issue like 'fe issue 45'"
 	return m, m.input.Focus()
+}
+
+// crewToFocus is the selected crew, or the selected mission's latest live
+// crew.
+func (m deckModel) crewToFocus() (*deckCrewRun, bool) {
+	if r, ok := m.selectedRun(); ok {
+		return r, true
+	}
+	if dm, ok := m.selectedMission(); ok {
+		if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
+			return runs[len(runs)-1], true
+		}
+	}
+	return nil, false
 }
 
 func (m *deckModel) moveCursor(delta int) {

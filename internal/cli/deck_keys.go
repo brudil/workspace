@@ -75,6 +75,7 @@ type deckKeyMap struct {
 	Sidebar, Refresh      deckKey
 	Help, CloseHelp, Quit deckKey
 	PrefixHelp            deckKey // the prefix, explained on the help screen
+	ZoomToggle            deckKey // zoom in, and (watched for in zoom) out
 
 	// In a crew terminal, after the prefix key.
 	Prefix                   deckKey // ctrl+g itself: the next key is the deck's
@@ -138,6 +139,9 @@ func (m deckModel) keys() deckKeyMap {
 		CloseHelp: newKey("?", "close", "", "?", "esc", "q"),
 		Quit:      newKey("q", "quit", "Quit", "q"),
 
+		ZoomToggle: newKey(deckZoomKey, "zoom", "Zoom: give the crew the whole terminal, unemulated; "+deckZoomKey+" again comes back (or "+deckPrefixKey+" z)",
+			deckZoomKey),
+
 		Prefix:      newKey(deckPrefixKey, "deck commands", "", deckPrefixKey),
 		SendPrefix:  newKey(deckPrefixKey, "send it", "", deckPrefixKey),
 		Back:        newKey("tab", "sidebar", "", "tab", "esc", "h", "left"),
@@ -185,7 +189,7 @@ func (m deckModel) keys() deckKeyMap {
 // helpScreen is the help screen's entries, in order.
 func (k deckKeyMap) helpScreen() []deckKey {
 	return []deckKey{
-		k.Move, k.Open, k.Launch, k.Resume, k.Focus, k.PrefixHelp, k.Stop, k.Dismiss, k.Mouse,
+		k.Move, k.Open, k.Launch, k.Resume, k.Focus, k.PrefixHelp, k.ZoomToggle, k.Stop, k.Dismiss, k.Mouse,
 		k.Tabs, k.Scroll, k.New, k.NewNamed, k.Edit, k.Attach, k.Detach, k.Park, k.Archive,
 		k.Past, k.OpenPast, k.Sidebar, k.Refresh, k.Help, k.Quit,
 	}
