@@ -623,7 +623,7 @@ func TestDeckCrew_PromptNotTypedIntoExitedCrew(t *testing.T) {
 	m = launch(t, m)
 	r, _ := liveRun(m, slug)
 	r.term.Close(time.Second)
-	if msg := deliverPrompt(r, "echo late")(); msg != nil {
+	if msg := deliverPrompt(m.ws.Root, r, "echo late")(); msg != nil {
 		t.Errorf("typed into exited crew: %v", msg)
 	}
 }

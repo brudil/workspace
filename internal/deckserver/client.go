@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/brudil/workspace/internal/execlog"
 	"io"
 	"net"
 	"os"
@@ -118,8 +119,10 @@ func spawn(root string) error {
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
+		execlog.Note(root, "deck server", "couldn't start: %v", err)
 		return err
 	}
+	execlog.Start(root, "deck server", cmd.Args, "", nil, cmd.Process.Pid)
 	return cmd.Process.Release()
 }
 

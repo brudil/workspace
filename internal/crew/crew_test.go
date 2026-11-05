@@ -148,3 +148,33 @@ func TestStart_FailedLaunchIsRecorded(t *testing.T) {
 		t.Errorf("crew = %+v", got.Crew)
 	}
 }
+
+func TestStart_LogsLaunchPromptAndEnd(t *testing.T) {
+	h, store, slug, _ := localFixture(t)
+	os.MkdirAll(store.Root+"/.ws", 0o755)
+	st, err := Start(Request{Store: store, Host: h, Root: store.Root, Slug: slug, Harness: "shell",
+		Width: 40, Height: 5, Prepare: func() (harness.Launch, error) {
+			return harness.Launch{Args: []string{"/bin/sh", "-c", `printf 'ready> '; read x; echo "got $x"; exit 4`}, Dir: store.Root, Notes: []string{"ran agent create-chat: chat abc"}}, nil
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !TypePrompt(store.Root, slug+"/c1", st.Term, "hello there") {
+		t.Fatal("prompt not typed")
+	}
+	<-st.Term.Done()
+	data, _ := os.ReadFile(store.Root + "/.ws/exec.log")
+	log := string(data)
+	for _, want := range []string{
+		"[crew " + slug + "/c1] ran agent create-chat: chat abc",
+		"[crew " + slug + "/c1] start pid ",
+		"$ /bin/sh -c 'printf '\\''ready> '\\''; read x; echo \"got $x\"; exit 4'",
+		"WS_MISSION=" + slug + " WS_CREW=c1",
+		"[crew " + slug + "/c1] typed in its prompt (11 chars):\n    hello there",
+		"[crew " + slug + "/c1] end: exit 4",
+	} {
+		if !strings.Contains(log, want) {
+			t.Errorf("exec log missing %q:\n%s", want, log)
+		}
+	}
+}

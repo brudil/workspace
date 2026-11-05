@@ -115,7 +115,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				return err
 			}
 			id := started.Crew.ID
-			if started.Prompt != "" && !crew.TypePrompt(started.Term, started.Prompt) {
+			if started.Prompt != "" && !crew.TypePrompt(ctx.WS.Root, m.Slug+"/"+id, started.Term, started.Prompt) {
 				return fmt.Errorf("%s exited before its prompt could be sent: %s", id, started.Term.ExitSummary())
 			}
 			// Make sure the paste reached the server before letting go of it.

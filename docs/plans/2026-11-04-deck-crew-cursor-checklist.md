@@ -147,4 +147,7 @@ For comparison, `WS_DECK_HARNESS=shell ./bin/workspace deck crew-trial` runs you
 
 ## What to send back
 
+Whenever something misbehaves, `.ws/exec.log` at the workspace root shows exactly what ws ran, with which arguments, and how it ended: paste the entries around the problem.
+
+
 For each numbered step and table row (sections 5 to 6), "ok" or what happened instead. Paste the command outputs from steps 1–4, and a screenshot of any rendering problem.

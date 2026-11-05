@@ -45,6 +45,9 @@ type Launch struct {
 	// Typing it in avoids relying on how a CLI treats a long multi-line
 	// prompt argument.
 	Prompt string
+	// Notes say what the harness ran getting ready (and how it went), for
+	// the exec log: a chat id fetched, or why there isn't one.
+	Notes []string
 }
 
 // Harness launches one kind of agent.

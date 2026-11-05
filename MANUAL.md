@@ -387,6 +387,17 @@ max_dispatches = 3                  # in a row without you
 
 **Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`, and crew and review output). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 
+**What ran.** `.ws/exec.log` records every process ws starts for missions, and what it sends them:
+
+- each crew's command line (ready to paste into a shell), the folder it ran in, and its mission environment (`WS_*`, `TERM`, the first entry on `PATH`; never anything else, which may hold tokens);
+- the chat id Cursor gave it, or why it gave none;
+- the prompt typed into it, and how it ended;
+- each orchestrator run: the prompt file it wrote, the exact agent command, how long it took, and how it ended;
+- automatic runs that were skipped, and why;
+- the deck server starting.
+
+Every ws process appends to the same file, so `tail -f .ws/exec.log` follows the whole workspace. It rolls over to `exec.log.1` at 10 MB.
+
 ---
 
 ## Configuration

@@ -115,3 +115,16 @@ func TestWritePrompt_OneLinePointingAtTheFile(t *testing.T) {
 		t.Error("the file doesn't hold the prompt")
 	}
 }
+
+func TestRun_Logged(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(root+"/.ws", 0o755)
+	Run(harness.Launch{Dir: root, Args: []string{"/bin/sh", "-c", "echo hi; exit 3"}}, root, "cache")
+	data, _ := os.ReadFile(root + "/.ws/exec.log")
+	log := string(data)
+	for _, want := range []string{"[orchestrator cache] start pid", "$ /bin/sh -c 'echo hi; exit 3'", "WS_ROLE=orchestrator", "[orchestrator cache] end pid", "exit status 3 · 3 bytes of output"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("exec log missing %q:\n%s", want, log)
+		}
+	}
+}

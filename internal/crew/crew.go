@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/brudil/workspace/internal/execlog"
 	"github.com/brudil/workspace/internal/mission"
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -89,6 +90,11 @@ type EndHook func(spec Spec, exit string, stopped bool)
 // Finish records the end of a crew run: its output, then the end, then the
 // hook. Every host ends crew through here.
 func Finish(store mission.Store, spec Spec, exit, transcript string, stopped bool, hook EndHook) error {
+	result := exit
+	if stopped {
+		result += " (stopped)"
+	}
+	execlog.End(store.Root, "crew "+spec.Key(), 0, 0, result)
 	errT := store.SaveTranscript(spec.Slug, spec.CrewID, exit, transcript)
 	errE := store.EndCrew(spec.Slug, spec.CrewID, exit)
 	if hook != nil {

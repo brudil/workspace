@@ -6,6 +6,7 @@ import (
 
 	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/crew"
+	"github.com/brudil/workspace/internal/execlog"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/orchestrator"
 	"github.com/brudil/workspace/internal/ui"
@@ -50,6 +51,7 @@ you before it must flag you.`,
 				return err
 			}
 			if auto && !ctx.Config.OrchestratorEnabled() {
+				execlog.Note(ctx.WS.Root, "orchestrator "+slug, "not run for %s (%s): [orchestrator] enabled = false", crewID, trigger)
 				return nil
 			}
 			m, err := resolveMission(ctx, slug)
@@ -83,8 +85,11 @@ you before it must flag you.`,
 
 			if auto && crewID != "" {
 				fresh, err := store.MarkOrchestrated(m.Slug, crewID)
+				if err == nil && !fresh {
+					execlog.Note(ctx.WS.Root, "orchestrator "+m.Slug, "not run for %s (%s): already handled that event", crewID, trigger)
+				}
 				if err != nil || !fresh {
-					return err // already handled this event
+					return err
 				}
 			}
 

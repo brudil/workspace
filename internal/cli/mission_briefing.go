@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/brudil/workspace/internal/execlog"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/spf13/cobra"
@@ -188,6 +189,7 @@ briefing crew's WS_MISSION pointing nowhere).`,
 			fmt.Fprintf(ui.Stderr, "  %s Mission %s is ready: %s · %d %s\n", ui.Green.Render("✓"), ui.Bold.Render(final), title, live, noun)
 			if pid > 0 {
 				fmt.Fprintf(ui.Stderr, "  %s this briefing session ends now; crew can be launched on the mission from ws deck\n", ui.Dim.Render("·"))
+				execlog.Note(ctx.WS.Root, "crew "+final, "briefing done: hanging up its session (pid %d) in %s", pid, briefingHangupDelay)
 				hangUpLater(pid)
 			}
 			return nil

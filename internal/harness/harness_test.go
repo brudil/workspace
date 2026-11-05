@@ -60,6 +60,9 @@ func TestCursor_StartWithChatID(t *testing.T) {
 	if l.Dir != "/w/fe/auth" {
 		t.Errorf("dir = %q", l.Dir)
 	}
+	if len(l.Notes) != 1 || !strings.HasPrefix(l.Notes[0], "ran /bin/ca create-chat: chat 3f2a9c1e-7b4d-4e2a-9f00-1234abcd (") {
+		t.Errorf("notes = %q", l.Notes)
+	}
 }
 
 func TestCursor_StartWithoutChatID(t *testing.T) {
@@ -74,6 +77,10 @@ func TestCursor_StartWithoutChatID(t *testing.T) {
 		}
 		if l.Conversation != "" || len(l.Args) != 1 || l.Prompt == "" {
 			t.Errorf("%s: launch = %+v", name, l)
+		}
+		// Why it can't be resumed goes in the exec log.
+		if len(l.Notes) != 1 || !strings.Contains(l.Notes[0], "can't be resumed") {
+			t.Errorf("%s: notes = %q", name, l.Notes)
 		}
 	}
 }
