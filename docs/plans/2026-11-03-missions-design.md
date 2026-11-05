@@ -1,57 +1,93 @@
-# Missions: Workspace Owns the Work, Agents Run It
+# Missions: the Workspace Owns the Work, Agents Do It
 
-**Date:** 2026-11-03
-**Status:** Phases 1–4 implemented, plus briefing (a briefing agent turns a request into a ready mission) and attention (crew working/waiting, ask/done signals, artifacts) (#8, #9, #10, deck extras: several crew, scrollback, raw zoom, deck server). Cursor CLI details pending local verification, see `2026-11-04-deck-crew-cursor-checklist.md`.
+**Date:** 2026-11-03. What and why rewritten 2026-11-05.
+**Status:** Phases 1–5 built (see [Built so far](#built-so-far)); phases 6–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
-## Problem
+## Why
 
-Today the flow is **agent → work**. An agent starts somewhere, runs `ws lift`, and ws ends up with capsules nobody owns. `ws status` shows every capsule in the workspace. With several agents running there's no way to see what belongs to whom, which work is still going, or which capsules were left behind by a session that has ended.
+**Work has no home above the agent.** ws has capsules, where code changes happen, and agents, who change it. Nothing represents the piece of work itself. A feature that spans two repos, a design doc, a PR and three agent sessions exists only as scattered capsules and in the context of whichever session is open. When that session ends, so does the only thing that knew how the parts fit. `ws status` lists capsules nobody owns, and nothing says which work they belong to, whether it's still going, or what's left.
 
-The first instinct was to make ws recognise agent sessions (harness env vars, hooks, walking the process tree). That's fragile, and Cursor CLI, our first target, makes it hard: it doesn't expose its conversation id to shell commands, `CURSOR_AGENT` isn't reliably set, and some of its hooks don't fire.
+**Every agent starts by rediscovering.** Several agents can work on the same piece of work, but each starts cold. It reads the code again, finds the issue again, works out which capsules matter, and learns again what the last agent already tried. Nothing carries what one agent learned to the next.
 
-## Idea
+**Agents are the wrong unit to organise around.** The first instinct was to make ws recognise agent sessions (harness env vars, hooks, the process tree) and hang work off them. That's fragile: Cursor doesn't expose its conversation id to shell commands, `CURSOR_AGENT` isn't reliably set, and hooks don't always fire. Worse, it puts the most disposable thing at the centre. Sessions end, crash, run out of context and change vendor; the work carries on.
 
-Flip the relationship: **workspace → work → agents.**
+## What a mission is
 
-A **mission** is a durable unit of work that ws owns. It has a brief, one or more capsules, and a log. Agents are **crew**: ws starts them *for* a mission, and they come and go over the mission's life. ws doesn't need to identify an agent, because it launched the agent and already knows which mission it's for.
+> **Work outlives agents.** A mission is the lasting record of one piece of work: what it's for, where it happens, and what has happened and been produced, so any agent, or person, can pick it up cold.
 
-The entry point is a new full-screen TUI, **`ws deck`**: the focused agent's terminal on the left, the missions sidebar on the right.
+This flips the relationship from agent → work to **workspace → mission → agents**. A mission has three layers:
+
+| Layer | What it holds | In ws |
+|---|---|---|
+| **Intent** | What the work is for, and what done looks like | The brief: goal, context, constraints, acceptance, and optionally stages and check-ins |
+| **Place** | Where the work happens | Capsules, possibly across several repos |
+| **Memory** | What happened, and what it produced | The log (who did what, when) and artifacts (ADRs, docs, PRs, handoffs: what one agent leaves for the next) |
+
+Agents act on a mission. Each is one contributor to the work, not its container, and they're interchangeable. ws starts them *for* a mission, so it never has to identify them. They play three roles:
+
+- **Briefing agent:** turns a request ("fe issue 45", a sentence) into intent and place. It writes the brief and lifts the capsules, then hands over.
+- **Crew:** do the work, one part at a time. They read the mission when they start and add to its memory as they go.
+- **Orchestrator:** a headless agent that runs between crew. It reads the intent and memory and decides what's next: dispatch new crew, resume one, flag the human, or suggest concluding.
+
+Which agent CLI plays each role (Cursor, Claude Code, a shell) is configuration (`[crew]`, `[briefing]`, `[orchestrator]`), and changing it changes nothing about the mission.
+
+### From brief to automation
+
+The brief sits at the top of the mission, and the goal is for as much as possible to follow from it automatically. A human states the intent once, or a briefing agent drafts it from a request. The orchestrator then moves the work through it stage by stage. It comes back to the human only at check-ins the brief names, for decisions only they can make, or after a few dispatches in a row without them.
+
+The log and artifacts are what make that possible: they're how the orchestrator, and each new crew, know where the work stands without relying on anyone's memory.
+
+### Log and artifacts: the connective tissue
+
+- **Log:** an append-only record of what did what, when. It covers crew starting and ending, capsules added, notes, asks, done reports, dispatches and the orchestrator's decisions. Agents read it to catch up; the orchestrator reads it to decide.
+- **Artifacts:** what the mission produces and passes along. That means proposals, ADRs, notes, docs, PRs, and the handoff each crew leaves. The log says *that* something happened; artifacts are *what was made*, in a form the next agent can read. An artifact can be a file on a repo's default branch, a file in one of the mission's capsules, a private file in the mission's own folder, a PR or issue, or a link. The mission only points at it.
+
+The entry point is **`ws deck`**, a full-screen view of missions and the agents working on them. Agents also reach their mission through `ws mission` from their shell.
 
 > **The rule:** missions are an additive layer. Nothing that exists today changes its default behaviour or output. If you never run `ws deck` or `ws mission`, ws behaves exactly as it does now.
 
 ## Principles
 
-1. **Additive only.** `ws status`, `ws mc`, `lift`, `dock`, `burn`, `debrief` and `FOR_LLMS.md` rules keep working as they do. Mission awareness is either a new command or happens only when `WS_MISSION` is set.
+1. **Additive only.** `ws status`, `ws mc`, `lift`, `dock`, `burn`, `debrief` and the `FOR_LLMS.md` rules keep working as they do. Mission awareness is either a new command or happens only when `WS_MISSION` is set.
 2. **Capsules stay the primitive.** A mission refers to capsules and doesn't replace them. A capsule can belong to no mission, which is today's world.
-3. **The brief and log outlive agents.** Handing work to another agent or person goes through mission files, not an agent's memory.
-4. **ws starts the agents.** Identity comes from ws provisioning the agent, not from detecting it. Detection stays a possible future fallback.
+3. **The mission is the memory.** Handing work to another agent or person goes through the mission's brief, log and artifacts, never through an agent's context. If the next agent would need to know something, it belongs in the mission.
+4. **Agents are interchangeable.** ws starts them, so identity comes from provisioning rather than detection. Any harness can play any role it supports, and nothing in a mission depends on which agent did which part.
+5. **Automate from intent, check in where the brief says.** The orchestrator moves work forward from the brief. It acts only through `ws` commands, which check what it asks for, and it hands back to the human at named check-ins and limits.
 
 ## Concepts
 
 | Term | Meaning |
 |---|---|
-| **Mission** | A unit of work: slug, title, state, brief, capsules, crew, log. |
-| **Brief** | Markdown: goal, constraints, acceptance criteria, notes. Written by the human, read by agents, and agents may add to it. |
-| **Crew** | A record of each agent session run for the mission: harness, conversation id, start and end time, how it ended. |
-| **Log** | Append-only events: created, capsule lifted or docked, agent started or ended, note, PR opened, state change. |
-| **Deck** | The TUI that runs missions and their crew. |
+| **Mission** | A unit of work: slug, title, state, brief, capsules, crew, log, artifacts. |
+| **Brief** | Markdown: goal, context, constraints, acceptance, and optionally `## Stages` with check-ins. The human owns it; a briefing agent may draft it before the mission is ready. Crew add to the log, not the brief. |
+| **Capsule** | A worktree, unchanged. A mission owns some; others belong to no mission. |
+| **Crew** | A record of each agent session run on the mission: role, harness, conversation id, capsule, handoff, start and end, and how it ended. |
+| **Briefing agent** | Crew in the briefing role: turns a request into a brief and capsules, then runs `ws mission ready`. |
+| **Orchestrator** | A headless agent run when crew report done or end by themselves. It decides what's next and acts only through `ws mission` commands. |
+| **Log** | Append-only events: what did what, when. |
+| **Artifact** | A pointer to something the mission produced or relies on: a file (on a default branch, in a capsule, or private to the mission), a PR or issue, or a link. It has a kind, such as proposal, ADR, note or handoff. |
+| **Harness** | An agent CLI ws can launch in a role: `cursor`, `claude`, `shell`. |
+| **Deck** | The TUI for running missions and their crew. |
 
 ### Mission state
 
-`draft → active → review → landed → archived`, plus `parked`.
+`briefing → draft → active → review → landed → archived`, plus `parked`.
 
-- `draft`: brief only, no capsules yet.
+- `briefing`: a briefing agent is turning the request into a brief and capsules. `ws mission ready` ends it.
+- `draft`: nothing live yet.
 - `active`: has capsules.
 - `review`: every capsule has an open PR. Derived from the PR data `collectStatusData` already fetches.
 - `landed`: every PR is merged. Derived the same way.
 - `archived`: capsules are burned and the files are kept for history.
 - `parked`: set manually, for work that's paused.
 
-Only `draft`, `parked` and `archived` are stored. The other states are computed, so they can never drift from git or GitHub.
+`briefing`, `parked` and `archived` are set explicitly. The others are worked out from git and GitHub each time, so they can never drift.
 
 ### Multi-repo missions
 
 A mission can own capsules in several repos, usually with the same branch name (for example `fe/auth-fix` and `api/auth-fix`). This is the main reason to make missions first-class in a multi-repo tool. `FOR_LLMS.md`'s rule "one capsule, one concern" still applies to agents outside a mission. Inside one, the rule becomes "one mission, one concern" (see [Agent guidance](#agent-guidance)).
+
+> **From here to [What doesn't change](#what-doesnt-change)** is the original design for phases 1–4. MANUAL.md ("Missions") describes what was built, and where the two differ, the manual is right. For example, crew run in a deck server rather than as children of the deck, the deck runs on Bubble Tea v2, crew are typed into or given their prompt depending on the harness, and Claude Code is a harness alongside Cursor.
 
 ## Storage
 
@@ -193,24 +229,93 @@ Add a **conditional** section to `FOR_LLMS.md`. It doesn't change any existing r
 
 `ws debrief` doesn't archive missions in v1. The deck offers "archive landed missions" itself, which burns their capsules through the existing burn path.
 
-## Phases
+## Built so far
 
-1. **Missions core:** `internal/mission` (load/save/log, derived state, cwd resolution), the `ws mission` CLI, `WS_MISSION` hooks in lift/dock/burn/status-llm, `FOR_LLMS.md` section. Useful on its own with agents started by hand.
-2. **Deck shell:** `ws deck` with the sidebar, brief view, and mission create/edit/attach. The main pane only shows the brief at this stage.
-3. **Embedded crew:** `termpane` (pty + vt), Cursor harness, run, resume, prefix keys, zoom/passthrough.
-4. **Later:** deck server (detach/reattach), more harnesses, starting a mission from a GitHub issue/PR, parallel crew in one mission, possibly syncing missions through the config repo.
+1. **Missions core** (#8): `internal/mission` (load and save, log, derived state, finding the mission from cwd), the `ws mission` CLI, `WS_MISSION` hooks in lift, dock, burn and `status -f llm`, and the `FOR_LLMS.md` section.
+2. **Deck shell** (#9): `ws deck` with the missions sidebar, the mission view, and creating, editing and attaching missions.
+3. **Embedded crew** (#10, #11): `termpane` (a PTY plus a terminal emulator), prefix keys, several crew per mission, scrollback, raw zoom, and a deck server so crew outlive the deck.
+4. **Briefing, attention and the orchestrator** (#12–#16):
+   - briefing agents that turn a request into a ready mission
+   - crew shown as working or waiting, with ask and done signals
+   - artifacts as links
+   - missions raised by crew
+   - the orchestrator with dispatch, resume-with, flag and conclude
+   - the Overview, which groups missions by what they need from you
+5. **Harness roles:** Cursor and Claude Code can each play every role (crew, briefing, orchestrator), chosen in `[crew]`, `[briefing]` and `[orchestrator]`. Claude Code's orchestrator is limited to an allowlist of `ws` and read-only commands; Cursor's runs with `--force`.
+
+## Next phases
+
+Where the build still falls short of the idea, in the order to close the gaps.
+
+### 6. Artifacts as connective tissue
+
+Missions are personal: `.ws/` stays on one machine. An artifact is anything the mission produces or relies on, wherever it lives, and the mission keeps a pointer to each one.
+
+Today an artifact is a URL and a label. PRs are found from capsule branches, and `ws mission show -f llm` lists both, but the orchestrator's prompt doesn't. A file has no proper form at all.
+
+An artifact has a **location** and a **kind**:
+
+| Location | Example | Shared? | Notes |
+|---|---|---|---|
+| File on a repo's default branch | `records:adr/0042-cache-tokens.md` | With anyone who has the repo | Read from `.ground` locally, or shared as a GitHub link |
+| File in one of the mission's capsules | `records/cache-adr:adr/0042-cache-tokens.md` | Once pushed | Work in progress. When the capsule's PR merges, it becomes the default-branch file above |
+| File in the mission's own folder | `mission:spike-notes.md` (in `.ws/missions/<slug>/files/`) | No | Personal working material: notes, scratch, handoffs (phase 7) |
+| PR or issue | `api#88` | Yes | PRs are found from capsule branches, or added. Shows state: open, checks, merged |
+| Link | any URL | Depends | Anything outside the workspace: designs, dashboards, external docs |
+
+- **Kind is what it is:** `proposal`, `adr`, `note`, `doc`, `plan`, `handoff`, `pr`, `issue`, `link`, and open to more. It's independent of location: the same ADR can be a private draft in the mission folder, then a file in a records capsule, then a landed file.
+- **One command adds any of them:** `ws mission artifact add <path|repo:path|PR|url> [--kind adr] ["label"]`. A filesystem path is classified by where it sits: in one of the mission's capsules, under a `.ground`, or in the mission folder. Agents don't need to learn the syntax.
+- **Files are followed as they move.** A capsule file shows the PR carrying it. Once that PR merges, the artifact resolves to the default branch, so it survives the capsule being burned. A file that has gone is shown as missing, not treated as an error.
+- **Records repo:** if `ws.toml` names one (`[missions] records = "records"`), shared proposals, ADRs and notes go there. Briefing agents and crew lift a capsule in it when a stage produces one, and the repo's README or AGENTS.md keeps its conventions (folders, templates, numbering).
+- **The orchestrator sees them.** Its prompt lists every artifact with its location and state. A dispatch names what the next crew should read first (`--read`), so a handoff points at real outputs instead of paraphrasing them. Private files read the same way, since everything runs on the one machine.
+- **The deck's mission view** groups artifacts by kind and shows where each lives and whether it has landed.
+- **Open:** may the next stage build on a capsule file still in review, or does it wait for the file to land? Either way, that point is a natural check-in.
+
+### 7. Handoffs that carry what was learned
+
+`ws mission done` takes one line. What the next agent needs most is where things live, what was tried and didn't work, and what's left. Today the orchestrator rebuilds that from the end of a transcript.
+
+- Crew finish with a short, structured handoff: *done*, *learned*, *left*, *read first*. It's kept as a `handoff` artifact and summarised in the log.
+- New crew get the latest handoffs for their capsules ahead of the brief, so they start where the last crew stopped instead of rediscovering.
+
+### 8. Mission state decides, not processes
+
+The deck and dispatch still reason about processes: a capsule is busy while a crew's terminal is open. So crew that reported done, but whose session is still open, block dispatching the next stage into their capsule. This happened with both Cursor and Claude Code.
+
+- Crew that have reported done have handed the work back, so they don't make a capsule busy. Dispatching into that capsule ends their session (it can still be resumed) and logs it.
+- The mission view becomes the deck's main surface: intent, stage progress, artifacts and log, with crew terminals one step away.
+
+### 9. Stages ws understands
+
+The orchestrator rereads the brief's prose on every run and decides from it. The mechanical decisions shouldn't depend on a model.
+
+- ws parses `## Stages` as an ordered list. A stage can name what it produces and whether to check in with the human after it. ws records which stage each crew was dispatched for and when it reported done.
+- ws shows stage progress and handles the mechanical cases itself: the next stage is dispatched, and a check-in becomes a flag. The orchestrator is asked only for judgement: is the output good enough, does the plan need to change, is the mission finished.
+- The brief's acceptance criteria are what a suggested conclusion is checked against.
+
+### Later
+
+- Starting a mission from a GitHub issue or PR directly.
+- More harnesses (Codex).
+- Sharing missions themselves, beyond the records they produce, if personal stops being enough: syncing through the config repo, or a branch per mission.
 
 ## Open questions
 
-1. **Name:** `ws deck`? Other options: `ws bridge`, `ws flight`. `ws mc` is taken and stays as it is.
-2. **Implicit missions:** should `ws lift` outside a mission ever create one? This draft says no, so it stays additive, and loose capsules sit in their own sidebar section.
-3. **Parallel crew:** allow two live agents in one mission in v1? This draft allows it but warns if two crew members share a capsule.
-4. **Brief ownership:** can agents edit `brief.md`, or only add notes? This draft says notes only, and the human owns the brief.
-5. **Prefix key:** `ctrl+g` clashes with some editors' cancel key. Make it configurable in `ws.local.toml`.
-6. **Bubble Tea v1 vs v2** for the deck: start on v1 and measure, or start the new entry point on v2 because it's new code anyway?
+1. **When is a mission done?** With every output arriving by PR, records included, "landed" (every PR merged) now covers docs-only missions too. What's left: should the brief's acceptance criteria also be checked before a mission counts as done, or is merged enough?
+2. **How autonomous by default?** "Brief once, come back to a PR" and "approve each stage" want different defaults for `max_dispatches`, for check-ins, and for whether dispatched crew launch at once (`dispatch = "auto"`) or wait (`"ask"`).
+
+Settled:
+- **Missions are personal**, kept in `.ws/` on one machine. What they produce is shared through repos: proposals, ADRs and notes in the records repo, persisted on the default branch. Artifacts can point at those files and at anything else (see phase 6).
+- The command is `ws deck`.
+- `ws lift` never creates a mission by itself.
+- Several crew can work on a mission; the deck asks before two share a capsule.
+- The human owns the brief: a briefing agent writes it before `ready`, and the orchestrator may rename a mission still titled with its request.
+- The prefix key is `ctrl+g`; it isn't configurable yet.
+- The deck runs on Bubble Tea v2.
 
 ## Risks
 
-- **Terminal emulation fidelity.** Mitigated by the swappable `termpane` and passthrough zoom.
-- **Cursor CLI surface** (initial prompt, `--resume`, `create-chat`) is unverified. Mitigated by the spike before phase 3. Phases 1 and 2 don't depend on it.
-- **Agents dying when the deck quits** in v1. Mitigated by resume, and properly fixed by the deck server later.
+- **Terminal emulation fidelity.** Mitigated by the swappable `termpane` and passthrough zoom. One known bug: `charmbracelet/x/ansi` ends an OSC string at a raw `0x9C` byte, which is part of the UTF-8 for `✓ ✗ ✳` and much CJK. Agents' titles containing those characters are cut short (Claude Code's `✳` title shows as `�`), and the rest of the sequence can leak into the pane. It needs an upstream fix.
+- **Automation decided from prose.** The orchestrator's decisions vary by model and prompt. An early Claude orchestrator gave up on the shell after one refused command, until the allowlist and prompt were fixed. Mitigated by acting only through `ws` commands that validate what they're asked, by the dispatch limit and flags, and by phase 9.
+- **Orchestrator permissions differ by harness.** Claude Code's runs with `--permission-mode dontAsk` and an allowlist, with git limited to exact capsule paths. Cursor's print mode can't be limited and runs with `--force`, relying on its instructions.
+- **Agent CLIs change underneath us.** Every assumption about a CLI lives in its harness file, marked VERIFIED with the version it was checked against.
