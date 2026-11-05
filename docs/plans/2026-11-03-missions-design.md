@@ -1,7 +1,7 @@
 # Missions: the Workspace Owns the Work, Agents Do It
 
 **Date:** 2026-11-03. What and why rewritten 2026-11-05.
-**Status:** Phases 1–6 built (see [Built so far](#built-so-far)), and the first part of phase 8; phases 7–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
+**Status:** Phases 1–6 built (see [Built so far](#built-so-far)), with the agents' own hooks, answerable flags and a reworked deck since; phase 8 partly built. Phase 7 is designed below and next, then the rest of 8, and 9. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
 ## Why
 
@@ -244,6 +244,12 @@ Add a **conditional** section to `FOR_LLMS.md`. It doesn't change any existing r
 5. **Harness roles:** Cursor and Claude Code can each play every role (crew, briefing, orchestrator), chosen in `[crew]`, `[briefing]` and `[orchestrator]`. Claude Code's orchestrator is limited to an allowlist of `ws` and read-only commands; Cursor's runs with `--force`.
 6. **Artifacts** (phase 6 below): references to files (default branch, capsule, private), PRs and links, with kinds and a state worked out each time; `ws mission artifact add/rm`, `--read` on dispatch, the orchestrator's prompt, and `[missions] records`.
 
+Since phase 6:
+
+- **Crew report through their agents' hooks.** ws installs hooks in each crew session it launches (Claude Code through `--settings`, Cursor through a plugin), so crew say when they're working, waiting (with their last reply) or asking for permission, instead of the deck judging from the screen. `ws doctor --fix` adds what Cursor needs.
+- **Flags are questions you answer.** `ws mission flag` carries the answers the orchestrator would act on; the deck offers them, your own answer, or crew to answer it (the `answer` role), and `ws mission answer` runs the orchestrator with it. Done stays done until you send that crew a message.
+- **The deck.** The mission view in tabs (Summary leading on what needs you, Brief, Work, Log); clicks checked against the drawn frame (zones as Lip Gloss layers, `View.OnMouse`) and every key declared once (bubbles `key`/`help`); the deck's status on the terminal's tab (OSC 7501); the bell and notification only when its window isn't focused; crew clipboard copies (OSC 52) put on yours; `ctrl+]` zooms in and out.
+
 ## Next phases
 
 Where the build still falls short of the idea, in the order to close the gaps.
@@ -302,17 +308,48 @@ Anything else is refused, with what to do instead: copy it into the mission's fi
 
 ### 7. Handoffs that carry what was learned
 
-`ws mission done` takes one line. What the next agent needs most is where things live, what was tried and didn't work, and what's left. Today the orchestrator rebuilds that from the end of a transcript.
+`ws mission done` takes one line. What the next agent needs most is where things live, what was tried and didn't work, and what's left. Today the orchestrator rebuilds that from the end of a transcript (the last 32 KB of terminal output), and new crew rediscover it.
 
-- Crew finish with a short, structured handoff: *done*, *learned*, *left*, *read first*. It's kept as a `handoff` artifact and summarised in the log.
-- New crew get the latest handoffs for their capsules ahead of the brief, so they start where the last crew stopped instead of rediscovering.
+**Words.** Until now *handoff* has also named what crew are dispatched *with* (`Crew.Handoff`, the text of `ws mission dispatch`). From this phase a **handoff** is what crew leave for whoever comes next, and what they're given is their **dispatch**: the field becomes `Crew.Dispatch` (stored as `dispatch`, with `handoff` still read from older records), and the CLI, prompts and deck say "dispatched with".
+
+**Giving one.** Work crew finish with a summary line and a handoff in markdown, on stdin or from a file, as `ws mission brief --set` takes a brief:
+
+```sh
+ws mission done "Added the per-org token cache" --handoff - <<'EOF'
+## Done
+- Cache in api/internal/tokens/cache.go, wired into Lookup; tests in cache_test.go.
+## Learned
+- Tokens are looked up twice per request (middleware and handler): the cache hides it, but it's worth fixing.
+- An LRU from hashicorp/golang-lru was tried and dropped: the brief rules out new deps.
+## Left
+- Eviction on token revocation (no hook exists yet).
+## Read first
+- records/cache-adr:adr/0042-cache-tokens.md
+EOF
+```
+
+- **Required for work crew.** `done` without `--handoff` is refused, with the template in the message. Briefing crew finish with `ws mission ready` and answer crew with `ws mission answer`, as now; neither leaves a handoff.
+- **Checked, lightly.** The four headings must be there, in any order; a section can say "Nothing." Each *Read first* entry must resolve as `ws mission artifact add` would (a reference, a URL, or a file in a capsule, a `.ground` or the mission's files), and the refusal names any that don't, so the next crew isn't sent looking for something that isn't there. Anything else is free text.
+- **Kept** as a private mission file, `mission:handoffs/<crew>.md`: the summary as its title, then who, when and in which capsule, then the four sections. It's recorded as an artifact of kind `handoff`, by that crew, labelled with the summary. Crew that report done again (resumed, then finished) replace their file; the log keeps every summary.
+- **Logged** as today's `crew_done` event: the summary, then the first line of *Left*, so the overview and Log say what's still open.
+
+**Who reads it.**
+
+- **New crew** (launched or dispatched, not resumed) get, ahead of the brief, *Where earlier crew left off*: the latest handoff from their own capsule in full, or else the mission's latest; and the path of each other capsule's latest handoff. The proposal crew's handoff (in `records`) reaches the crew implementing it (in `api`), which looking only at their own capsule would miss. The dispatch still comes first: it's what this crew is for.
+- **The orchestrator**, run because crew reported done, gets that crew's handoff in full, and the transcript's tail cut to 8 KB (for what the handoff doesn't say: errors, test output). Crew that ended without reporting done have no handoff, so it keeps the 32 KB tail. Its prompt says to name a handoff with `--read` rather than retell it in a dispatch.
+- **`ws mission show -f llm`** lists handoffs with the other artifacts, and names the latest per capsule.
+- **The deck:** Summary's crew line reads "c3 done: <summary> · left: <first line>", Work lists handoffs under their kind, and Log links each crew's history to its handoff.
+
+**Crew are taught it** in their opening prompt, FOR_LLMS.md and `ws mission done --help`: the template, that *Learned* matters most (where things live, what was tried and didn't work, surprises), and to keep it short.
+
+**Not in this phase:** handoffs from crew that end without reporting done (the orchestrator still reads their transcript), sharing handoffs beyond the mission (what's shared goes in the records repo as proposals, ADRs and notes), and summarising long handoffs.
 
 ### 8. Mission state decides, not processes
 
 The deck and dispatch still reason about processes: a capsule is busy while a crew's terminal is open. So crew that reported done, but whose session is still open, block dispatching the next stage into their capsule. This happened with both Cursor and Claude Code.
 
 - **Built:** crew that have reported done (or finished briefing) have handed the work back, so they don't make a capsule busy. Dispatching into that capsule ends their session (it can still be resumed) and logs it, and launching there from the deck offers to.
-- The mission view becomes the deck's main surface: intent, stage progress, artifacts and log, with crew terminals one step away.
+- The mission view becomes the deck's main surface: intent, stage progress, artifacts and log, with crew terminals one step away. **Built so far:** the tabs, with Summary leading on what needs you, and the groundwork for the rest: anything drawn can be made clickable with `zone(…)`, and keys, footers and help come from one key map. Stage progress waits for phase 9.
 
 ### 9. Stages ws understands
 
