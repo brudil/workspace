@@ -764,10 +764,11 @@ func (s Store) SetFlag(slug, text, by string, options ...string) error {
 // ErrNoFlag is returned when answering a mission nobody flagged.
 var ErrNoFlag = errors.New("nothing to answer: the mission isn't flagged")
 
-// AnswerFlag records the user's answer to the mission's flag: it keeps the
-// question and answer for the orchestrator's next run, clears the flag, and
-// counts as the user stepping in (the dispatch count starts again).
-func (s Store) AnswerFlag(slug, answer string) (Answer, error) {
+// AnswerFlag records the answer to the mission's flag, by "you" or by crew
+// you asked to answer it: it keeps the question and answer for the
+// orchestrator's next run, clears the flag, and counts as the user stepping
+// in (the dispatch count starts again).
+func (s Store) AnswerFlag(slug, answer, by string) (Answer, error) {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
 		return Answer{}, errors.New("the answer is empty")
@@ -777,13 +778,13 @@ func (s Store) AnswerFlag(slug, answer string) (Answer, error) {
 		if m.Flag == nil {
 			return ErrNoFlag
 		}
-		a = Answer{Question: m.Flag.Text, Text: answer, At: now()}
+		a = Answer{Question: m.Flag.Text, Text: answer, At: now(), By: by}
 		m.Answer, m.Flag, m.Dispatches = &a, nil, 0
 		return nil
 	}); err != nil {
 		return Answer{}, err
 	}
-	return a, s.AppendLog(slug, Event{Kind: EventFlagAnswered, Crew: "you", Text: answer})
+	return a, s.AppendLog(slug, Event{Kind: EventFlagAnswered, Crew: by, Text: answer})
 }
 
 // SetConclude records a suggestion that the mission is finished ("" clears).

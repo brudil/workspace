@@ -66,7 +66,11 @@ func Prompt(in Input) string {
 		fmt.Fprintf(&b, "Crew %s has just ended without reporting done.\n", in.CrewID)
 	case "answer":
 		if a := m.Answer; a != nil {
-			fmt.Fprintf(&b, "You flagged the user, and they've answered.\n\nYou asked: %s\nThey answered: %s\n\nAct on their answer now: it's the decision you were waiting for.\n", a.Question, a.Text)
+			who := "They answered"
+			if a.By != "" && a.By != "you" {
+				who = "Crew " + a.By + ", which the user asked to answer it for them, answered"
+			}
+			fmt.Fprintf(&b, "You flagged the user, and they've answered.\n\nYou asked: %s\n%s: %s\n\nAct on the answer now: it's the decision you were waiting for.\n", a.Question, who, a.Text)
 		}
 	}
 	b.WriteString(`

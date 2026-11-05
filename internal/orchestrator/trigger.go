@@ -49,7 +49,9 @@ func Spawn(root, slug, crewID, trigger string) {
 // it already).
 func AfterEnd(root string, store mission.Store, spawn Spawner) crew.EndHook {
 	return func(spec crew.Spec, exit string, stopped bool) {
-		if stopped || spec.Role == mission.RoleBriefing {
+		// Not briefing crew, nor crew answering a question for the user:
+		// an answer runs it, and without one the question still stands.
+		if stopped || spec.Role == mission.RoleBriefing || spec.Role == mission.RoleAnswer {
 			return
 		}
 		if m, err := store.Load(spec.Slug); err == nil {

@@ -261,8 +261,8 @@ func (m deckModel) resumeCrew() (tea.Model, tea.Cmd) {
 	// Back where it worked if that's still there, whoever else is in it now.
 	place, ok := m.placeFor(dm, last.Capsule)
 	place.Busy = ""
-	if last.Role == mission.RoleBriefing {
-		place, ok = crew.Place{Dir: m.ws.Root, Capsule: briefingPlace}, true
+	if last.Role == mission.RoleBriefing || last.Role == mission.RoleAnswer {
+		place, ok = crew.Place{Dir: m.ws.Root, Capsule: briefingPlace}, true // they work from the root
 	}
 	if !ok {
 		m.flash = "no capsule left to resume in"
@@ -422,8 +422,10 @@ func (m deckModel) launchCmd(req crew.Request) tea.Cmd {
 			store.QueueDispatch(slug, nil) // the queued dispatch is launched
 		}
 		// You're acting on the mission: a flag is answered, and the
-		// orchestrator's run of dispatches without you starts again.
-		if mm, err := store.Load(slug); err == nil && mm.Flag != nil {
+		// orchestrator's run of dispatches without you starts again. Not
+		// crew you asked to answer the flag: the question stays open until
+		// they do.
+		if mm, err := store.Load(slug); err == nil && mm.Flag != nil && req.Role != mission.RoleAnswer {
 			store.SetFlag(slug, "", "")
 		}
 		store.UserActed(slug)

@@ -81,7 +81,9 @@ or ADR you wrote, notes, a link) with ws mission artifact add <file|url>
 			if err := missionStore(ctx).SetCrewStatus(m.Slug, c.ID, mission.CrewDone, summary); err != nil {
 				return err
 			}
-			orchestrateSpawner(ctx.WS.Root, m.Slug, c.ID, "done")
+			if c.Role != mission.RoleAnswer { // its answer already ran the orchestrator
+				orchestrateSpawner(ctx.WS.Root, m.Slug, c.ID, "done")
+			}
 			fmt.Fprintf(ui.Stderr, "  %s done; the user has been notified\n", ui.Green.Render("✓"))
 			return nil
 		},
@@ -247,11 +249,13 @@ func newMissionAnswerCmd() *cobra.Command {
 		Long: `Answer the question the orchestrator flagged a mission with (the deck does
 this with ⏎ on the mission). The flag clears, your answer goes in the log,
 and the orchestrator runs again with it, to dispatch crew, resume one, or
-conclude as you said.`,
+conclude as you said. Crew you asked to answer it (from the deck) answer
+the same way, and that's their part done.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if raisedBy() != "you" {
-				return errors.New("only the user answers a flag; crew and the orchestrator ask with ws mission ask or flag")
+			by := raisedBy()
+			if by == mission.RoleOrchestrator {
+				return errors.New("the orchestrator asks with ws mission flag; the user, or crew they ask, answers")
 			}
 			ctx, err := LoadContext()
 			if err != nil {
@@ -261,8 +265,19 @@ conclude as you said.`,
 			if err != nil {
 				return err
 			}
-			if _, err := missionStore(ctx).AnswerFlag(m.Slug, strings.Join(args, " ")); err != nil {
+			if by != "you" {
+				if c, ok := crewRecord(m, by); !ok || c.Role != mission.RoleAnswer {
+					return errors.New("only the user answers a flag, or crew they asked to answer it; crew ask the user with ws mission ask")
+				}
+			}
+			store := missionStore(ctx)
+			answer := strings.Join(args, " ")
+			if _, err := store.AnswerFlag(m.Slug, answer, by); err != nil {
 				return err
+			}
+			if by != "you" {
+				// Answering was its whole job: it has handed back.
+				store.SetCrewStatus(m.Slug, by, mission.CrewDone, "answered: "+answer)
 			}
 			fmt.Fprintf(ui.Stderr, "  %s answered on %s; %s\n", ui.Green.Render("✓"), m.Slug, afterAnswer(ctx, m.Slug))
 			return nil

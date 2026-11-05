@@ -73,6 +73,8 @@ Use this to orient yourself before starting work.
 
 If you were started to **brief** a mission (your instructions say so), follow those instructions instead: you write the brief and create capsules, then run `ws mission ready`, and you don't change code.
 
+If you were started to **answer the orchestrator's question** for the user (your instructions say so), find out what's needed and answer with `ws mission answer "<what should happen, and why>"`. That hands it to the orchestrator; don't do the work it leads to.
+
 If `WS_ROLE=orchestrator` is set, you are a mission's orchestrator: follow the instructions you were given, act only through `ws mission note/dispatch/resume-with/flag/new/conclude` (and `ws lift` for a capsule the next crew needs), and don't change code.
 
 If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.

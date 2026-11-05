@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 )
 
@@ -44,7 +45,7 @@ func TestDeckFlag_EnterOffersTheAnswersAndAnswerRunsTheOrchestrator(t *testing.T
 	}
 
 	m, _ = press(t, m, "enter")
-	if m.mode != deckModePick || strings.Join(m.pick.items, "|") != "Commit both and open PRs|Leave them uncommitted|Write my own answer…|Launch crew instead|Dismiss the question" {
+	if m.mode != deckModePick || strings.Join(m.pick.items, "|") != "Commit both and open PRs|Leave them uncommitted|Write my own answer…|Ask an agent to answer it|Dismiss the question" {
 		t.Fatalf("picker: mode %v, items %v", m.mode, m.pick)
 	}
 	m, answer := pickAndRun(t, m, 0)
@@ -87,5 +88,42 @@ func TestDeckFlag_WriteYourOwnAnswer(t *testing.T) {
 	}
 	if events, _ := m.store.ReadLog(slug, 0); events[len(events)-1].Kind != mission.EventFlagAnswered {
 		t.Errorf("last event %+v", events[len(events)-1])
+	}
+}
+
+// "Ask an agent to answer it" starts crew on the question itself, in the
+// workspace root, with the crew's harness and model; while it works the
+// mission isn't asking you.
+func TestDeckFlag_AskAnAgentToAnswer(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	harness.Register(recordingHarness{"answer-agent"})
+	t.Setenv(harness.EnvDefault, "")
+	m.roles = harness.Roles{Crew: harness.Pick{Harness: "answer-agent", Model: "small"}}
+	m.store.SetFlag(slug, "Commit and open PRs?", "orchestrator", "Commit both", "Leave them")
+	m, _ = reloadRecords(m)
+	m = selectMission(t, m, slug)
+
+	m, _ = press(t, m, "enter")
+	m, launch := pickAndRun(t, m, 3) // two options, own answer, then the agent
+	if launch == nil {
+		t.Fatalf("no launch: flash %q", m.flash)
+	}
+	m = completeLaunch(t, m, launch)
+	r, ok := liveRun(m, slug)
+	if !ok || r.role != mission.RoleAnswer || r.dir != m.ws.Root {
+		t.Fatalf("run = %+v", r)
+	}
+	b := lastBrief(t, "answer-agent")
+	if b.Role != mission.RoleAnswer || b.Question != "Commit and open PRs?" || strings.Join(b.Options, "|") != "Commit both|Leave them" || b.Model != "small" {
+		t.Errorf("brief = %+v", b)
+	}
+	// The question stays open for the agent to answer (launching other
+	// crew counts as dealing with it, and clears it).
+	if got, _ := m.store.Load(slug); got.Flag == nil {
+		t.Fatal("launching the answering agent cleared the question it's answering")
+	}
+	m, _ = reloadRecords(m)
+	if st := m.missionStatus(&m.data.Missions[m.rows[m.cursor].mission]); strings.Contains(st.label, "asks you") {
+		t.Errorf("still asking you while an agent answers: %q", st.label)
 	}
 }

@@ -620,7 +620,7 @@ func TestTitles_TerseAndNamed(t *testing.T) {
 func TestFlagOptionsAndAnswer(t *testing.T) {
 	s := Store{Root: t.TempDir()}
 	s.Create("Cache")
-	if _, err := s.AnswerFlag("cache", "yes"); !errors.Is(err, ErrNoFlag) {
+	if _, err := s.AnswerFlag("cache", "yes", "you"); !errors.Is(err, ErrNoFlag) {
 		t.Errorf("answering an unflagged mission: %v", err)
 	}
 	s.CountDispatch("cache", 5)
@@ -629,7 +629,7 @@ func TestFlagOptionsAndAnswer(t *testing.T) {
 	if m.Flag == nil || strings.Join(m.Flag.Options, "|") != "Commit both and open PRs|Leave them uncommitted" {
 		t.Fatalf("flag = %+v", m.Flag)
 	}
-	a, err := s.AnswerFlag("cache", "  Commit both and open PRs ")
+	a, err := s.AnswerFlag("cache", "  Commit both and open PRs ", "you")
 	if err != nil || a.Question != "Commit and open PRs?" || a.Text != "Commit both and open PRs" {
 		t.Fatalf("answer = %+v, %v", a, err)
 	}

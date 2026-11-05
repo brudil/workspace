@@ -341,3 +341,24 @@ func TestWorkPromptTeachesSignals(t *testing.T) {
 		}
 	}
 }
+
+// Crew asked to answer the orchestrator's question get the question, not
+// the whole brief, and are told to answer with ws mission answer and stop.
+func TestAnswerPrompt(t *testing.T) {
+	p := InitialPrompt(Brief{
+		Slug: "hello", Title: "Hello", Role: "answer",
+		Brief:    "## Goal\nA long brief nobody needs here.",
+		Question: "Commit and open PRs, or leave them?", Options: []string{"Commit both and open PRs", "Leave them uncommitted"},
+	})
+	for _, want := range []string{
+		"Commit and open PRs, or leave them?", "1. Commit both and open PRs", "2. Leave them uncommitted",
+		`ws mission answer "<the answer>"`, "ws mission show -f llm", "Don't do the work the answer leads to",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt missing %q:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "A long brief nobody needs here") || strings.Contains(p, "ws mission done") {
+		t.Errorf("answer prompt pastes the brief or asks for done:\n%s", p)
+	}
+}

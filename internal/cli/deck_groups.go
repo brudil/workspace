@@ -60,7 +60,13 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 			}
 		}
 	}
-	if f := dm.M.Flag; f != nil {
+	answering := false
+	for _, r := range runs {
+		answering = answering || r.role == mission.RoleAnswer
+	}
+	// Crew answering the question for you have it in hand: they say if
+	// they need you.
+	if f := dm.M.Flag; f != nil && !answering {
 		need(1, ui.Orange.Render("! asks you"), "the orchestrator asks: "+f.Text)
 	}
 	if d := dm.M.Dispatch; d != nil {

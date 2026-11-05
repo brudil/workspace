@@ -64,6 +64,11 @@ func (m *Mission) TitleIsRequest() bool {
 // RoleBriefing marks crew that brief a mission rather than work on it.
 const RoleBriefing = "briefing"
 
+// RoleAnswer marks crew the user asked to answer, for them, the question
+// the orchestrator flagged: they find out what's needed and answer with ws
+// mission answer, and don't do the work it leads to.
+const RoleAnswer = "answer"
+
 // Capsule identifies a capsule owned by a mission. Repo and Name are its
 // identity; Branch is remembered so a PR can still be found after the
 // capsule's worktree is burned.
@@ -87,7 +92,8 @@ type Crew struct {
 	PID int `toml:"pid,omitzero"`
 	// Capsule (repo/name) the crew worked in, so resuming goes back there.
 	Capsule string `toml:"capsule,omitempty"`
-	// Role is "" for crew working on the mission, or RoleBriefing.
+	// Role is "" for crew working on the mission, RoleBriefing, or
+	// RoleAnswer.
 	Role string `toml:"role,omitempty"`
 
 	// Status is what the crew last said about itself: CrewAsking (needs the
@@ -165,6 +171,8 @@ type Answer struct {
 	Question string    `toml:"question"`
 	Text     string    `toml:"text"`
 	At       time.Time `toml:"at"`
+	// By is "you", or the crew (RoleAnswer) that answered for you.
+	By string `toml:"by,omitempty"`
 }
 
 // Dispatch is new crew to launch on a mission, with the handoff it starts

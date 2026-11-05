@@ -4,6 +4,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/brudil/workspace/internal/crew"
+	"github.com/brudil/workspace/internal/harness"
+	"github.com/brudil/workspace/internal/mission"
 )
 
 // A flag is the orchestrator's question for you. ⏎ on a flagged mission
@@ -20,14 +23,14 @@ type deckFlagChoiceMsg struct {
 // Fixed choices after a flag's own options.
 const (
 	flagChoiceOwn = iota
-	flagChoiceCrew
+	flagChoiceAgent
 	flagChoiceDismiss
 )
 
 func (m deckModel) offerAnswers(dm *deckMission) (tea.Model, tea.Cmd) {
 	f, slug := dm.M.Flag, dm.M.Slug
 	items := append([]string(nil), f.Options...)
-	items = append(items, "Write my own answer…", "Launch crew instead", "Dismiss the question")
+	items = append(items, "Write my own answer…", "Ask an agent to answer it", "Dismiss the question")
 	m.openPick("The orchestrator asks: "+f.Text, items, func(i int) tea.Cmd {
 		return func() tea.Msg { return deckFlagChoiceMsg{slug: slug, choice: i} }
 	})
@@ -50,8 +53,8 @@ func (m deckModel) handleFlagChoice(msg deckFlagChoiceMsg) (tea.Model, tea.Cmd) 
 		m.input.CharLimit = 2000
 		m.input.Placeholder = "what the orchestrator should do"
 		return m, m.input.Focus()
-	case flagChoiceCrew:
-		return m.launchOrOfferCrew(dm)
+	case flagChoiceAgent:
+		return m.launchAnswerer(dm)
 	case flagChoiceDismiss:
 		store, slug := m.store, msg.slug
 		return m, func() tea.Msg {
@@ -72,7 +75,7 @@ func (m deckModel) answerFlag(slug, answer string) tea.Cmd {
 	}
 	store, root, off := m.store, m.ws.Root, m.orchestratorOff
 	return func() tea.Msg {
-		if _, err := store.AnswerFlag(slug, answer); err != nil {
+		if _, err := store.AnswerFlag(slug, answer, "you"); err != nil {
 			return deckReloadMsg{flash: "couldn't answer: " + err.Error()}
 		}
 		if off {
@@ -81,4 +84,34 @@ func (m deckModel) answerFlag(slug, answer string) tea.Cmd {
 		orchestrateSpawner(root, slug, "", "answer")
 		return deckReloadMsg{flash: "answered: the orchestrator is acting on it"}
 	}
+}
+
+// launchAnswerer starts crew to answer the flag for you: the crew's harness
+// and model, in the workspace root (the question may span capsules), told
+// the question and its suggested answers rather than the whole brief. It
+// answers with ws mission answer, which runs the orchestrator as your
+// answer would.
+func (m deckModel) launchAnswerer(dm *deckMission) (tea.Model, tea.Cmd) {
+	slug, f := dm.M.Slug, dm.M.Flag
+	if m.launching[slug] || f == nil {
+		return m, nil
+	}
+	pick := m.roles.ForCrew()
+	h, err := harness.Get(pick.Harness)
+	if err == nil {
+		err = h.Available()
+	}
+	if err != nil {
+		m.flash = err.Error() + " · L picks another harness"
+		return m, nil
+	}
+	b := harness.Brief{
+		Slug: slug, Title: dm.M.Title, Dir: m.ws.Root, Org: m.ws.Org, Model: pick.Model,
+		Role: mission.RoleAnswer, Question: f.Text, Options: f.Options,
+	}
+	m.launching[slug] = true
+	m.flash = "asking " + pick.Harness + " to answer the orchestrator's question on " + slug + "…"
+	return m, m.launchCmd(crew.Request{Slug: slug, Harness: pick.Harness, Role: mission.RoleAnswer,
+		Place:   crew.Place{Dir: m.ws.Root, Capsule: briefingPlace},
+		Prepare: func() (harness.Launch, error) { return h.Start(b) }})
 }

@@ -106,7 +106,7 @@ dispatched crew for you instead of launching them, and max_dispatches
 			case crewID != "":
 				what = crewID + " (" + trigger + ")"
 			case trigger == "answer":
-				what = "your answer"
+				what = "the answer to its question"
 			}
 			with := rv.Name() + " " + model
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + with})

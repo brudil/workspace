@@ -30,6 +30,10 @@ type Brief struct {
 	// turning a request into a brief and capsules.
 	Role    string
 	Request string // what the user asked for (briefing)
+	// Question and Options are the orchestrator's flagged question, and the
+	// answers it suggested, for crew asked to answer it (Role "answer").
+	Question string
+	Options  []string
 	// Handoff is what this crew was dispatched to do: its part of the
 	// mission, and what earlier crew left for it.
 	Handoff string
@@ -98,8 +102,11 @@ func Names() []string {
 // the mission rather than pasting everything, so the brief stays the single
 // source of truth, but includes the brief too so the agent can start at once.
 func InitialPrompt(b Brief) string {
-	if b.Role == "briefing" {
+	switch b.Role {
+	case "briefing":
 		return briefingPrompt(b)
+	case "answer":
+		return answerPrompt(b)
 	}
 	var s strings.Builder
 	fmt.Fprintf(&s, "You are crew on the mission %q (%s), managed by the ws workspace tool.\n\n", b.Title, b.Slug)
@@ -123,6 +130,29 @@ func InitialPrompt(b Brief) string {
 		s.WriteString(brief)
 		s.WriteString("\n")
 	}
+	return s.String()
+}
+
+// answerPrompt sets up crew the user asked to answer the orchestrator's
+// question for them: find out, answer with ws mission answer, and stop
+// there. It doesn't paste the brief: the question is the job, and the
+// mission is one ws mission show away.
+func answerPrompt(b Brief) string {
+	var s strings.Builder
+	fmt.Fprintf(&s, "You are crew on the mission %q (%s), managed by the ws workspace tool. ", b.Title, b.Slug)
+	s.WriteString("The mission's orchestrator (a headless agent that decides what happens next and dispatches crew) asked the user a question, and the user asked you to answer it for them.\n\n")
+	fmt.Fprintf(&s, "The question:\n\n%s\n", strings.TrimSpace(b.Question))
+	if len(b.Options) > 0 {
+		s.WriteString("\nThe answers it suggested:\n")
+		for i, o := range b.Options {
+			fmt.Fprintf(&s, "%d. %s\n", i+1, o)
+		}
+	}
+	s.WriteString("\nFind out what you need to answer it well. `ws mission show -f llm` gives the brief, the capsules (with their paths), the artifacts and the recent log; look at the capsules, read files, run commands or tests (things the orchestrator can't do itself). ")
+	s.WriteString("If the answer is really the user's call (a preference, or a risk they should weigh), ask them in your reply and wait.\n\n")
+	s.WriteString("Then answer:\n\n  ws mission answer \"<the answer>\"\n\n")
+	s.WriteString("Make the answer what should happen next, as an instruction (usually one of the suggested answers), followed by what you found that supports it, in a sentence or two. It goes to the orchestrator, which acts on it. ")
+	s.WriteString("Don't do the work the answer leads to (committing, opening PRs, implementing): the orchestrator dispatches that. Once you've answered, your part is done.\n")
 	return s.String()
 }
 
