@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/charmbracelet/x/ansi"
@@ -14,16 +16,48 @@ import (
 // overviewRecent is how many log entries the overview's activity shows.
 const overviewRecent = 12
 
+// askBoxBg fills the overview's "What do you want to do?" box (the tags'
+// dark grey).
+var askBoxBg = lipgloss.Color("236")
+
+// askBoxMaxWidth keeps the box readable on a wide pane.
+const askBoxMaxWidth = 72
+
+// renderAskBox is the overview's "What do you want to do?": a filled box,
+// centred in the pane (width columns), holding the hint, or once ⏎ is
+// pressed, the field you type into. Everything inside carries the box's
+// background, so no styled piece leaves a hole in it.
+func (m deckModel) renderAskBox(width int) string {
+	boxW := min(askBoxMaxWidth, width-4)
+	textW := max(boxW-6, 10) // inside the box's padding
+	on := lipgloss.NewStyle().Background(askBoxBg)
+	title := on.Bold(true).Render("What do you want to do?")
+	var body string
+	if m.mode == deckModeNewTitle && m.newBriefing {
+		in := m.input
+		st := in.Styles()
+		for _, s := range []*textinput.StyleState{&st.Focused, &st.Blurred} {
+			s.Text = s.Text.Background(askBoxBg)
+			s.Placeholder = s.Placeholder.Background(askBoxBg)
+			s.Suggestion = s.Suggestion.Background(askBoxBg)
+			s.Prompt = s.Prompt.Background(askBoxBg)
+		}
+		in.SetStyles(st)
+		in.SetWidth(max(textW-lipgloss.Width(in.Prompt)-1, 5))
+		// A second line, so the box keeps its height from the hint.
+		body = in.View() + "\n" + on.Faint(true).Width(textW).Render("⏎ start it · esc cancel")
+	} else {
+		body = on.Faint(true).Width(textW).Render("⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An agent turns it into a mission.")
+	}
+	box := on.Padding(1, 3).Width(boxW).Render(title + "\n\n" + body)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box)
+}
+
 // renderOverview is the deck's front page: what you want to do next, what
 // needs you, and what's been happening across every mission.
 func (m deckModel) renderOverview(indent string, inner int) string {
 	var b strings.Builder
-	b.WriteString("\n" + indent + ui.Bold.Render("What do you want to do?") + "\n")
-	if m.mode == deckModeNewTitle && m.newBriefing {
-		b.WriteString(indent + m.input.View() + "\n")
-	} else {
-		b.WriteString(indent + ui.Dim.Render(ansi.Truncate("⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An agent turns it into a mission.", inner, "…")) + "\n")
-	}
+	b.WriteString("\n" + m.renderAskBox(inner+2*len(indent)) + "\n")
 
 	const titleCol = 26
 	line := func(icon, title, text string) string {
