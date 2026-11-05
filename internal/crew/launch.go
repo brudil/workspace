@@ -25,9 +25,9 @@ type Request struct {
 	// Resume, when set, continues that crew (same id) instead of recording
 	// new crew; a resume-with message it was left becomes the prompt.
 	Resume string
-	// Handoff, when set, is what the crew was dispatched to do, and By who
+	// Dispatch, when set, is what the crew was dispatched to do, and By who
 	// dispatched it.
-	Handoff, By string
+	Dispatch, By string
 
 	Width, Height int
 
@@ -77,8 +77,8 @@ func Start(r Request) (Started, error) {
 	for _, n := range l.Notes {
 		execlog.Note(r.Root, who, "%s", n)
 	}
-	if r.Handoff != "" {
-		r.Store.SetHandoff(r.Slug, c.ID, r.By, r.Handoff)
+	if r.Dispatch != "" {
+		r.Store.SetCrewDispatch(r.Slug, c.ID, r.By, r.Dispatch)
 	}
 	env := Env(r.Root, r.Slug, c.ID)
 	term, err := r.Host.Launch(Spec{

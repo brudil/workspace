@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/brudil/workspace/internal/mission"
 )
 
 // EnvDefault picks the harness crew run, over [crew] harness in config.
@@ -34,9 +36,12 @@ type Brief struct {
 	// answers it suggested, for crew asked to answer it (Role "answer").
 	Question string
 	Options  []string
-	// Handoff is what this crew was dispatched to do: its part of the
-	// mission, and what earlier crew left for it.
-	Handoff string
+	// Dispatch is what this crew was dispatched to do: its part of the
+	// mission.
+	Dispatch string
+	// LeftOff is where earlier crew left off: their latest handoff in
+	// full, and where the others are (mission.LeftOff).
+	LeftOff string
 	Org     string // GitHub org the workspace's repos live in
 }
 
@@ -113,18 +118,26 @@ func InitialPrompt(b Brief) string {
 	s.WriteString("Before starting, run `ws mission show -f llm` to see the mission's capsules (worktrees, possibly across repos) and log. ")
 	s.WriteString("Work only in this mission's capsules; create new ones with `ws lift <repo> <name>` and they join the mission automatically. ")
 	s.WriteString("Record significant decisions and progress with `ws mission note \"...\"`. Don't edit the brief.\n\n")
-	if h := strings.TrimSpace(b.Handoff); h != "" {
-		s.WriteString("You were dispatched for one part of this mission. Your handoff:\n\n")
-		s.WriteString(h)
+	if d := strings.TrimSpace(b.Dispatch); d != "" {
+		s.WriteString("You were dispatched for one part of this mission:\n\n")
+		s.WriteString(d)
 		s.WriteString("\n\nDo that part, then report done; ws's orchestrator decides what follows and dispatches it.\n\n")
 	} else {
 		s.WriteString("If the brief describes the work in stages for separate crew, do only the first stage not yet done, then report done; ws's orchestrator dispatches the next.\n\n")
+	}
+	if l := strings.TrimSpace(b.LeftOff); l != "" {
+		s.WriteString(l + "\n\n")
 	}
 	s.WriteString("If you notice something worth doing outside this mission, don't do it: run `ws mission new \"<what it is and why>\"` (plain text; it waits for the user to brief it) and mention it in one line.\n\n")
 	s.WriteString("Tell the user's deck where you are, so they know when you need them:\n")
 	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`, then wait for their answer: don't report done while a question is open.\n")
 	s.WriteString("- When you make something the next crew or the user will need (a proposal, an ADR, notes, a doc), record it as you go: `ws mission artifact add <file> --kind <proposal|adr|note|doc> \"<label>\"` (a file in a capsule, in a .ground, or in the mission's private files folder; or a URL). `ws mission show -f llm` lists the mission's artifacts with where to read each, the private files folder, and the records repo for shared proposals and ADRs, if the workspace has one.\n")
-	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), run `ws mission done \"<one-line summary>\"`. ws finds PRs from the mission's capsules itself.\n")
+	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), report done with a one-line summary and a handoff for whoever comes next, whether the next crew or the user. Learned matters most: where things live, what you tried that didn't work, surprises. Keep it short. ws finds PRs from the mission's capsules itself.\n\n")
+	s.WriteString("  ws mission done \"<one-line summary>\" --handoff - <<'EOF'\n")
+	for _, l := range strings.Split(mission.HandoffTemplate, "\n") {
+		s.WriteString("  " + l + "\n")
+	}
+	s.WriteString("  EOF\n")
 	if brief := strings.TrimSpace(b.Brief); brief != "" {
 		s.WriteString("\nThe brief:\n\n")
 		s.WriteString(brief)

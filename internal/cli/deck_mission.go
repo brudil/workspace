@@ -301,8 +301,12 @@ func (m deckModel) renderMissionLog(dm deckMission, indent string, inner int) st
 			line += " · " + c.Status + ": " + c.Note
 		}
 		b.WriteString(wrapUnder(indent+"  ", "", line, inner-2))
-		if c.Handoff != "" {
-			b.WriteString(wrapUnder(indent+"    ", ui.Dim.Render("dispatched for: "), c.Handoff, inner-4))
+		if c.Dispatch != "" {
+			b.WriteString(wrapUnder(indent+"    ", ui.Dim.Render("dispatched for: "), c.Dispatch, inner-4))
+		}
+		if c.HandedOff != nil {
+			path := m.store.HandoffPath(dm.M.Slug, c.ID)
+			b.WriteString(indent + "    " + ui.Dim.Render("handoff: ") + ui.Hyperlink("file://"+path, path) + "\n")
 		}
 	}
 	return b.String()

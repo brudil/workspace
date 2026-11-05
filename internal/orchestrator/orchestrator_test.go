@@ -139,3 +139,23 @@ func TestRun_Logged(t *testing.T) {
 		}
 	}
 }
+
+// Run because crew reported done, the orchestrator reads its handoff in
+// full and less of its output; crew that just ended get the long tail.
+func TestPrompt_HandoffAndTail(t *testing.T) {
+	now := time.Now()
+	m := &mission.Mission{Slug: "cache", Title: "Cache", Crew: []mission.Crew{{ID: "c1", Dispatch: "write the ADR", HandedOff: &now}}}
+	output := strings.Repeat("x", 20<<10) + "\nTHE END"
+	p := Prompt(Input{Mission: m, CrewID: "c1", Trigger: "done", Output: output, Handoff: "# Wrote the ADR\n\n## Learned\n- the cache key needs the org"})
+	for _, want := range []string{"## c1's handoff", "the cache key needs the org", "kept as mission:handoffs/c1.md", "dispatched with: write the ADR", "left a handoff: mission:handoffs/c1.md", "THE END"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+	if n := strings.Count(p, "x"); n > 9<<10 {
+		t.Errorf("%d bytes of output with a handoff, want at most about 8 KB", n)
+	}
+	if n := strings.Count(Prompt(Input{Mission: m, CrewID: "c1", Trigger: "ended", Output: output}), "x"); n < 19<<10 {
+		t.Errorf("only %d bytes of output without a handoff", n)
+	}
+}

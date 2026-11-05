@@ -25,11 +25,14 @@ func newMissionDispatchCmd() *cobra.Command {
 	var queue bool
 	var reads []string
 	cmd := &cobra.Command{
-		Use:   "dispatch <handoff>",
-		Short: "Start new crew on a mission with a handoff (what to do, what earlier crew left)",
-		Long: `Start fresh crew on the mission's next piece of work. The handoff is all
-it knows beyond the brief: what to do, where earlier crew's output is
-(files, commits, PRs) and what to watch out for.
+		Use:   "dispatch <what to do>",
+		Short: "Start new crew on a mission's next piece of work",
+		Long: `Start fresh crew on the mission's next piece of work. What you dispatch it
+with is what it's for: what to do, where earlier crew's output is (files,
+commits, PRs) and what to watch out for. ws gives it, ahead of the brief,
+where earlier crew left off: the latest handoff from its capsule (or the
+mission's), and where the others are. Name what else it should read first
+with --read.
 
 The crew runs in the deck server, so it starts even with no deck open, and
 the deck picks it up. With [orchestrator] dispatch = "ask" (or --queue, or
@@ -55,13 +58,13 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			if m.State == mission.Briefing {
 				return fmt.Errorf("mission %s is still being briefed", m.Slug)
 			}
-			handoff := strings.TrimSpace(strings.Join(args, " "))
+			dispatch := strings.TrimSpace(strings.Join(args, " "))
 			if len(reads) > 0 {
 				list, err := readFirstList(ctx, m, reads)
 				if err != nil {
 					return err
 				}
-				handoff += "\n\nRead these first:\n" + list
+				dispatch += "\n\nRead these first:\n" + list
 			}
 			crewPick := agentRoles(ctx.Config).ForCrew()
 			if harnessName == "" {
@@ -82,7 +85,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			store := missionStore(ctx)
 
 			if queued {
-				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: handoff, Capsule: place.Capsule, Harness: harnessName, By: by}); err != nil {
+				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: dispatch, Capsule: place.Capsule, Harness: harnessName, By: by}); err != nil {
 					if errors.Is(err, mission.ErrDispatchQueued) {
 						return fmt.Errorf("%w; only one waits at a time, so don't queue another: say what you'd dispatch next in ws mission note, or ws mission flag the user", err)
 					}
@@ -109,13 +112,14 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				store.UserActed(m.Slug)
 			}
 			brief, _ := store.ReadBrief(m.Slug)
-			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Handoff: handoff, Model: crewPick.ModelFor(h.Name())}
+			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Dispatch: dispatch,
+				LeftOff: leftOff(ctx.WS, store, m, place.Capsule), Model: crewPick.ModelFor(h.Name())}
 			host := dispatchHost(ctx.WS.Root)
 			defer host.Leave()
 			endHandedBack(ctx.WS.Root, store, host, m, place.Capsule)
 			started, err := crew.Start(crew.Request{
 				Store: store, Host: host, Root: ctx.WS.Root,
-				Slug: m.Slug, Harness: h.Name(), Place: place, Handoff: handoff, By: by,
+				Slug: m.Slug, Harness: h.Name(), Place: place, Dispatch: dispatch, By: by,
 				Width: dispatchWidth, Height: dispatchHeight,
 				Prepare: func() (harness.Launch, error) { return h.Start(b) },
 			})
@@ -140,32 +144,23 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&capsule, "capsule", "", "capsule to work in, as repo/name (default: one no crew is working in)")
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: the crew's: $WS_DECK_HARNESS, [crew] harness, or cursor)")
-	cmd.Flags().StringArrayVar(&reads, "read", nil, "an artifact the crew should read first (repeatable): its reference, a file, or a URL; the handoff says where to read it")
+	cmd.Flags().StringArrayVar(&reads, "read", nil, "an artifact the crew should read first (repeatable): its reference, a file, or a URL; ws tells the crew where to read it")
 	cmd.Flags().BoolVar(&queue, "queue", false, "queue it for the user to launch from the deck instead of launching now")
 	return cmd
 }
 
 // readFirstList resolves what a dispatch names with --read into lines for
-// the handoff, with where to read each. A recorded artifact keeps its kind
-// and label.
+// it, with where to read each.
 func readFirstList(ctx *Context, m *mission.Mission, reads []string) (string, error) {
-	v := buildMissionViewsFrom(ctx.WS, nil, []*mission.Mission{m})[0]
-	store := missionStore(ctx)
-	var b strings.Builder
-	for _, in := range reads {
+	refs := make([]string, len(reads))
+	for i, in := range reads {
 		r, err := normalizeArtifact(ctx, m, in)
 		if err != nil {
 			return "", fmt.Errorf("--read %s: %w", in, err)
 		}
-		a := mission.Artifact{Ref: r.String(), Kind: defaultKind(r)}
-		for _, rec := range m.Artifacts {
-			if rec.Ref == a.Ref {
-				a = rec
-			}
-		}
-		b.WriteString("- " + artifactLine(resolveArtifact(ctx.WS, store, v, a)) + "\n")
+		refs[i] = r.String()
 	}
-	return strings.TrimRight(b.String(), "\n"), nil
+	return whereToRead(ctx.WS, missionStore(ctx), m, refs), nil
 }
 
 // endHandedBack ends the sessions of crew that reported done in capsule but

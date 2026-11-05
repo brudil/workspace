@@ -111,7 +111,7 @@ func shellLaunch(script string) func() (harness.Launch, error) {
 func TestStart_RecordsAndTheHostRecordsTheEnd(t *testing.T) {
 	h, store, slug, ends := localFixture(t)
 	st, err := Start(Request{Store: store, Host: h, Root: store.Root, Slug: slug, Harness: "shell",
-		Place: Place{Dir: store.Root, Capsule: "fe/a"}, Handoff: "do stage two", By: "orchestrator",
+		Place: Place{Dir: store.Root, Capsule: "fe/a"}, Dispatch: "do stage two", By: "orchestrator",
 		Width: 40, Height: 5, Prepare: shellLaunch(`printf 'out-%s\n' "$WS_CREW"; exit 3`)})
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestStart_RecordsAndTheHostRecordsTheEnd(t *testing.T) {
 	// Done means recorded: the end, the output and the hook are all there.
 	m, _ := store.Load(slug)
 	c := m.Crew[0]
-	if c.Ended == nil || c.Exit != "exit 3" || c.Capsule != "fe/a" || c.Handoff != "do stage two" {
+	if c.Ended == nil || c.Exit != "exit 3" || c.Capsule != "fe/a" || c.Dispatch != "do stage two" {
 		t.Errorf("crew = %+v", c)
 	}
 	if data, _ := os.ReadFile(store.TranscriptPath(slug, "c1")); !strings.Contains(string(data), "out-c1") {

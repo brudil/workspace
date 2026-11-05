@@ -24,10 +24,14 @@ type handoffHarness struct{ out string }
 func (handoffHarness) Name() string     { return "handoff" }
 func (handoffHarness) Available() error { return nil }
 func (h handoffHarness) Start(b harness.Brief) (harness.Launch, error) {
+	prompt := "dispatch: " + b.Dispatch
+	if b.LeftOff != "" { // on the one line the crew reads
+		prompt += " | " + strings.ReplaceAll(b.LeftOff, "\n", " / ")
+	}
 	return harness.Launch{
 		Args:   []string{"/bin/sh", "-c", `printf 'ready> '; read line; printf '%s' "$line" > "$OUT"; sleep 5`},
 		Dir:    b.Dir,
-		Prompt: "handoff: " + b.Handoff,
+		Prompt: prompt,
 	}, nil
 }
 func (handoffHarness) Resume(string, string) (harness.Launch, error) {
@@ -67,12 +71,12 @@ func TestDispatch_LaunchesFreshCrewWithHandoff(t *testing.T) {
 	if !strings.Contains(r.Stderr, "dispatched c2 on cache in backend/cache-lookup") {
 		t.Errorf("stderr: %s", r.Stderr)
 	}
-	if got := waitFile(t, out); got != "handoff: Implement docs/proposals/cache.md (commit abc123)" {
+	if got := waitFile(t, out); got != "dispatch: Implement docs/proposals/cache.md (commit abc123)" {
 		t.Errorf("crew got %q", got)
 	}
 	m, _ := store.Load("cache")
 	c := m.Crew[1]
-	if c.ID != "c2" || c.Handoff != "Implement docs/proposals/cache.md (commit abc123)" || c.Capsule != "backend/cache-lookup" || c.PID == 0 {
+	if c.ID != "c2" || c.Dispatch != "Implement docs/proposals/cache.md (commit abc123)" || c.Capsule != "backend/cache-lookup" || c.PID == 0 {
 		t.Errorf("crew = %+v", c)
 	}
 	if m.Dispatches != 1 {
@@ -221,7 +225,7 @@ func TestDispatch_IntoCapsuleOfCrewThatReportedDone(t *testing.T) {
 	if !strings.Contains(r.Stderr, "ended c2's session in backend/cache-lookup") || !strings.Contains(r.Stderr, "dispatched c3 on cache in backend/cache-lookup") {
 		t.Fatalf("stderr: %s", r.Stderr)
 	}
-	if got := waitFile(t, out); got != "handoff: stage two" {
+	if got := waitFile(t, out); got != "dispatch: stage two" {
 		t.Errorf("c3 got %q", got)
 	}
 	deadline := time.Now().Add(10 * time.Second)

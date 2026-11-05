@@ -76,3 +76,28 @@ func TestBriefGoal(t *testing.T) {
 		}
 	}
 }
+
+// Crew that reported done with a handoff: Summary says what's left, and
+// Log points at the handoff.
+func TestDeckMission_Handoffs(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	h, err := mission.ParseHandoff("## Done\nx\n## Learned\ny\n## Left\n- Eviction on revocation.\n## Read first\nNothing.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.ReportDone(slug, "c1", "Added the cache", h); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(loadDeckCmd(m.ws, m.prs)())
+	m = next.(deckModel)
+	m.focusTerm = false
+	m = selectMission(t, m, slug)
+	if v := strings.Join(strings.Fields(missionPane(m)), " "); !strings.Contains(v, "c1 done shell in frontend/work: Added the cache · left: Eviction on revocation.") {
+		t.Errorf("summary doesn't say what's left:\n%s", v)
+	}
+	m, _ = press(t, m, "4")
+	if v := missionPane(m); !strings.Contains(v, "handoff: "+m.store.HandoffPath(slug, "c1")) {
+		t.Errorf("log doesn't point at the handoff:\n%s", v)
+	}
+}

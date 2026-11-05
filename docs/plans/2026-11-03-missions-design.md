@@ -1,7 +1,7 @@
 # Missions: the Workspace Owns the Work, Agents Do It
 
 **Date:** 2026-11-03. What and why rewritten 2026-11-05.
-**Status:** Phases 1–6 built (see [Built so far](#built-so-far)), with the agents' own hooks, answerable flags and a reworked deck since; phase 8 partly built. Phase 7 is designed below and next, then the rest of 8, and 9. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
+**Status:** Phases 1–7 built (see [Built so far](#built-so-far)), with the agents' own hooks, answerable flags and a reworked deck along the way; phase 8 partly built. Next: the rest of 8, and 9. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
 ## Why
 
@@ -250,6 +250,8 @@ Since phase 6:
 - **Flags are questions you answer.** `ws mission flag` carries the answers the orchestrator would act on; the deck offers them, your own answer, or crew to answer it (the `answer` role), and `ws mission answer` runs the orchestrator with it. Done stays done until you send that crew a message.
 - **The deck.** The mission view in tabs (Summary leading on what needs you, Brief, Work, Log); clicks checked against the drawn frame (zones as Lip Gloss layers, `View.OnMouse`) and every key declared once (bubbles `key`/`help`); the deck's status on the terminal's tab (OSC 7501); the bell and notification only when its window isn't focused; crew clipboard copies (OSC 52) put on yours; `ctrl+]` zooms in and out.
 
+7. **Handoffs** (phase 7 below): work crew finish with a summary and a handoff (Done, Learned, Left, Read first), kept as `mission:handoffs/<crew>.md`; new crew get where earlier crew left off ahead of the brief, and the orchestrator the handoff with less transcript. What crew are dispatched with is their *dispatch*.
+
 ## Next phases
 
 Where the build still falls short of the idea, in the order to close the gaps.
@@ -308,7 +310,7 @@ Anything else is refused, with what to do instead: copy it into the mission's fi
 
 ### 7. Handoffs that carry what was learned
 
-`ws mission done` takes one line. What the next agent needs most is where things live, what was tried and didn't work, and what's left. Today the orchestrator rebuilds that from the end of a transcript (the last 32 KB of terminal output), and new crew rediscover it.
+**Built as described here.** `ws mission done` took one line. What the next agent needs most is where things live, what was tried and didn't work, and what's left. The orchestrator rebuilt that from the end of a transcript (the last 32 KB of terminal output), and new crew rediscovered it.
 
 **Words.** Until now *handoff* has also named what crew are dispatched *with* (`Crew.Handoff`, the text of `ws mission dispatch`). From this phase a **handoff** is what crew leave for whoever comes next, and what they're given is their **dispatch**: the field becomes `Crew.Dispatch` (stored as `dispatch`, with `handoff` still read from older records), and the CLI, prompts and deck say "dispatched with".
 

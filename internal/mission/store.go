@@ -103,6 +103,14 @@ func (s Store) Load(slug string) (*Mission, error) {
 		return nil, fmt.Errorf("mission %s: %w", slug, err)
 	}
 	m.Slug = slug
+	for i := range m.Crew {
+		if c := &m.Crew[i]; c.OldDispatch != "" {
+			if c.Dispatch == "" {
+				c.Dispatch = c.OldDispatch
+			}
+			c.OldDispatch = ""
+		}
+	}
 	for i := range m.Artifacts {
 		if a := &m.Artifacts[i]; a.Ref == "" && a.URL != "" {
 			a.Ref, a.URL = a.URL, ""
@@ -931,12 +939,12 @@ func (s Store) QueueDispatch(slug string, d *Dispatch) error {
 	return s.AppendLog(slug, Event{Kind: EventDispatchQueued, Crew: d.By, Text: d.Text})
 }
 
-// SetHandoff records the handoff crew was dispatched with.
-func (s Store) SetHandoff(slug, id, by, text string) error {
+// SetCrewDispatch records what crew was dispatched to do.
+func (s Store) SetCrewDispatch(slug, id, by, text string) error {
 	if _, err := s.Update(slug, func(m *Mission) error {
 		for i := range m.Crew {
 			if m.Crew[i].ID == id {
-				m.Crew[i].Handoff = strings.TrimSpace(text)
+				m.Crew[i].Dispatch = strings.TrimSpace(text)
 			}
 		}
 		return nil

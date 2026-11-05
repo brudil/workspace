@@ -456,7 +456,7 @@ func arrow(open bool) string {
 }
 
 // crewPurpose is what a crew is for, in a few words: briefing, or the
-// handoff it was dispatched with.
+// what it was dispatched with.
 func (m deckModel) crewPurpose(r *deckCrewRun) string {
 	switch r.role {
 	case mission.RoleBriefing:
@@ -466,8 +466,8 @@ func (m deckModel) crewPurpose(r *deckCrewRun) string {
 	}
 	for _, dm := range m.data.Missions {
 		if dm.M.Slug == r.slug {
-			if c, ok := crewRecord(dm.M, r.crewID); ok && c.Handoff != "" {
-				return c.Handoff
+			if c, ok := crewRecord(dm.M, r.crewID); ok && c.Dispatch != "" {
+				return c.Dispatch
 			}
 		}
 	}

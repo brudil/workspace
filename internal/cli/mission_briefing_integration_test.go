@@ -133,7 +133,7 @@ func TestSignals_AskDoneArtifact(t *testing.T) {
 	if got.Crew[0].Status != mission.CrewAsking || got.Crew[0].Note != "Per-org or global?" {
 		t.Errorf("after ask: %+v", got.Crew[0])
 	}
-	run(t, w, nil, "mission", "done", "Added the per-org cache")
+	run(t, w, nil, "mission", "done", "Added the per-org cache", "--handoff", writeHandoff(t, "Nothing."))
 	run(t, w, nil, "mission", "artifact", "add", "https://example.com/design", "Design", "doc")
 	show := run(t, w, nil, "mission", "show", "-f", "llm")
 	for _, want := range []string{"Crew c1 done: Added the per-org cache", "https://example.com/design — Design doc"} {

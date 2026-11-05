@@ -421,8 +421,14 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 		if c.Status != "" && c.Ended == nil {
 			fmt.Fprintf(&b, "Crew %s %s: %s\n", c.ID, c.Status, c.Note)
 		}
-		if c.Handoff != "" {
-			fmt.Fprintf(&b, "Crew %s was dispatched with: %s\n", c.ID, c.Handoff)
+		if c.Dispatch != "" {
+			fmt.Fprintf(&b, "Crew %s was dispatched with: %s\n", c.ID, c.Dispatch)
+		}
+	}
+	if latest := v.M.LatestHandoffs(); len(latest) > 0 {
+		b.WriteString("Latest handoffs (what crew left for whoever comes next; the newest first, one per capsule):\n")
+		for _, c := range latest {
+			fmt.Fprintf(&b, "  %s, crew %s: %s — read: %s\n", firstNonEmpty(c.Capsule, "no capsule"), c.ID, handoffLabel(v.M, c.ID), store.HandoffPath(v.M.Slug, c.ID))
 		}
 	}
 	b.WriteString("\n## Brief\n\n")

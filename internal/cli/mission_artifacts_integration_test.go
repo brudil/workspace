@@ -137,7 +137,7 @@ func TestArtifacts_OrchestratorAndDispatchRead(t *testing.T) {
 
 	run(t, w, nil, "mission", "dispatch", "--read", "backend/cache-lookup:docs/proposal.md", "Implement the proposal")
 	m, _ := store.Load("cache")
-	h := m.Crew[len(m.Crew)-1].Handoff
+	h := m.Crew[len(m.Crew)-1].Dispatch
 	if !strings.HasPrefix(h, "Implement the proposal\n\nRead these first:\n- [proposal, draft] backend/cache-lookup:docs/proposal.md — Cache proposal — read: "+filepath.Join(capsule, "docs", "proposal.md")) {
 		t.Errorf("handoff:\n%s", h)
 	}

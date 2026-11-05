@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -63,14 +64,30 @@ they next talk to you.`,
 }
 
 func newMissionDoneCmd() *cobra.Command {
-	var slug string
+	var slug, from string
 	cmd := &cobra.Command{
-		Use:   "done <summary>",
-		Short: "Crew: say you've finished your part, with a short summary",
-		Long: `For crew: report that your part of the mission is finished. ws finds the
-PRs from the mission's capsules itself; record other outputs (a proposal
-or ADR you wrote, notes, a link) with ws mission artifact add <file|url>
---kind <kind> "label".`,
+		Use:   "done <summary> --handoff -|<file>",
+		Short: "Crew: say you've finished your part, with a summary and a handoff",
+		Long: `For crew: report that your part of the mission is finished, with a
+one-line summary and a handoff for whoever comes next (the next crew, the
+orchestrator and the user), in markdown on stdin (--handoff -) or from a
+file, with these four sections:
+
+` + mission.HandoffTemplate + `
+
+Learned matters most: where things live, what you tried that didn't work,
+surprises. Keep it short. Each "Read first" entry is a file, a reference
+(records:adr/0042.md, api#88) or a URL, and ws checks it can find each.
+
+ws keeps the handoff with the mission (mission:handoffs/<crew>.md) and
+gives it to the crew that come next. It finds PRs from the mission's
+capsules itself; record other outputs (a proposal or ADR you wrote, notes,
+a link) with ws mission artifact add <file|url> --kind <kind> "label".
+
+  ws mission done "Added the per-org token cache" --handoff - <<'EOF'
+  ## Done
+  ...
+  EOF`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, m, c, err := signallingCrew(slug)
@@ -78,18 +95,60 @@ or ADR you wrote, notes, a link) with ws mission artifact add <file|url>
 				return err
 			}
 			summary := strings.TrimSpace(strings.Join(args, " "))
-			if err := missionStore(ctx).SetCrewStatus(m.Slug, c.ID, mission.CrewDone, summary); err != nil {
+			// Work crew leave a handoff. Crew answering the orchestrator's
+			// question for the user answered already; one is welcome.
+			var h *mission.Handoff
+			if from == "" && c.Role != mission.RoleAnswer {
+				return fmt.Errorf("give a handoff for whoever comes next, in markdown on stdin:\n\n"+
+					"  ws mission done %q --handoff - <<'EOF'\n%s\n  EOF", summary, indentLines(mission.HandoffTemplate, "  "))
+			}
+			if from != "" {
+				text, err := readFlagText(from)
+				if err != nil {
+					return fmt.Errorf("reading the handoff: %w", err)
+				}
+				if h, err = mission.ParseHandoff(text); err != nil {
+					return fmt.Errorf("the handoff: %w\n\nIt takes these four sections:\n\n%s", err, indentLines(mission.HandoffTemplate, "  "))
+				}
+				if err := canonicalReadFirst(ctx, m, h); err != nil {
+					return fmt.Errorf("the handoff: %w\n\nName each as a file, a reference (records:adr/0042.md, api#88) or a URL, or drop it", err)
+				}
+			}
+			store := missionStore(ctx)
+			if err := store.ReportDone(m.Slug, c.ID, summary, h); err != nil {
 				return err
 			}
 			if c.Role != mission.RoleAnswer { // its answer already ran the orchestrator
 				orchestrateSpawner(ctx.WS.Root, m.Slug, c.ID, "done")
 			}
-			fmt.Fprintf(ui.Stderr, "  %s done; the user has been notified\n", ui.Green.Render("✓"))
+			if h != nil {
+				fmt.Fprintf(ui.Stderr, "  %s done; handoff kept at %s; the user has been notified\n", ui.Green.Render("✓"), store.HandoffPath(m.Slug, c.ID))
+			} else {
+				fmt.Fprintf(ui.Stderr, "  %s done; the user has been notified\n", ui.Green.Render("✓"))
+			}
 			return nil
 		},
 	}
 	addMissionFlag(cmd, &slug)
+	cmd.Flags().StringVar(&from, "handoff", "", "the handoff, in markdown: - for stdin, or a file")
 	return cmd
+}
+
+// readFlagText reads a flag's text: - for stdin, else a file.
+func readFlagText(from string) (string, error) {
+	var data []byte
+	var err error
+	if from == "-" {
+		data, err = io.ReadAll(os.Stdin)
+	} else {
+		data, err = os.ReadFile(from)
+	}
+	return string(data), err
+}
+
+// indentLines indents every line of s.
+func indentLines(s, indent string) string {
+	return indent + strings.ReplaceAll(s, "\n", "\n"+indent)
 }
 
 func newMissionArtifactCmd() *cobra.Command {

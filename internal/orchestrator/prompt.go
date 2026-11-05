@@ -20,9 +20,13 @@ const (
 	promptCapsulesMax   = 16 << 10
 	promptLogMax        = 16 << 10
 	promptCrewMax       = 8 << 10
-	promptHandoffMax    = 600
+	promptDispatchMax   = 600
+	promptHandoffMax    = 12 << 10
 	promptTranscriptMax = 32 << 10
-	promptMax           = 112 << 10
+	// promptTailMax is the transcript's share when crew left a handoff:
+	// enough for what a handoff doesn't say (errors, test output).
+	promptTailMax = 8 << 10
+	promptMax     = 112 << 10
 )
 
 // Input is what the orchestrator is told about a mission.
@@ -38,6 +42,8 @@ type Input struct {
 	Artifacts []string
 	Log       []string // recent log lines, oldest first
 	Output    string   // the end of CrewID's output
+	// Handoff is the handoff CrewID left when it reported done, if it did.
+	Handoff string
 }
 
 // Capsule is one of the mission's capsules, with what's known about it.
@@ -77,7 +83,7 @@ func Prompt(in Input) string {
 Read the brief and the history below and decide what should happen next: is what just finished good, what does the brief still need, and who should do it? The brief may describe stages for separate crew (say, a proposal and then its implementation); the log and crew list show which are done. Act only through these commands (WS_MISSION is set for you):
 
 - ws mission note "Orchestrator: <what you found and decided, two or three sentences>"   (always, once; the next orchestrator run reads it)
-- ws mission dispatch "<handoff>" [--capsule <repo>/<name>] [--read <artifact>]...   (start new, fresh crew on the next piece of work. The handoff is all it knows beyond the brief: what to do, where earlier crew's output is (files, commits, PRs), what to watch for. Name each artifact it should read first with --read and its reference from the Artifacts list; ws adds where to read it)
+- ws mission dispatch "<what to do>" [--capsule <repo>/<name>] [--read <artifact>]...   (start new, fresh crew on the next piece of work. Beyond the brief it knows only what you dispatch it with and where earlier crew left off, which ws gives it (the latest handoff from its capsule, or the mission's). Say what to do, where earlier crew's output is (files, commits, PRs) and what to watch for. Name each artifact it should read first with --read and its reference from the Artifacts list, handoffs included (mission:handoffs/<crew>.md), rather than retelling it; ws adds where to read it)
 - ws mission resume-with <crew> "<what's left>"   (that crew should carry on: unfinished, tests missing, CI failing. Better than dispatching when its context matters)
 - ws mission flag "<question for the user>" --option "<answer>" --option "<answer>"   (a decision or problem only the user can resolve, or the brief says to check with them before the next stage. Ask one clear question and give the two or three answers you'd act on, each a short instruction like "Commit both and open PRs": the user answers with one key, or writes their own, and you're run again with their answer. Give what they need to decide in the question itself: paths, what you checked)
 - ws mission new "<follow-up, what and why>"   (separate work worth doing, outside this mission's scope)
@@ -168,16 +174,24 @@ Run one command per shell call rather than chaining them with && or ;. You may o
 			if c.Status != "" {
 				fmt.Fprintf(&crew, ", %s: %s", c.Status, c.Note)
 			}
-			if c.Handoff != "" {
-				fmt.Fprintf(&crew, "\n    dispatched with: %s", clipHead(c.Handoff, promptHandoffMax, "…"))
+			if c.Dispatch != "" {
+				fmt.Fprintf(&crew, "\n    dispatched with: %s", clipHead(c.Dispatch, promptDispatchMax, "…"))
+			}
+			if c.HandedOff != nil {
+				fmt.Fprintf(&crew, "\n    left a handoff: %s", mission.HandoffRef(c.ID))
 			}
 			crew.WriteByte('\n')
 		}
 		b.WriteString(clipTail(crew.String(), promptCrewMax, "… (earlier crew: ws mission show -f llm)\n"))
 	}
 
+	tail := promptTranscriptMax
+	if h := strings.TrimSpace(in.Handoff); in.CrewID != "" && h != "" {
+		fmt.Fprintf(&b, "\n## %s's handoff\n\nWhat %s says it did, learned and left (kept as %s, which new crew are given):\n\n%s\n", in.CrewID, in.CrewID, mission.HandoffRef(in.CrewID), clipHead(h, promptHandoffMax, "\n… (the rest: read the file)"))
+		tail = promptTailMax
+	}
 	if in.CrewID != "" && in.Output != "" {
-		fmt.Fprintf(&b, "\n## The end of %s's output\n\n```\n%s\n```\n", in.CrewID, clipTail(in.Output, promptTranscriptMax, "…\n"))
+		fmt.Fprintf(&b, "\n## The end of %s's output\n\n```\n%s\n```\n", in.CrewID, clipTail(in.Output, tail, "…\n"))
 	}
 	return clipHead(b.String(), promptMax, "\n… (cut to fit)")
 }

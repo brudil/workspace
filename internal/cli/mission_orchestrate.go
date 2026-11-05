@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/brudil/workspace/internal/crew"
@@ -33,8 +34,8 @@ func newMissionOrchestrateCmd() *cobra.Command {
 		Short: "Have the orchestrator decide what happens next on a mission",
 		Long: `Run the orchestrator on a mission: a headless agent that reads the brief,
 the log, the capsules' diffs and PRs and the crew's output, then decides
-what's next and acts through ws: ws mission dispatch (start new crew with a
-handoff), resume-with (crew should carry on), flag (needs you), new (a
+what's next and acts through ws: ws mission dispatch (start new crew on
+the next piece of work), resume-with (crew should carry on), flag (needs you), new (a
 follow-up mission) or conclude (looks finished), always leaving a note. It
 doesn't change code.
 
@@ -162,6 +163,13 @@ func orchestratorInput(ctx *Context, m *mission.Mission, crewID, trigger string)
 	}
 	if crewID != "" {
 		in.Output = orchestrator.CrewOutput(ctx.WS.Root, store, m.Slug, crewID)
+	}
+	// Crew that reported done left a handoff: it says what they did and
+	// learned better than the end of their output.
+	if c, ok := crewRecord(m, crewID); ok && trigger == "done" && c.HandedOff != nil {
+		if data, err := os.ReadFile(store.HandoffPath(m.Slug, crewID)); err == nil {
+			in.Handoff = string(data)
+		}
 	}
 	return in
 }

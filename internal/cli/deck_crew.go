@@ -182,8 +182,8 @@ func (m deckModel) launchHarness(dm *deckMission) string {
 }
 
 // startCrewWith launches crew, in capsule (repo/name) if given and it
-// exists, else wherever placeFor picks, with a handoff if given.
-func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Model, tea.Cmd) {
+// exists, else wherever placeFor picks, dispatched with what to do if given.
+func (m deckModel) startCrewWith(harnessName, capsule, dispatch string) (tea.Model, tea.Cmd) {
 	dm, ok := m.selectedMission()
 	if !ok {
 		m.flash = "select a mission to launch crew on"
@@ -209,10 +209,18 @@ func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Mode
 		m.flash = err.Error()
 		return m, nil
 	}
-	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.Dir, Handoff: handoff,
+	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.Dir, Dispatch: dispatch,
 		Model: m.roles.ForCrew().ModelFor(harnessName)}
-	launch := m.launchCmd(crew.Request{Slug: slug, Harness: harnessName, Place: place, Handoff: handoff, By: "you",
-		Prepare: func() (harness.Launch, error) { return h.Start(b) }})
+	ws, store, mm := m.ws, m.store, dm.M
+	launch := m.launchCmd(crew.Request{Slug: slug, Harness: harnessName, Place: place, Dispatch: dispatch, By: "you",
+		Prepare: func() (harness.Launch, error) {
+			// Off the deck's goroutine: this reads handoffs and capsules.
+			if fresh, err := store.Load(slug); err == nil {
+				mm = fresh
+			}
+			b.LeftOff = leftOff(ws, store, mm, place.Capsule)
+			return h.Start(b)
+		}})
 
 	if place.Busy != "" {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.Busy, place.Capsule),
@@ -431,7 +439,7 @@ func (m deckModel) launchCmd(req crew.Request) tea.Cmd {
 			msg.err = err
 			return msg
 		}
-		if req.Handoff != "" {
+		if req.Dispatch != "" {
 			store.QueueDispatch(slug, nil) // the queued dispatch is launched
 		}
 		// You're acting on the mission: a flag is answered, and the
@@ -879,6 +887,17 @@ func renderTerm(t crew.Term, offset, width, height int) string {
 	return strings.Join(out, "\n")
 }
 
+// doneText is what crew said when they reported done: the summary and,
+// when they left a handoff, what's left (from the log), else note.
+func doneText(dm deckMission, crewID, note string) string {
+	for i := len(dm.Events) - 1; i >= 0; i-- {
+		if e := dm.Events[i]; e.Kind == mission.EventCrewDone && e.Crew == crewID {
+			return e.Text
+		}
+	}
+	return note
+}
+
 // crewSummary describes a mission's crew for the main pane.
 func (m deckModel) crewSummary(dm deckMission) string {
 	slug := dm.M.Slug
@@ -888,6 +907,8 @@ func (m deckModel) crewSummary(dm deckMission) string {
 		status, note := m.crewStatus(r)
 		working, _ := r.activity()
 		switch {
+		case status == mission.CrewDone && note != "":
+			line += ": " + doneText(dm, r.crewID, note)
 		case status != "" && note != "":
 			line += ": " + note
 		case r.reported == mission.ActivityPermission && r.notice != "":

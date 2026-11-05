@@ -994,8 +994,8 @@ func TestDeckDispatch_QueuedLaunchesOnEnter(t *testing.T) {
 		t.Fatalf("launched %+v", r)
 	}
 	got, _ := m.store.Load(slug)
-	if got.Dispatch != nil || got.Dispatches != 0 || got.Crew[0].Handoff != "implement the proposal" {
-		t.Errorf("after launch: dispatch %+v, count %d, handoff %q", got.Dispatch, got.Dispatches, got.Crew[0].Handoff)
+	if got.Dispatch != nil || got.Dispatches != 0 || got.Crew[0].Dispatch != "implement the proposal" {
+		t.Errorf("after launch: dispatch %+v, count %d, handoff %q", got.Dispatch, got.Dispatches, got.Crew[0].Dispatch)
 	}
 }
 

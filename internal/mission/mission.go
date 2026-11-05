@@ -117,9 +117,15 @@ type Crew struct {
 	// ResumeWith is a message to send when this crew is next resumed
 	// (ws mission resume-with); it's used once.
 	ResumeWith string `toml:"resume_with,omitempty"`
-	// Handoff is what this crew was dispatched to do, when the orchestrator
+	// Dispatch is what this crew was dispatched to do, when the orchestrator
 	// (or the user) dispatched it with ws mission dispatch.
-	Handoff string `toml:"handoff,omitempty"`
+	Dispatch string `toml:"dispatch,omitempty"`
+	// OldDispatch is Dispatch as records stored it before handoffs (what
+	// crew leave behind) took the name; Load moves it across.
+	OldDispatch string `toml:"handoff,omitempty"`
+	// HandedOff is when the crew last left a handoff with ws mission done.
+	// It's kept at HandoffRef(ID).
+	HandedOff *time.Time `toml:"handed_off,omitempty"`
 	// Orchestrated identifies the crew event (a run ending, a done or ask) the
 	// orchestrator last looked at, so each is handled once. Times alone can't tell events apart:
 	// they're stored to the second.
@@ -192,7 +198,7 @@ type Answer struct {
 	By string `toml:"by,omitempty"`
 }
 
-// Dispatch is new crew to launch on a mission, with the handoff it starts
+// Dispatch is new crew to launch on a mission, with what it's to do
 // from.
 type Dispatch struct {
 	Text    string    `toml:"text"`

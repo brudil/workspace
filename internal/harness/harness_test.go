@@ -444,3 +444,21 @@ func TestEnableCursorHooks(t *testing.T) {
 		t.Errorf("added a no-op where your own stop hook already counts:\n%s", data)
 	}
 }
+
+// Work crew are taught to leave a handoff, and new crew get where earlier
+// crew left off after what they're dispatched for and before the brief.
+func TestWorkPrompt_HandoffsInAndOut(t *testing.T) {
+	p := InitialPrompt(Brief{Slug: "m", Title: "M", Dispatch: "Add eviction", LeftOff: "## Where earlier crew left off\n\nc1's handoff", Brief: "## Goal\nCache it."})
+	for _, want := range []string{"--handoff - <<'EOF'", "## Learned", "## Read first", "Learned matters most"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("work prompt missing %q", want)
+		}
+	}
+	dispatch, left, brief := strings.Index(p, "Add eviction"), strings.Index(p, "Where earlier crew left off"), strings.Index(p, "Cache it.")
+	if dispatch < 0 || left < dispatch || brief < left {
+		t.Errorf("want the dispatch, then where earlier crew left off, then the brief:\n%s", p)
+	}
+	if strings.Contains(InitialPrompt(Brief{Slug: "m", Title: "M"}), "left off") {
+		t.Error("left off shown with no handoffs")
+	}
+}
