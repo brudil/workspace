@@ -135,6 +135,9 @@ type deckModel struct {
 
 	ticks int // activity ticks so far (records re-read every few)
 
+	// wheelScrolled marks scroll mode the wheel started, rather than
+	// ctrl+g [: any key returns to the live screen and goes on as usual.
+	wheelScrolled bool
 	// mouseOff stops the deck capturing the mouse anywhere (M), so the
 	// terminal's own selection, copy and link-clicking work throughout.
 	mouseOff bool

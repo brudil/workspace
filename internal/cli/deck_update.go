@@ -198,7 +198,7 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "S":
 		return m.stopSelected()
 	case "M":
-		return m.toggleMouse(), nil
+		return m.toggleMouse()
 	case "F":
 		// One thing at a time, the flag first: answering a flag mustn't
 		// throw away queued crew you haven't seen.

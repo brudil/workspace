@@ -597,7 +597,11 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.focusTerm, m.prefix, m.scrollMode = false, false, false
 		return m, nil
 	}
-	if m.scrollMode {
+	if m.scrollMode && m.wheelScrolled {
+		// The wheel scrolled back: any key returns to the live screen and
+		// is handled as usual (typed to the crew, or a deck command).
+		r.scroll, m.scrollMode, m.wheelScrolled = 0, false, false
+	} else if m.scrollMode {
 		return m.handleScrollKey(r, msg)
 	}
 
@@ -623,13 +627,13 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "z":
 		return m.zoom(r)
 	case "m":
-		return m.toggleMouse(), nil
+		return m.toggleMouse()
 	case "[", "pgup":
 		if r.term.ScrollbackLen() == 0 {
 			m.flash = "no history to scroll (the agent is drawing full-screen)"
 			return m, nil
 		}
-		m.scrollMode = true
+		m.scrollMode, m.wheelScrolled = true, false
 		r.scroll = min(max(r.scroll, m.bodyHeight()/2), r.term.ScrollbackLen())
 	case "n", "]":
 		return m.cycleRun(1)
@@ -665,6 +669,7 @@ func (m deckModel) handleScrollKey(r *deckCrewRun, msg tea.KeyPressMsg) (tea.Mod
 	case "esc", "q", "enter", deckPrefixKey:
 		r.scroll = 0
 		m.scrollMode = false
+		m.prefix = msg.String() == deckPrefixKey // ctrl+g goes on to a deck command
 		return m, nil
 	}
 	r.scroll = min(max(r.scroll, 0), maxScroll)
@@ -698,7 +703,14 @@ func (m deckModel) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		r.scroll -= 3
 	}
 	r.scroll = min(max(r.scroll, 0), r.term.ScrollbackLen())
+	wasScrolling := m.scrollMode
 	m.scrollMode = m.focusTerm && r.scroll > 0
+	switch {
+	case !m.scrollMode:
+		m.wheelScrolled = false
+	case !wasScrolling:
+		m.wheelScrolled = true // a soft scroll: typing returns to live
+	}
 	return m, nil
 }
 
@@ -1141,13 +1153,23 @@ func (r *deckCrewRun) activityBadge() string {
 	return ui.Orange.Render("◐"+r.crewID) + ui.Dim.Render(" waiting "+shortDuration(since))
 }
 
+// Alternate scroll (DEC mode 1007) is the terminal turning the wheel into
+// up/down keys on the alternate screen when no program captures the mouse.
+// While M lets go of the mouse, the deck saves the terminal's setting and
+// turns it off, so the wheel can't send keys to a crew; it restores it when
+// it takes the mouse back, or quits.
+const (
+	altScrollOff     = "\x1b[?1007s\x1b[?1007l" // save, then reset
+	altScrollRestore = "\x1b[?1007r"
+)
+
 // toggleMouse turns the deck's mouse capture off everywhere, or back on.
-func (m deckModel) toggleMouse() deckModel {
+func (m deckModel) toggleMouse() (deckModel, tea.Cmd) {
 	m.mouseOff = !m.mouseOff
 	if m.mouseOff {
-		m.flash = "mouse: the terminal selects text and opens links everywhere · M (or " + deckPrefixKey + " m) to give the deck the mouse back"
-	} else {
-		m.flash = "mouse: the deck takes clicks and the wheel when the sidebar has focus"
+		m.flash = "mouse: the terminal selects text and opens links without Shift; the wheel won't scroll · M (or " + deckPrefixKey + " m) to give the deck the mouse back"
+		return m, tea.Raw(altScrollOff)
 	}
-	return m
+	m.flash = "mouse: the deck takes clicks and the wheel · shift-drag selects text"
+	return m, tea.Raw(altScrollRestore)
 }

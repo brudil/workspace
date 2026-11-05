@@ -139,7 +139,7 @@ func (m deckModel) renderFooter() string {
 		if m.flash != "" {
 			return " " + m.flash
 		}
-		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · select text and click links freely · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
+		return ui.Dim.Render(ansi.Truncate(" keys go to the crew · wheel scrolls · shift-drag selects · "+deckPrefixKey+" for deck commands (tab back to the sidebar)", m.width, "…"))
 	}
 	if m.flash != "" {
 		return " " + m.flash
@@ -519,7 +519,7 @@ func (m deckModel) renderHelp() string {
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
 		{"F", "Dismiss the flag, then any queued crew"},
-		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
+		{"M", "Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent (" + m.roles.ForBriefing().Harness + ") writes the brief and lifts capsules"},
 		{"N", "New mission you name and brief yourself (in $EDITOR)"},
@@ -645,16 +645,15 @@ func (m deckModel) conclusionHint(dm deckMission) string {
 	return ""
 }
 
-// mouseMode decides whether the deck captures the mouse. Capturing it makes
-// the sidebar clickable and the wheel scroll history, but stops the
-// terminal selecting text, copying and Cmd-clicking links. So while a crew
-// terminal has the keyboard (you're reading and working with it) the deck
-// lets go, and M lets go everywhere.
+// mouseMode decides whether the deck captures the mouse. It does, even
+// while a crew has the keyboard: then the sidebar is clickable and the wheel
+// scrolls the crew's history. Let go of, the terminal (on the alternate
+// screen the deck draws on) turns the wheel into up/down keys, which went to
+// the agent and paged through its prompt history. Selecting text takes
+// Shift-drag (terminals let Shift bypass a program's mouse capture); M lets
+// go everywhere, for plain selection and links.
 func (m deckModel) mouseMode() tea.MouseMode {
 	if m.mouseOff {
-		return tea.MouseModeNone
-	}
-	if _, ok := m.focusedRun(); ok {
 		return tea.MouseModeNone
 	}
 	return tea.MouseModeCellMotion

@@ -34,7 +34,10 @@ Pass a mission slug to open with it selected.`,
 			}
 			// Close crew records a deck server left open when it died.
 			m.store.ReconcileCrew(crew.ProcessAlive)
-			_, err = tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
+			final, err := tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
+			if fm, ok := final.(deckModel); ok && fm.mouseOff {
+				os.Stderr.WriteString(altScrollRestore) // left with M on: give the terminal its wheel back
+			}
 			m.stopLeftovers()
 			return err
 		},

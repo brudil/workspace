@@ -485,10 +485,20 @@ func TestDeckCrew_WheelScrollsHistoryAndTypingReturnsToLive(t *testing.T) {
 	if r.scroll != 3 {
 		t.Fatalf("scroll = %d after one wheel notch", r.scroll)
 	}
-	m, _ = press(t, m, "esc") // leave scroll mode the wheel entered
-	m = typeText(m, "true")
-	if r.scroll != 0 {
+	// The wheel's scroll is soft: typing returns to the live screen and the
+	// keys reach the crew; ctrl+g still starts a deck command.
+	m = typeText(m, "echo back-live")
+	if r.scroll != 0 || m.scrollMode {
 		t.Errorf("typing should return to the live screen, scroll = %d", r.scroll)
+	}
+	m, _ = press(t, m, "enter")
+	waitScreen(t, r, "back-live")
+
+	next, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 5, Y: 5})
+	m = next.(deckModel)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.focusTerm || m.scrollMode || r.scroll != 0 {
+		t.Errorf("ctrl+g tab after a wheel scroll: focus %v, scroll mode %v, scroll %d", m.focusTerm, m.scrollMode, r.scroll)
 	}
 }
 
@@ -832,28 +842,34 @@ func TestDeckSignals_DoneShowsAndSilencesWaiting(t *testing.T) {
 	}
 }
 
-func TestDeck_MouseReleasedForSelection(t *testing.T) {
-	m, slug := shellCrewDeck(t)
+// The deck keeps the mouse even while a crew has the keyboard, so the wheel
+// scrolls the crew's history: let go, the terminal would turn the wheel into
+// up/down keys and page through the agent's prompt history. M lets go, and
+// turns that conversion off until it takes the mouse back.
+func TestDeck_MouseCapturedUnlessM(t *testing.T) {
+	m, _ := shellCrewDeck(t)
 	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
 		t.Errorf("sidebar: mouse mode %v, want captured", got)
 	}
 	m = launch(t, m) // the crew has the keyboard
-	if got := m.View().MouseMode; got != tea.MouseModeNone {
-		t.Errorf("focused crew: mouse mode %v, want released for selection", got)
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Errorf("focused crew: mouse mode %v, want captured (the wheel scrolls)", got)
 	}
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
-		t.Errorf("back in the sidebar: mouse mode %v", got)
-	}
-	m, _ = press(t, m, "M")
+	m, cmd := press(t, m, "M")
 	if got := m.View().MouseMode; got != tea.MouseModeNone || !m.mouseOff {
 		t.Errorf("after M: mouse mode %v", got)
 	}
-	m, _ = press(t, m, "M")
+	if raw, ok := cmd().(tea.RawMsg); !ok || raw.Msg != altScrollOff {
+		t.Errorf("M should save and turn off the terminal's alternate scroll, got %#v", cmd())
+	}
+	m, cmd = press(t, m, "M")
 	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
 		t.Errorf("after M again: mouse mode %v", got)
 	}
-	_ = slug
+	if raw, ok := cmd().(tea.RawMsg); !ok || raw.Msg != altScrollRestore {
+		t.Errorf("M again should restore alternate scroll, got %#v", cmd())
+	}
 }
 
 func TestDeck_CrewHyperlinksSurvive(t *testing.T) {
