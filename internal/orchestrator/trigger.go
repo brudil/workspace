@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"github.com/brudil/workspace/internal/execlog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,9 +34,13 @@ func Spawn(root, slug, crewID, trigger string) {
 	c.Env = append(os.Environ(), mission.EnvMission+"=", mission.EnvCrew+"=", mission.EnvRole+"=", "WS_ORIGIN_PWD=")
 	c.Stdout, c.Stderr = logf, logf
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if c.Start() == nil {
-		c.Process.Release()
+	who := "orchestrator " + slug
+	if err := c.Start(); err != nil {
+		execlog.Note(root, who, "couldn't start for %s (%s): %v", crewID, trigger, err)
+		return
 	}
+	execlog.Start(root, who, c.Args, c.Dir, nil, c.Process.Pid)
+	c.Process.Release()
 }
 
 // AfterEnd is the hook hosts run when crew end: it starts the orchestrator

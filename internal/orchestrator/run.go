@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/brudil/workspace/internal/execlog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,10 +67,23 @@ func Run(l harness.Launch, root, slug string) (string, error) {
 	c.WaitDelay = WaitDelay
 	var out bytes.Buffer
 	c.Stdout, c.Stderr = &out, &out
-	err := c.Run()
+	who := "orchestrator " + slug
+	start := time.Now()
+	if err := c.Start(); err != nil {
+		execlog.Start(root, who, c.Args, c.Dir, c.Env, 0)
+		execlog.Note(root, who, "failed to start: %v", err)
+		return "", err
+	}
+	execlog.Start(root, who, c.Args, c.Dir, c.Env, c.Process.Pid)
+	err := c.Wait()
 	if ctx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("timed out after %s", Timeout)
 	}
+	result := "exit 0"
+	if err != nil {
+		result = err.Error()
+	}
+	execlog.End(root, who, c.Process.Pid, time.Since(start), fmt.Sprintf("%s · %d bytes of output", result, out.Len()))
 	return out.String(), err
 }
 
@@ -88,6 +102,7 @@ func WritePrompt(store mission.Store, slug, prompt string) (string, error) {
 	if err := os.WriteFile(path, []byte(prompt), 0o644); err != nil {
 		return "", err
 	}
+	execlog.Note(store.Root, "orchestrator "+slug, "wrote its prompt (%d bytes) to %s", len(prompt), path)
 	return "You are the orchestrator for the ws mission " + slug + ". Read " + path + " first: it has your instructions and the mission's context. Then follow it.", nil
 }
 

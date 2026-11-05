@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brudil/workspace/internal/execlog"
 	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -48,6 +49,7 @@ type Started struct {
 func Start(r Request) (Started, error) {
 	l, err := r.Prepare()
 	if err != nil {
+		execlog.Note(r.Root, "crew "+r.Slug, "%s couldn't get ready to launch: %v", r.Harness, err)
 		return Started{}, err
 	}
 	var c mission.Crew
@@ -64,18 +66,26 @@ func Start(r Request) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
+	who := "crew " + r.Slug + "/" + c.ID
+	for _, n := range l.Notes {
+		execlog.Note(r.Root, who, "%s", n)
+	}
 	if r.Handoff != "" {
 		r.Store.SetHandoff(r.Slug, c.ID, r.By, r.Handoff)
 	}
+	env := Env(r.Root, r.Slug, c.ID)
 	term, err := r.Host.Launch(Spec{
 		Slug: r.Slug, CrewID: c.ID, Harness: r.Harness, Capsule: r.Place.Capsule, Role: r.Role,
-		Args: l.Args, Dir: l.Dir, Env: Env(r.Root, r.Slug, c.ID),
+		Args: l.Args, Dir: l.Dir, Env: env,
 		Width: r.Width, Height: r.Height,
 	})
 	if err != nil {
+		execlog.Start(r.Root, who, l.Args, l.Dir, env, 0)
+		execlog.Note(r.Root, who, "failed to start: %v", err)
 		r.Store.EndCrew(r.Slug, c.ID, "failed to start: "+err.Error())
 		return Started{}, err
 	}
+	execlog.Start(r.Root, who, l.Args, l.Dir, env, term.Pid())
 	r.Store.SetCrewProcess(r.Slug, c.ID, term.Pid(), r.Place.Capsule)
 	return Started{Crew: c, Term: term, Dir: l.Dir, Prompt: prompt}, nil
 }
@@ -88,8 +98,18 @@ var (
 )
 
 // TypePrompt waits for an agent's screen to draw and settle, then pastes the
-// prompt and submits it. It reports false if the agent exited first.
-func TypePrompt(t Term, prompt string) bool {
+// prompt and submits it, logging what it sent (root and key name the
+// crew). It reports false if the agent exited first.
+func TypePrompt(root, key string, t Term, prompt string) bool {
+	if !typePrompt(t, prompt) {
+		execlog.Note(root, "crew "+key, "exited before its prompt could be typed in (%s)", t.ExitSummary())
+		return false
+	}
+	execlog.Note(root, "crew "+key, "typed in its prompt (%d chars):\n%s", len(prompt), prompt)
+	return true
+}
+
+func typePrompt(t Term, prompt string) bool {
 	deadline := time.Now().Add(PromptMaxWait)
 	last, changed, drawn := "", time.Now(), false
 	for time.Now().Before(deadline) {

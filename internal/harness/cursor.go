@@ -70,7 +70,7 @@ func (c *Cursor) Start(b Brief) (Launch, error) {
 	if err != nil {
 		return Launch{}, err
 	}
-	conv := c.createChat(bin)
+	conv, note := c.createChat(bin)
 	args := []string{bin}
 	if conv != "" {
 		// Verified: --resume <id> opens the chat create-chat made,
@@ -80,7 +80,7 @@ func (c *Cursor) Start(b Brief) (Launch, error) {
 	// The opening prompt is typed in once the agent has drawn (see
 	// Launch.Prompt), not passed as an argument: a long multi-line prompt
 	// argument got new crew killed before they rendered.
-	return Launch{Args: args, Dir: b.Dir, Conversation: conv, Prompt: InitialPrompt(b)}, nil
+	return Launch{Args: args, Dir: b.Dir, Conversation: conv, Prompt: InitialPrompt(b), Notes: []string{note}}, nil
 }
 
 func (c *Cursor) Resume(dir, conversation string) (Launch, error) {
@@ -96,20 +96,28 @@ func (c *Cursor) Resume(dir, conversation string) (Launch, error) {
 }
 
 // createChat asks the CLI for a chat id up front. Any failure just means the
-// crew can't be resumed later; the agent still starts.
-func (c *Cursor) createChat(bin string) string {
+// crew can't be resumed later; the agent still starts. The note says what
+// happened, for the exec log.
+func (c *Cursor) createChat(bin string) (id, note string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cursorCreateChatTimeout)
 	defer cancel()
+	ran := bin + " " + strings.Join(cursorCreateChatArgs, " ")
+	start := time.Now()
 	out, err := c.run(ctx, bin, cursorCreateChatArgs...)
+	took := time.Since(start).Round(100 * time.Millisecond)
 	if err != nil {
-		return ""
+		detail := err.Error()
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			detail += ": " + strings.TrimSpace(string(ee.Stderr))
+		}
+		return "", fmt.Sprintf("ran %s: failed after %s (%s); starting without a chat id, so this crew can't be resumed", ran, took, detail)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	last := strings.TrimSpace(lines[len(lines)-1])
 	if chatIDShape.MatchString(last) {
-		return last
+		return last, fmt.Sprintf("ran %s: chat %s (%s)", ran, last, took)
 	}
-	return ""
+	return "", fmt.Sprintf("ran %s: no chat id in its output (last line %q); starting without one, so this crew can't be resumed", ran, last)
 }
 
 // VERIFIED (cursor-agent --help): -p/--print runs one prompt headless with

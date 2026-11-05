@@ -375,16 +375,16 @@ func (m deckModel) finishLaunch(msg deckLaunchReadyMsg) (tea.Model, tea.Cmd) {
 	m.reg.add(r)
 	m.focusRun(r)
 	m.flash = ""
-	return m, tea.Batch(waitPane(r), loadDeckCmd(m.ws, m.prs), deliverPrompt(r, msg.prompt))
+	return m, tea.Batch(waitPane(r), loadDeckCmd(m.ws, m.prs), deliverPrompt(m.ws.Root, r, msg.prompt))
 }
 
 // deliverPrompt types the opening prompt in once the agent has drawn.
-func deliverPrompt(r *deckCrewRun, prompt string) tea.Cmd {
+func deliverPrompt(root string, r *deckCrewRun, prompt string) tea.Cmd {
 	if strings.TrimSpace(prompt) == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		if !crew.TypePrompt(r.term, prompt) {
+		if !crew.TypePrompt(root, r.slug+"/"+r.crewID, r.term, prompt) {
 			return nil
 		}
 		return deckFlashMsg("sent the opening prompt to " + r.crewID)
