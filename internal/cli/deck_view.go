@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,7 +28,9 @@ var (
 )
 
 func (m deckModel) View() tea.View {
-	v := tea.NewView(m.render())
+	f := m.frame()
+	v := tea.NewView(renderFrame(f))
+	v.OnMouse = clickHandler(f)
 	v.AltScreen = true
 	v.MouseMode = m.mouseMode()
 	// The tab says when you're needed, so a background tab can tell you.
@@ -108,17 +111,22 @@ func (m deckModel) mainWidth() int {
 
 func (m deckModel) bodyHeight() int { return max(m.height-deckChromeLines, 1) }
 
-func (m deckModel) render() string {
+// render is the deck's screen as text.
+func (m deckModel) render() string { return renderFrame(m.frame()) }
+
+// frame lays the deck out as layers: the header, the main pane, the divider
+// and sidebar, and the footer, each where it sits on the screen, with a
+// child layer for every zone (see zone). The same layout draws the deck and
+// answers clicks.
+func (m deckModel) frame() *lipgloss.Compositor {
 	if m.width == 0 {
-		return "loading..."
+		return lipgloss.NewCompositor(lipgloss.NewLayer("loading..."))
 	}
 	if m.showHelp {
-		return m.renderHelp()
+		return lipgloss.NewCompositor(paneLayer(m.renderHelp(), 0, 0))
 	}
 
-	header := m.renderHeader()
 	bodyH := m.bodyHeight()
-
 	var main string
 	if r, ok := m.shownRun(); ok {
 		main = renderTerm(r.term, r.scroll, m.mainWidth(), bodyH)
@@ -126,14 +134,18 @@ func (m deckModel) render() string {
 		m.syncMain()
 		main = m.mainVP.View()
 	}
-
-	body := main
+	layers := []*lipgloss.Layer{
+		paneLayer(m.renderHeader(), 0, 0),
+		paneLayer(main, 0, 2), // below the header and its rule
+		paneLayer(m.renderFooter(), 0, 2+bodyH),
+	}
 	if m.sidebarShown() {
 		divider := deckDivider.Render(strings.TrimSuffix(strings.Repeat("│\n", bodyH), "\n"))
-		side := m.renderSidebar(deckSidebarWidth, bodyH)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, main, divider, side)
+		layers = append(layers,
+			lipgloss.NewLayer(divider).X(m.mainWidth()).Y(2),
+			paneLayer(m.renderSidebar(deckSidebarWidth, bodyH), m.mainWidth()+1, 2))
 	}
-	return header + "\n" + body + "\n" + m.renderFooter()
+	return lipgloss.NewCompositor(layers...)
 }
 
 func (m deckModel) renderHeader() string {
@@ -166,10 +178,11 @@ func (m deckModel) renderHeader() string {
 }
 
 func (m deckModel) renderFooter() string {
+	k := m.keys()
 	switch m.mode {
 	case deckModeNewTitle:
 		if m.newBriefing && m.onOverview() {
-			return ui.Dim.Render(" ⏎ start it · esc cancel") // the field is on the overview
+			return " " + hints(k.fieldFooter(), " · ", m.width-1) // the field is on the overview
 		}
 		if m.answering {
 			return " " + ui.Bold.Render("Your answer:") + " " + m.input.View()
@@ -179,16 +192,17 @@ func (m deckModel) renderFooter() string {
 		}
 		return " " + ui.Bold.Render("Mission title:") + " " + m.input.View()
 	case deckModeConfirm:
-		return " " + ui.Orange.Render(m.confirm.prompt) + ui.Dim.Render("  y/n")
+		return " " + ui.Orange.Render(m.confirm.prompt) + ui.Dim.Render("  "+k.Yes.Help().Key)
 	case deckModePick:
-		return ui.Dim.Render(" j/k move  ⏎ choose  esc cancel")
+		return " " + hints(k.pickFooter(), "  ", m.width-1)
 	}
 	if m.focusTerm {
 		if m.scrollMode {
-			return " " + ui.Orange.Render("history") + ui.Dim.Render(ansi.Truncate(" k/j line · ctrl+u/d half page · g top · G/esc back to live", m.width-9, "…"))
+			return " " + ui.Orange.Render("history") + " " + hints(k.scrollFooter(), " · ", m.width-9)
 		}
 		if m.prefix {
-			return " " + ui.Orange.Render(deckPrefixKey) + ui.Dim.Render(ansi.Truncate(" then: tab sidebar · [ history · z zoom · m mouse · n/p next/prev crew · s sidebar · S stop · q quit · ? help · "+deckPrefixKey+" send it", m.width-len(deckPrefixKey)-2, "…"))
+			lead := " " + ui.Orange.Render(k.Prefix.Help().Key) + ui.Dim.Render(" then: ")
+			return lead + hints(k.prefixFooter(), " · ", m.width-lipgloss.Width(lead))
 		}
 		if m.flash != "" {
 			return " " + m.flash
@@ -198,11 +212,7 @@ func (m deckModel) renderFooter() string {
 	if m.flash != "" {
 		return " " + m.flash
 	}
-	hints := " j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit"
-	if m.onOverview() {
-		hints = " ⏎ start a mission  j/k move  ? help  q quit"
-	}
-	return ui.Dim.Render(ansi.Truncate(hints, m.width, "…"))
+	return " " + hints(k.footer(m.onOverview()), "  ", m.width-1)
 }
 
 // --- main pane ---
@@ -298,11 +308,13 @@ func (m deckModel) renderPick(indent string) string {
 	var b strings.Builder
 	b.WriteString("\n" + wrapUnder(indent, "", ui.Bold.Render(m.pick.title), width) + "\n")
 	for i, item := range m.pick.items {
+		var lines string
 		if i == m.pick.cursor {
-			b.WriteString(wrapUnder(indent, ui.Orange.Render("▸ "), ui.Bold.Render(item), width))
+			lines = wrapUnder(indent, ui.Orange.Render("▸ "), ui.Bold.Render(item), width)
 		} else {
-			b.WriteString(wrapUnder(indent, "  ", item, width))
+			lines = wrapUnder(indent, "  ", item, width)
 		}
+		b.WriteString(zoneLines(zonePick, strconv.Itoa(i), strings.TrimSuffix(lines, "\n")) + "\n")
 	}
 	return b.String()
 }
@@ -428,7 +440,7 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 		if selected {
 			line = lipgloss.NewStyle().Background(deckSelBg).Width(width).Render(line)
 		}
-		add(line, i)
+		add(zone(zoneRow, r.key(m.data), line), i)
 		if r.kind == deckRowOverview && m.loaded && len(m.data.Missions) == 0 {
 			add(ui.Dim.Render("   no missions yet · n starts one"), -1)
 		}
@@ -493,52 +505,13 @@ func (m deckModel) renderSidebar(width, height int) string {
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
 }
 
-// sidebarRowAt maps a mouse position to a sidebar row.
-func (m deckModel) sidebarRowAt(x, y int) (int, bool) {
-	if !m.sidebarShown() || x <= m.mainWidth() {
-		return 0, false
-	}
-	_, rowOf := m.sidebarLines(deckSidebarWidth)
-	line := y - 2 + sidebarOffset(rowOf, m.cursor, m.bodyHeight()) // header + rule
-	if line < 0 || line >= len(rowOf) || rowOf[line] < 0 {
-		return 0, false
-	}
-	return rowOf[line], true
-}
-
 // --- help ---
 
 func (m deckModel) renderHelp() string {
-	help := []struct{ key, desc string }{
-		{"j/k ↑/↓", "Move through the overview, missions and their crew"},
-		{"⏎", "Launch crew (" + m.roles.ForCrew().Harness + ") on the mission, focus its live crew, or answer its question"},
-		{"L", "Launch crew with a chosen harness"},
-		{"R", "Resume the mission's last crew conversation"},
-		{"tab", "Focus the mission's live crew terminal"},
-		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
-		{"S", "Stop the mission's live crew"},
-		{"F", "Dismiss the orchestrator's question, then any queued crew"},
-		{"M", "Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)"},
-		{"1–4", "Mission tabs: Summary (what needs you), Brief, Work (capsules, artifacts), Log (and crew); or click one"},
-		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
-		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent (" + m.roles.ForBriefing().Harness + ") writes the brief and lifts capsules"},
-		{"N", "New mission you name and brief yourself (in $EDITOR)"},
-		{"e", "Edit the selected mission's brief in $EDITOR"},
-		{"a", "Attach: a loose capsule to this mission, or this loose capsule to a mission"},
-		{"d", "Detach one of the mission's capsules (it's kept)"},
-		{"p", "Park / reopen the selected mission"},
-		{"x", "Archive / reopen the selected mission"},
-		{"A", "Show or hide past missions (landed and archived; also ⏎ on Past)"},
-		{"⏎ (loose)", "Show or hide capsules that belong to no mission"},
-		{"s", "Toggle the sidebar"},
-		{"r", "Refresh (including PRs)"},
-		{"?", "Toggle this help"},
-		{"q", "Quit"},
-	}
 	var b strings.Builder
 	b.WriteString(ui.Bold.Render("  Deck") + "\n\n")
-	for _, h := range help {
-		b.WriteString("  " + lipgloss.NewStyle().Bold(true).Width(10).Render(h.key) + " " + h.desc + "\n")
+	for _, k := range m.keys().helpScreen() {
+		b.WriteString("  " + lipgloss.NewStyle().Bold(true).Width(10).Render(k.helpKey()) + " " + k.about + "\n")
 	}
 	b.WriteString("\n" + ui.Dim.Render("  Press ? to close"))
 	return b.String()

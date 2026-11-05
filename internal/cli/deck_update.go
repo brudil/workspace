@@ -101,22 +101,8 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelMsg:
 		return m.handleWheel(msg)
 
-	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && m.mode == deckModeNormal {
-			if idx, ok := m.sidebarRowAt(msg.Mouse().X, msg.Mouse().Y); ok {
-				m.cursor = idx
-			} else if msg.Mouse().X < m.mainWidth() && m.onOverview() {
-				// A mission named under Needs you or Recently: open it.
-				if slug, ok := m.overviewMissionAt(msg.Mouse().Y); ok {
-					m.openMission(slug)
-				}
-			} else if r, ok := m.selected(); ok && r.kind == deckRowMission && msg.Mouse().X < m.mainWidth() {
-				if tab, ok := m.missionTabAt(m.data.Missions[r.mission], msg.Mouse().X, msg.Mouse().Y); ok {
-					m.missionTab = tab
-				}
-			}
-		}
-		return m, nil
+	case deckClickMsg: // a click on a zone, found by the view (deck_zones.go)
+		return m.handleClick(msg.id)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -137,7 +123,8 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.focusTerm && m.mode == deckModeNormal && !m.showHelp {
 		return m.handleTermKey(msg)
 	}
-	if msg.String() == "ctrl+c" && m.mode != deckModeConfirm {
+	k := m.keys()
+	if k.Interrupt.matches(msg) && m.mode != deckModeConfirm {
 		return m.requestQuit()
 	}
 	switch m.mode {
@@ -150,43 +137,43 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.showHelp {
-		if k := msg.String(); k == "?" || k == "esc" || k == "q" {
+		if k.CloseHelp.matches(msg) {
 			m.showHelp = false
 		}
 		return m, nil
 	}
 
 	m.flash = ""
-	switch msg.String() {
-	case "q":
+	switch {
+	case k.Quit.matches(msg):
 		return m.requestQuit()
-	case "?":
+	case k.Help.matches(msg):
 		m.showHelp = true
-	case "1", "2", "3", "4":
+	case k.Tabs.matches(msg):
 		if r, ok := m.selected(); ok && r.kind == deckRowMission {
 			m.missionTab = missionTab(msg.String()[0] - '1')
 		}
-	case "j", "down":
+	case k.Down.matches(msg):
 		m.moveCursor(1)
-	case "k", "up":
+	case k.Up.matches(msg):
 		m.moveCursor(-1)
-	case "g", "home":
+	case k.Top.matches(msg):
 		m.cursor = 0
-	case "G", "end":
+	case k.Bottom.matches(msg):
 		m.cursor = max(len(m.rows)-1, 0)
-	case "J", "shift+down":
+	case k.ScrollDown.matches(msg):
 		m.syncMain()
 		m.mainVP.ScrollDown(3)
-	case "K", "shift+up":
+	case k.ScrollUp.matches(msg):
 		m.syncMain()
 		m.mainVP.ScrollUp(3)
-	case "ctrl+d", "pgdown":
+	case k.HalfDown.matches(msg):
 		m.syncMain()
 		m.mainVP.HalfPageDown()
-	case "ctrl+u", "pgup":
+	case k.HalfUp.matches(msg):
 		m.syncMain()
 		m.mainVP.HalfPageUp()
-	case "enter", "space":
+	case k.Open.matches(msg):
 		r, ok := m.selected()
 		switch {
 		case !ok:
@@ -203,7 +190,7 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case r.kind == deckRowMission && msg.String() == "enter":
 			return m.launchOrOffer()
 		}
-	case "tab", "l", "right":
+	case k.Focus.matches(msg):
 		if r, ok := m.selectedRun(); ok {
 			m.focusRun(r)
 		} else if dm, ok := m.selectedMission(); ok {
@@ -211,19 +198,19 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.focusRun(runs[len(runs)-1])
 			}
 		}
-	case "]":
+	case k.NextCrew.matches(msg):
 		return m.cycleRun(1)
-	case "[":
+	case k.PrevCrew.matches(msg):
 		return m.cycleRun(-1)
-	case "L":
+	case k.Launch.matches(msg):
 		return m.chooseHarness()
-	case "R":
+	case k.Resume.matches(msg):
 		return m.resumeCrew()
-	case "S":
+	case k.Stop.matches(msg):
 		return m.stopSelected()
-	case "M":
+	case k.Mouse.matches(msg):
 		return m.toggleMouse()
-	case "F":
+	case k.Dismiss.matches(msg):
 		// One thing at a time, the flag first: answering a flag mustn't
 		// throw away queued crew you haven't seen.
 		if dm, ok := m.selectedMission(); ok && (dm.M.Flag != nil || dm.M.Dispatch != nil) {
@@ -238,19 +225,19 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return deckReloadMsg{flash: "queued crew dismissed"}
 			}
 		}
-	case "s":
+	case k.Sidebar.matches(msg):
 		m.sidebarHidden = !m.sidebarHidden
 		m.resizePanes()
-	case "A":
+	case k.Past.matches(msg):
 		m.pastOpen = !m.pastOpen
 		m.rebuildRows()
-	case "r":
+	case k.Refresh.matches(msg):
 		m.flash = "refreshing…"
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh))
-	case "n":
+	case k.New.matches(msg):
 		// Say what the mission is and a briefing crew sets it up.
 		return m.askWhatToDo()
-	case "N":
+	case k.NewNamed.matches(msg):
 		// Name it and write the brief yourself.
 		m.mode = deckModeNewTitle
 		m.newBriefing = false
@@ -258,15 +245,15 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.CharLimit = 120
 		m.input.Placeholder = "Mission title"
 		return m, m.input.Focus()
-	case "e":
+	case k.Edit.matches(msg):
 		return m.editBrief()
-	case "a":
+	case k.Attach.matches(msg):
 		return m.startAttach()
-	case "d":
+	case k.Detach.matches(msg):
 		return m.startDetach()
-	case "p":
+	case k.Park.matches(msg):
 		return m.togglePark()
-	case "x":
+	case k.Archive.matches(msg):
 		return m.toggleArchive()
 	}
 	return m, nil
@@ -293,12 +280,13 @@ func (m *deckModel) moveCursor(delta int) {
 // --- new mission ---
 
 func (m deckModel) handleTitleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	k := m.keys()
+	switch {
+	case k.Discard.matches(msg):
 		m.mode, m.answering = deckModeNormal, false
 		m.input.Blur()
 		return m, nil
-	case "enter":
+	case k.Submit.matches(msg):
 		title := strings.TrimSpace(m.input.Value())
 		m.mode = deckModeNormal
 		m.input.Blur()
@@ -490,15 +478,15 @@ func (m *deckModel) openPick(title string, items []string, choose func(int) tea.
 }
 
 func (m deckModel) handlePickKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	p := m.pick
-	switch msg.String() {
-	case "esc", "q":
+	p, k := m.pick, m.keys()
+	switch {
+	case k.Cancel.matches(msg):
 		m.mode, m.pick = deckModeNormal, nil
-	case "j", "down":
+	case k.PickDown.matches(msg):
 		p.cursor = min(p.cursor+1, len(p.items)-1)
-	case "k", "up":
+	case k.PickUp.matches(msg):
 		p.cursor = max(p.cursor-1, 0)
-	case "enter":
+	case k.Choose.matches(msg):
 		m.mode, m.pick = deckModeNormal, nil
 		return m, p.choose(p.cursor)
 	}
@@ -513,7 +501,7 @@ func (m *deckModel) openConfirm(prompt string, yes tea.Cmd) {
 func (m deckModel) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.confirm
 	m.mode, m.confirm = deckModeNormal, nil
-	if k := msg.String(); k == "y" || k == "Y" {
+	if m.keys().Yes.matches(msg) {
 		return m, c.yes
 	}
 	return m, nil

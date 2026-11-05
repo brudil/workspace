@@ -642,8 +642,9 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleScrollKey(r, msg)
 	}
 
+	k := m.keys()
 	if !m.prefix {
-		if msg.String() == deckPrefixKey {
+		if k.Prefix.matches(msg) {
 			m.prefix = true
 			return m, nil
 		}
@@ -658,34 +659,34 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.prefix = false
-	switch msg.String() {
-	case deckPrefixKey:
+	switch {
+	case k.SendPrefix.matches(msg):
 		r.term.SendKey(uv.KeyPressEvent(msg))
-	case "tab", "esc", "h", "left":
+	case k.Back.matches(msg):
 		m.focusTerm = false
-	case "s":
+	case k.CrewSidebar.matches(msg):
 		m.sidebarHidden = !m.sidebarHidden
 		m.resizePanes()
-	case "z":
+	case k.ZoomIn.matches(msg):
 		return m.zoom(r)
-	case "m":
+	case k.CrewMouse.matches(msg):
 		return m.toggleMouse()
-	case "[", "pgup":
+	case k.History.matches(msg):
 		if r.term.ScrollbackLen() == 0 {
 			m.flash = "no history to scroll (the agent is drawing full-screen)"
 			return m, nil
 		}
 		m.scrollMode, m.wheelScrolled = true, false
 		r.scroll = min(max(r.scroll, m.bodyHeight()/2), r.term.ScrollbackLen())
-	case "n", "]":
+	case k.CrewNext.matches(msg):
 		return m.cycleRun(1)
-	case "p":
+	case k.CrewPrev.matches(msg):
 		return m.cycleRun(-1)
-	case "S":
+	case k.CrewStop.matches(msg):
 		return m.confirmStop(r)
-	case "?":
+	case k.CrewHelp.matches(msg):
 		m.showHelp = true
-	case "q":
+	case k.CrewQuit.matches(msg):
 		return m.requestQuit()
 	}
 	return m, nil
@@ -695,27 +696,28 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m deckModel) handleScrollKey(r *deckCrewRun, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	maxScroll := r.term.ScrollbackLen()
 	half := max(m.bodyHeight()/2, 1)
-	switch msg.String() {
-	case "k", "up":
+	k := m.keys()
+	switch {
+	case k.LineUp.matches(msg):
 		r.scroll++
-	case "j", "down":
+	case k.LineDown.matches(msg):
 		r.scroll--
-	case "ctrl+u", "pgup", "b":
+	case k.PageUp.matches(msg):
 		r.scroll += half
-	case "ctrl+d", "pgdown", "space", "f":
+	case k.PageDown.matches(msg):
 		r.scroll -= half
-	case "g", "home":
+	case k.Oldest.matches(msg):
 		r.scroll = maxScroll
-	case "G", "end":
+	case k.Newest.matches(msg):
 		r.scroll = 0
-	case "esc", "q", "enter", deckPrefixKey:
+	case k.Leave.matches(msg):
 		r.scroll = 0
 		m.scrollMode = false
-		m.prefix = msg.String() == deckPrefixKey // ctrl+g goes on to a deck command
+		m.prefix = k.Prefix.matches(msg) // the prefix goes on to a deck command
 		return m, nil
 	}
 	r.scroll = min(max(r.scroll, 0), maxScroll)
-	if r.scroll == 0 && msg.String() != "k" && msg.String() != "up" {
+	if r.scroll == 0 && !k.LineUp.matches(msg) {
 		// Scrolled back to the live screen: leave scroll mode.
 		m.scrollMode = false
 	}

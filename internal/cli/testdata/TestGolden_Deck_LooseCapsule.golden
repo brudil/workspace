@@ -1,24 +1,24 @@
- acme deck                                                                                          all quiet 
+ acme deck                                                                                          all quiet
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                                                           │   Overview                       
-  Frontend (frontend)   feat-x                                             │                                  
-  /ws/repos/frontend/feat-x                                                │ UP NEXT                          
-                                                                           │   Fix token refresh race   ready 
-  Not part of a mission. Press a to attach it to one.                      │   Billing export           ready 
-                                                                           │                                  
-                                                                           │  ▾ Loose capsules (1)            
+                                                                           │   Overview
+  Frontend (frontend)   feat-x                                             │
+  /ws/repos/frontend/feat-x                                                │ UP NEXT
+                                                                           │   Fix token refresh race   ready
+  Not part of a mission. Press a to attach it to one.                      │   Billing export           ready
+                                                                           │
+                                                                           │  ▾ Loose capsules (1)
                                                                            │     frontend/feat-x              
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
  j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit

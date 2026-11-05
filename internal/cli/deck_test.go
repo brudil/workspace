@@ -349,15 +349,9 @@ func TestDeck_SidebarClickSelectsRow(t *testing.T) {
 	seedMission(t, ws, "Two", "")
 	m := loadedDeck(t, ws, prIndex{})
 
-	_, rowOf := m.sidebarLines(deckSidebarWidth)
-	target := -1
-	for line, r := range rowOf {
-		if r >= 0 && m.rows[r].kind == deckRowMission && m.data.Missions[m.rows[r].mission].M.Slug == "two" {
-			target = line
-		}
-	}
-	next, _ := m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: m.mainWidth() + 5, Y: target + 2})
-	m = next.(deckModel)
+	x, y := onScreen(t, m, "Two", m.mainWidth()+1)
+	// Anywhere on the row: its title, or the space after it.
+	m = click(t, m, x+12, y)
 	if dm, ok := m.selectedMission(); !ok || dm.M.Slug != "two" {
 		t.Errorf("click selected %+v", dm)
 	}

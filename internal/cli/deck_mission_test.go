@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -58,10 +57,9 @@ func TestDeckMission_Tabs(t *testing.T) {
 		t.Errorf("tab = %d after moving away and back, want Log", m.missionTab)
 	}
 
-	// Clicking a tab's name switches to it (rows 0 and 1 are the header and rule).
-	_, line, spans := m.missionHeader(m.data.Missions[m.rows[m.cursor].mission], "  ")
-	next, _ = m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: spans[tabBrief][0] + 1, Y: line + 2})
-	if got := next.(deckModel).missionTab; got != tabBrief {
+	// Clicking a tab's name switches to it.
+	x, y := onScreen(t, m, " Brief ", 0)
+	if got := click(t, m, x+2, y).missionTab; got != tabBrief {
 		t.Errorf("clicked Brief, tab = %d", got)
 	}
 }

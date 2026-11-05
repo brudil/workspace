@@ -45,35 +45,26 @@ func (m deckModel) renderAskBox(width int) string {
 		in.SetStyles(st)
 		in.SetWidth(max(textW-lipgloss.Width(in.Prompt)-1, 5))
 		// A second line, so the box keeps its height from the hint.
-		body = in.View() + "\n" + on.Faint(true).Width(textW).Render("⏎ start it · esc cancel")
+		body = in.View() + "\n" + on.Faint(true).Width(textW).Render(hintText(m.keys().fieldFooter(), " · "))
 	} else {
 		body = on.Faint(true).Width(textW).Render("⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An agent turns it into a mission.")
 	}
 	box := on.Padding(1, 3).Width(boxW).Render(title + "\n\n" + body)
-	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, zoneLines(zoneAsk, "", box))
 }
 
 // renderOverview is the deck's front page: what you want to do next, what
-// needs you, and what's been happening across every mission.
+// needs you, and what's been happening across every mission. Clicking a
+// line under Needs you or Recently opens its mission.
 func (m deckModel) renderOverview(indent string, inner int) string {
-	s, _ := m.overviewWithLinks(indent, inner)
-	return s
-}
-
-// overviewWithLinks renders the overview, and says which mission each line
-// is about (by line, from 0): clicking a line under Needs you or Recently
-// opens that mission.
-func (m deckModel) overviewWithLinks(indent string, inner int) (string, map[int]string) {
 	var b strings.Builder
-	links := map[int]string{}
-	linkNext := func(slug string) { links[strings.Count(b.String(), "\n")] = slug }
 	b.WriteString("\n" + m.renderAskBox(inner+2*len(indent)) + "\n")
 
 	const titleCol = 26
-	line := func(icon, title, text string) string {
+	line := func(slug, icon, title, text string) string {
 		title = ansi.Truncate(title, titleCol-2, "…")
 		title += strings.Repeat(" ", titleCol-ansi.StringWidth(title))
-		return indent + icon + " " + title + ansi.Truncate(text, max(inner-titleCol-2, 10), "…") + "\n"
+		return indent + zone(zoneMission, slug, icon+" "+title+ansi.Truncate(text, max(inner-titleCol-2, 10), "…")) + "\n"
 	}
 
 	// What needs you, in the sidebar's order: each reason on its own line.
@@ -85,8 +76,7 @@ func (m deckModel) overviewWithLinks(indent string, inner int) (string, map[int]
 		}
 		dm := m.data.Missions[r.mission]
 		for _, why := range r.status.why {
-			linkNext(dm.M.Slug)
-			b.WriteString(line(ui.Orange.Render("•"), firstNonEmpty(dm.M.Title, dm.M.Slug), why))
+			b.WriteString(line(dm.M.Slug, ui.Orange.Render("•"), firstNonEmpty(dm.M.Title, dm.M.Slug), why))
 			needs++
 		}
 	}
@@ -129,8 +119,7 @@ func (m deckModel) overviewWithLinks(indent string, inner int) (string, map[int]
 		if !ok {
 			continue
 		}
-		linkNext(r.slug)
-		b.WriteString(line(ui.Dim.Render(eventClock(r.e.Time)), r.title, text))
+		b.WriteString(line(r.slug, ui.Dim.Render(eventClock(r.e.Time)), r.title, text))
 		if shown++; shown == overviewRecent {
 			break
 		}
@@ -138,7 +127,7 @@ func (m deckModel) overviewWithLinks(indent string, inner int) (string, map[int]
 	if shown == 0 {
 		b.WriteString(indent + ui.Dim.Render("Nothing yet.") + "\n")
 	}
-	return b.String(), links
+	return b.String()
 }
 
 // openMission selects a mission's sidebar row, opening Past first if it's
@@ -152,16 +141,6 @@ func (m *deckModel) openMission(slug string) {
 	}
 	m.pastOpen = true
 	m.wantRow("m:" + slug)
-}
-
-// overviewMissionAt is the mission on the overview line at screen row y,
-// if it names one: the main pane starts below the header and rule, and may
-// be scrolled.
-func (m deckModel) overviewMissionAt(y int) (string, bool) {
-	const indent = "  "
-	_, links := m.overviewWithLinks(indent, max(m.mainWidth()-2*len(indent), 10))
-	slug, ok := links[y-2+m.mainVP.YOffset()]
-	return slug, ok
 }
 
 // eventClock is when something happened, briefly: the time today, else the

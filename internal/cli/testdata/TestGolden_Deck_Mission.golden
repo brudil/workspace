@@ -1,24 +1,24 @@
- acme deck                                                                                          all quiet 
+ acme deck                                                                                          all quiet
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                                                           │   Overview                       
-  Fix token refresh race                                                   │                                  
-   fix-token-refresh-race   ready                                          │ UP NEXT                          
-                                                                           │ ▸ Fix token refresh race   ready 
-   Summary   Brief   Work   Log   1–4                                      │   Billing export           ready 
-                                                                           │                                  
-  Goal       Stop concurrent refreshes clobbering each other. · 2 for the  │  ▸ Loose capsules (1)            
-             brief                                                         │                                  
-  Crew       no crew yet · ⏎ launch cursor · L choose harness              │                                  
-  Capsules   frontend/token-race                                           │                                  
-             backend/token-race  #88                                       │                                  
-  Recently   09:30   mission created                                       │                                  
-             09:31   capsule frontend/token-race added                     │                                  
-             09:32   capsule backend/token-race added                      │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
+                                                                           │   Overview
+  Fix token refresh race                                                   │
+   fix-token-refresh-race   ready                                          │ UP NEXT
+                                                                           │ ▸ Fix token refresh race   ready
+   Summary   Brief   Work   Log   1–4                                      │   Billing export           ready
+                                                                           │
+  Goal       Stop concurrent refreshes clobbering each other. · 2 for the  │  ▸ Loose capsules (1)
+             brief                                                         │
+  Crew       no crew yet · ⏎ launch cursor · L choose harness              │
+  Capsules   frontend/token-race                                           │
+             backend/token-race  #88                                       │
+  Recently   09:30   mission created                                       │
+             09:31   capsule frontend/token-race added                     │
+             09:32   capsule backend/token-race added                      │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
+                                                                           │
  j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit

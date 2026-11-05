@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -40,7 +41,7 @@ var (
 )
 
 func (m deckModel) renderMission(dm deckMission, indent string, inner int) string {
-	head, _, _ := m.missionHeader(dm, indent)
+	head := m.missionHeader(dm, indent)
 	switch m.missionTab {
 	case tabBrief:
 		return head + m.renderMissionBrief(dm, indent, inner)
@@ -52,45 +53,23 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 	return head + m.renderMissionSummary(dm, indent, inner)
 }
 
-// missionHeader is the title, slug and status, and the tab bar. It returns
-// the tab bar's line (from 0) and each tab's columns, for clicks.
-func (m deckModel) missionHeader(dm deckMission, indent string) (string, int, [][2]int) {
+// missionHeader is the title, slug and status, and the tab bar (each tab
+// clickable).
+func (m deckModel) missionHeader(dm deckMission, indent string) string {
 	var b strings.Builder
 	b.WriteString("\n" + indent + ui.Bold.Render(dm.M.Title) + "\n")
 	// Where it stands for you, as the sidebar says; the slug is its id.
 	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + m.missionStatus(&dm).label + "\n\n")
-	tabLine := strings.Count(b.String(), "\n")
-	col := len(indent)
-	var spans [][2]int
 	var parts []string
 	for i, name := range missionTabNames {
-		label := " " + name + " "
 		style := tabIdle
 		if missionTab(i) == m.missionTab {
 			style = tabActive
 		}
-		w := ansi.StringWidth(label)
-		spans = append(spans, [2]int{col, col + w})
-		parts = append(parts, style.Render(label))
-		col += w + 1
+		parts = append(parts, zone(zoneTab, strconv.Itoa(i), style.Render(" "+name+" ")))
 	}
 	b.WriteString(indent + strings.Join(parts, " ") + "  " + ui.Dim.Render("1–4") + "\n")
-	return b.String(), tabLine, spans
-}
-
-// missionTabAt is the tab at screen position x, y of the main pane, if the
-// selected mission's tab bar is there.
-func (m deckModel) missionTabAt(dm deckMission, x, y int) (missionTab, bool) {
-	_, line, spans := m.missionHeader(dm, "  ")
-	if y-2+m.mainVP.YOffset() != line { // the pane starts below the header and rule
-		return 0, false
-	}
-	for i, s := range spans {
-		if x >= s[0] && x < s[1] {
-			return missionTab(i), true
-		}
-	}
-	return 0, false
+	return b.String()
 }
 
 // renderMissionSummary leads with what needs you, then a line or two of

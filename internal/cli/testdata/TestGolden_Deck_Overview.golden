@@ -1,24 +1,24 @@
- acme deck                                                                                          all quiet 
+ acme deck                                                                                          all quiet
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                            │ ▸ Overview                       
-                                                                           │                                  
-                          What do you want to do?                          │ UP NEXT                          
-                                                                           │   Fix token refresh race   ready 
-     ⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An          │   Billing export           ready 
-     agent turns it into a mission.                                        │                                  
-                                                                           │  ▸ Loose capsules (1)            
-                                                                           │                                  
-  Needs you                                                                │                                  
-  Nothing right now.                                                       │                                  
-                                                                           │                                  
-  2 up next                                                                │                                  
-                                                                           │                                  
-  Recently                                                                 │                                  
-  09:32  Fix token refresh race    capsule backend/token-race added        │                                  
-  09:31  Fix token refresh race    capsule frontend/token-race added       │                                  
-  09:30  Fix token refresh race    mission created                         │                                  
-  09:30  Billing export            mission created                         │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
+                                                                           │
+                          What do you want to do?                          │ UP NEXT
+                                                                           │   Fix token refresh race   ready
+     ⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An          │   Billing export           ready
+     agent turns it into a mission.                                        │
+                                                                           │  ▸ Loose capsules (1)
+                                                                           │
+  Needs you                                                                │
+  Nothing right now.                                                       │
+                                                                           │
+  2 up next                                                                │
+                                                                           │
+  Recently                                                                 │
+  09:32  Fix token refresh race    capsule backend/token-race added        │
+  09:31  Fix token refresh race    capsule frontend/token-race added       │
+  09:30  Fix token refresh race    mission created                         │
+  09:30  Billing export            mission created                         │
+                                                                           │
+                                                                           │
+                                                                           │
  ⏎ start a mission  j/k move  ? help  q quit
