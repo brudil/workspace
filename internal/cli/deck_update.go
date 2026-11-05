@@ -102,6 +102,10 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if slug, ok := m.overviewMissionAt(msg.Mouse().Y); ok {
 					m.openMission(slug)
 				}
+			} else if r, ok := m.selected(); ok && r.kind == deckRowMission && msg.Mouse().X < m.mainWidth() {
+				if tab, ok := m.missionTabAt(m.data.Missions[r.mission], msg.Mouse().X, msg.Mouse().Y); ok {
+					m.missionTab = tab
+				}
 			}
 		}
 		return m, nil
@@ -150,6 +154,10 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.requestQuit()
 	case "?":
 		m.showHelp = true
+	case "1", "2", "3", "4":
+		if r, ok := m.selected(); ok && r.kind == deckRowMission {
+			m.missionTab = missionTab(msg.String()[0] - '1')
+		}
 	case "j", "down":
 		m.moveCursor(1)
 	case "k", "up":

@@ -466,15 +466,26 @@ func TestDeck_ArtifactsAndConclusion(t *testing.T) {
 	}
 	m := selectMission(t, loadedDeck(t, ws, open), slug)
 	_, content := m.mainContent(m.mainWidth()) // the whole pane, not just what fits on screen
+	summary := ansi.Strip(content)
+	// Summary: the artifact in a line, the capsules' PRs as badges, the goal.
+	for _, want := range []string{"Artifacts  doc  link  Design doc", "Goal       Cache it.", "frontend/cache-ui", "backend/cache-api"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("summary missing %q:\n%s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "Concluded") {
+		t.Error("concluded with a PR still open")
+	}
+	// Work (3): every capsule's PR and artifact in full.
+	m, _ = press(t, m, "3")
+	_, content = m.mainContent(m.mainWidth())
 	view := ansi.Strip(content)
 	for _, want := range []string{"Artifacts", "frontend/cache-ui  #12 open  Cache UI", "backend/cache-api  #88 merged  Cache API", "Design doc  https://example.com/design"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("view missing %q:\n%s", want, view)
+			t.Errorf("work tab missing %q:\n%s", want, view)
 		}
 	}
-	if strings.Contains(view, "Concluded") {
-		t.Error("concluded with a PR still open")
-	}
+	m, _ = press(t, m, "1")
 
 	merged := prIndex{
 		"frontend": {merged: map[string]*github.PR{"cache-ui": {Number: 12, HeadRefName: "cache-ui"}}},

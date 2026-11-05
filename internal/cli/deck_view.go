@@ -195,7 +195,7 @@ func (m deckModel) mainContent(width int) (string, string) {
 		return "overview", m.renderOverview(indent, inner)
 	case deckRowMission, deckRowCrew:
 		dm := m.data.Missions[r.mission]
-		return "m:" + dm.M.Slug, m.renderMission(dm, indent, inner)
+		return fmt.Sprintf("m:%s:%d", dm.M.Slug, m.missionTab), m.renderMission(dm, indent, inner)
 	case deckRowLoose:
 		c := m.data.Loose[r.capsule]
 		return "l:" + c.Repo + "/" + c.Name, m.renderLoose(c, indent)
@@ -214,90 +214,6 @@ func (m deckModel) renderWelcome(indent string) string {
 	b.WriteString(indent + "A mission is a unit of work: a brief, the capsules that carry it out,\n")
 	b.WriteString(indent + "and a log of what happened.\n\n")
 	b.WriteString(indent + "Press " + ui.Bold.Render("n") + " to create one.\n")
-	return b.String()
-}
-
-func (m deckModel) renderMission(dm deckMission, indent string, inner int) string {
-	var b strings.Builder
-	b.WriteString("\n" + indent + ui.Bold.Render(dm.M.Title) + "\n")
-	// Where it stands for you, as the sidebar says; the slug is its id.
-	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + m.missionStatus(&dm).label + "\n")
-	b.WriteString(indent + m.crewSummary(dm) + "\n")
-	if dm.State == mission.Briefing {
-		if len(m.reg.live(dm.M.Slug)) > 0 {
-			b.WriteString("\n" + indent + ui.Orange.Render("Being briefed") + ui.Dim.Render(" · an agent is turning the request into a brief and capsules; it finishes with ws mission ready") + "\n")
-		} else {
-			b.WriteString("\n" + indent + ui.Orange.Render("Waiting to be briefed") + ui.Dim.Render(" · ⏎ starts a briefing agent") + "\n")
-		}
-		if dm.M.Request != "" {
-			b.WriteString(indent + ui.Dim.Render("Requested: ") + strings.ReplaceAll(dm.M.Request, "\n", " ") + "\n")
-		}
-	}
-	if dm.M.From != "" {
-		b.WriteString(indent + ui.Dim.Render("Raised from: "+dm.M.From) + "\n")
-	}
-	if f := dm.M.Flag; f != nil {
-		who := "The orchestrator asks"
-		if f.By != "orchestrator" {
-			who = f.By + " asks"
-		}
-		b.WriteString("\n" + wrapUnder(indent, ui.Orange.Render("! "+who+": "), f.Text, inner))
-		for i, o := range f.Options {
-			b.WriteString(wrapUnder(indent, "    "+ui.Dim.Render(fmt.Sprintf("%d.", i+1))+" ", o, inner))
-		}
-		b.WriteString(indent + ui.Dim.Render("  ⏎ answer · F dismiss") + "\n")
-	}
-	if d := dm.M.Dispatch; d != nil {
-		where := ""
-		if d.Capsule != "" {
-			where = " in " + d.Capsule
-		}
-		b.WriteString("\n" + wrapUnder(indent, ui.Orange.Render("→ Next"+where+": "), d.Text+ui.Dim.Render(" ("+d.By+")"), inner))
-	}
-	if c := dm.M.Conclude; c != nil && dm.State != mission.Archived {
-		b.WriteString("\n" + wrapUnder(indent, ui.Green.Render("✓ Suggested conclusion: "), c.Text+ui.Dim.Render(" ("+c.By+") · x archives"), inner))
-	}
-
-	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")
-	if len(dm.Capsules) == 0 {
-		b.WriteString(indent + "  " + ui.Dim.Render("none yet · a attaches a loose capsule · WS_MISSION="+dm.M.Slug+" ws lift <repo> <name>") + "\n")
-	}
-	nameW := 0
-	for _, c := range dm.Capsules {
-		nameW = max(nameW, lipgloss.Width(m.ws.FormatRepoName(c.Repo)))
-	}
-	for _, c := range dm.Capsules {
-		repo := m.ws.FormatRepoName(c.Repo)
-		line := indent + "  " + repo + strings.Repeat(" ", nameW-lipgloss.Width(repo)) + "  " + ui.TagDim.Render(c.Name)
-		if badges := deckBadges(dm.Git[mission.Capsule{Repo: c.Repo, Name: c.Name}], c.Exists, c.PR, c.PRS); badges != "" {
-			line += "  " + badges
-		}
-		b.WriteString(line + "\n")
-		if c.Exists {
-			b.WriteString(indent + "  " + ui.Dim.Render(c.Path) + "\n")
-		}
-	}
-
-	b.WriteString(m.renderArtifacts(dm, indent))
-	if hint := m.conclusionHint(dm); hint != "" {
-		b.WriteString("\n" + indent + hint + "\n")
-	}
-
-	b.WriteString("\n" + indent + ui.Bold.Render("Brief") + ui.Dim.Render("  e to edit") + "\n")
-	if strings.TrimSpace(dm.Brief) == "" {
-		b.WriteString(indent + "  " + ui.Dim.Render("(empty)") + "\n")
-	} else {
-		for line := range strings.SplitSeq(m.md.render(dm.Brief, inner), "\n") {
-			b.WriteString(indent + line + "\n")
-		}
-	}
-
-	if len(dm.Events) > 0 {
-		b.WriteString("\n" + indent + ui.Bold.Render("Log") + "\n")
-		for _, e := range dm.Events {
-			b.WriteString(indent + "  " + formatEventLine(e, false) + "\n")
-		}
-	}
 	return b.String()
 }
 
@@ -549,6 +465,7 @@ func (m deckModel) renderHelp() string {
 		{"S", "Stop the mission's live crew"},
 		{"F", "Dismiss the orchestrator's question, then any queued crew"},
 		{"M", "Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)"},
+		{"1–4", "Mission tabs: Summary (what needs you), Brief, Work (capsules, artifacts), Log (and crew); or click one"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent (" + m.roles.ForBriefing().Harness + ") writes the brief and lifts capsules"},
 		{"N", "New mission you name and brief yourself (in $EDITOR)"},

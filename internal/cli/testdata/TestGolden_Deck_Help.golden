@@ -9,6 +9,7 @@
   S          Stop the mission's live crew
   F          Dismiss the orchestrator's question, then any queued crew
   M          Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)
+  1–4        Mission tabs: Summary (what needs you), Brief, Work (capsules, artifacts), Log (and crew); or click one
   J/K        Scroll the main pane (also ctrl+d/u, mouse wheel)
   n          New mission: say what you want (⏎ on the overview too); a briefing agent (cursor) writes the brief and lifts capsules
   N          New mission you name and brief yourself (in $EDITOR)

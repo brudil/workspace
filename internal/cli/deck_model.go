@@ -111,6 +111,9 @@ type deckModel struct {
 	mode        deckMode
 	newBriefing bool // the title input is asking for a briefing request
 	answering   bool // the title input is your answer to the selected mission's flag
+	// missionTab is the mission view's tab; it stays as you move between
+	// missions.
+	missionTab missionTab
 	// orchestratorOff is [orchestrator] enabled = false: answers to flags
 	// aren't handed to it.
 	orchestratorOff bool
