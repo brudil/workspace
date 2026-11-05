@@ -28,6 +28,10 @@ Commands that take a mission use, in order: the --mission flag or slug
 argument, $WS_MISSION, then the mission owning the capsule you stand in.
 
 With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
+		// Usage helps with a mistyped flag or argument, not a command that
+		// failed while running: agents read these errors to correct
+		// themselves, and the usage text buries them.
+		PersistentPreRun: func(cmd *cobra.Command, args []string) { cmd.SilenceUsage = true },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMissionList(cmd, "", false)
 		},

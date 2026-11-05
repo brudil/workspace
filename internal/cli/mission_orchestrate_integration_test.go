@@ -58,7 +58,7 @@ func TestOrchestrate_PromptHasTheContext(t *testing.T) {
 			t.Errorf("prompt missing %q", want)
 		}
 	}
-	if !strings.Contains(r.Stderr, "--model claude-haiku-5-5-medium") && !strings.Contains(r.Stderr, "would run") {
+	if !strings.Contains(r.Stderr, "would write that to") || !strings.Contains(r.Stderr, "orchestrator-prompt.md and run:") {
 		t.Errorf("stderr: %s", r.Stderr)
 	}
 }
@@ -165,5 +165,51 @@ func TestProposals_FlagResumeWithConclude(t *testing.T) {
 	run(t, w, nil, "mission", "flag", "--clear")
 	if got, _ := store.Load("cache"); got.Flag != nil {
 		t.Error("flag not cleared")
+	}
+}
+
+// fileOrchestrator stands in for an agent that follows the one line it's
+// given: it reports how many lines that was, then reads the file it names.
+type fileOrchestrator struct{ echoOrchestrator }
+
+func (fileOrchestrator) Name() string { return "file-orchestrator" }
+func (fileOrchestrator) Orchestrate(prompt, dir, model string) (harness.Launch, error) {
+	script := `printf 'lines=%s\n' "$(printf '%s' "$0" | wc -l | tr -d ' ')"; for w in $0; do case "$w" in /*orchestrator-prompt.md) head -n 1 "$w";; esac; done`
+	return harness.Launch{Args: []string{"/bin/sh", "-c", script, prompt}, Dir: dir}, nil
+}
+
+func TestOrchestrate_PromptGoesInAFileNotTheCommandLine(t *testing.T) {
+	w, store := orchestrateFixture(t)
+	harness.Register(fileOrchestrator{})
+	t.Setenv(harness.EnvDefault, "file-orchestrator")
+	run(t, w, nil, "mission", "orchestrate", "-m", "cache", "--crew", "c1", "--trigger", "done")
+
+	data, err := os.ReadFile(filepath.Join(store.Dir(), "cache", "orchestrator-prompt.md"))
+	if err != nil || !strings.Contains(string(data), "Cache the lookup.") || !strings.Contains(string(data), "All tests pass.") {
+		t.Fatalf("prompt file = %q, %v", data, err)
+	}
+	var summary string
+	for _, e := range mustLog(t, store) {
+		if e.Kind == mission.EventOrchestrate {
+			summary = e.Text
+		}
+	}
+	// One line on the command line, and the agent found the prompt from it.
+	if !strings.Contains(summary, "lines=0") || !strings.Contains(summary, `You are the orchestrator for the mission "Cache"`) {
+		t.Errorf("summary = %q", summary)
+	}
+}
+
+func TestMissionErrors_NoUsageText(t *testing.T) {
+	w, _ := orchestrateFixture(t)
+	t.Setenv(mission.EnvMission, "cache")
+	r := testutil.RunCommand(t, w.Root, nil, "mission", "resume-with", "c9", "x")
+	if r.Err == nil || strings.Contains(r.Stderr+r.Stdout, "Usage:") {
+		t.Errorf("a failed mission command printed usage:\n%s", r.Stderr)
+	}
+	// A mistyped flag still gets it.
+	r = testutil.RunCommand(t, w.Root, nil, "mission", "resume-with", "--nope")
+	if r.Err == nil || !strings.Contains(r.Stderr+r.Stdout, "Usage:") {
+		t.Errorf("a mistyped flag didn't print usage:\n%s", r.Stderr)
 	}
 }
