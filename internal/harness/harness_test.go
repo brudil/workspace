@@ -51,8 +51,9 @@ func TestCursor_StartWithChatID(t *testing.T) {
 	if l.Conversation != "3f2a9c1e-7b4d-4e2a-9f00-1234abcd" {
 		t.Errorf("conversation = %q", l.Conversation)
 	}
-	if strings.Join(l.Args, " ") != "/bin/ca --resume "+l.Conversation {
-		t.Errorf("args = %q (the prompt must not be an argument)", l.Args)
+	// --trust: a new capsule's trust dialog would swallow the opening prompt.
+	if strings.Join(l.Args, " ") != "/bin/ca --trust --resume "+l.Conversation {
+		t.Errorf("args = %q (trusted, and the prompt must not be an argument)", l.Args)
 	}
 	if !strings.Contains(l.Prompt, "ws mission show -f llm") || !strings.Contains(l.Prompt, "Fix it.") {
 		t.Errorf("prompt = %q", l.Prompt)
@@ -75,7 +76,7 @@ func TestCursor_StartWithoutChatID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if l.Conversation != "" || len(l.Args) != 1 || l.Prompt == "" {
+		if l.Conversation != "" || strings.Join(l.Args, " ") != "/bin/ca --trust" || l.Prompt == "" {
 			t.Errorf("%s: launch = %+v", name, l)
 		}
 		// Why it can't be resumed goes in the exec log.
@@ -89,7 +90,7 @@ func TestCursor_Resume(t *testing.T) {
 	t.Setenv(EnvCursorBin, "")
 	c := fakeCursor(map[string]string{"cursor-agent": "/bin/ca"}, "", nil)
 	l, err := c.Resume("/w", "abc123")
-	if err != nil || strings.Join(l.Args, " ") != "/bin/ca --resume abc123" {
+	if err != nil || strings.Join(l.Args, " ") != "/bin/ca --trust --resume abc123" {
 		t.Errorf("resume = %+v, %v", l, err)
 	}
 	if _, err := c.Resume("/w", ""); err == nil {

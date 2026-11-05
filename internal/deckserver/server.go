@@ -124,12 +124,14 @@ func (s *Server) Serve() error {
 	for {
 		nc, err := s.ln.Accept()
 		if err != nil {
-			select {
-			case <-s.done:
+			s.mu.Lock()
+			closing := s.closing
+			s.mu.Unlock()
+			if closing && errors.Is(err, net.ErrClosed) {
+				<-s.done // Shutdown has removed the socket and finished
 				return nil
-			default:
-				return err
 			}
+			return err
 		}
 		c := &conn{nc: nc, enc: json.NewEncoder(nc)}
 		s.mu.Lock()
@@ -165,12 +167,12 @@ func (s *Server) Shutdown(reason string) {
 	wg.Wait()
 	s.watchers.Wait() // every crew's end is on its mission before we exit
 	s.Log.Printf("shutting down: %s", reason)
-	close(s.done)
 	s.ln.Close()
 	os.Remove(SocketPath(s.Root))
+	close(s.done) // last: whoever waits on Done finds the socket gone
 }
 
-// Done is closed once the server has shut down.
+// Done is closed once the server has shut down and removed its socket.
 func (s *Server) Done() <-chan struct{} { return s.done }
 
 // checkIdleLocked arms the idle timer when nothing is running or attached.

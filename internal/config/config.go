@@ -210,9 +210,6 @@ func Load(startDir string) (*Config, string, error) {
 		return nil, "", err
 	}
 
-	cfg.Boarded = make(map[string][]string)
-	cfg.Silo = make(map[string]string)
-
 	localPath := filepath.Join(root, LocalFileName)
 	if _, err := os.Stat(localPath); err == nil {
 		var local LocalConfig
@@ -248,6 +245,16 @@ func Load(startDir string) (*Config, string, error) {
 		if local.Orchestrator.MaxDispatches != 0 {
 			cfg.Orchestrator.MaxDispatches = local.Orchestrator.MaxDispatches
 		}
+	}
+
+	// Callers add to these (ws lift boards the new capsule), so they're never
+	// nil: Merge builds a fresh Config, and a ws.local.toml may have neither
+	// section.
+	if cfg.Boarded == nil {
+		cfg.Boarded = make(map[string][]string)
+	}
+	if cfg.Silo == nil {
+		cfg.Silo = make(map[string]string)
 	}
 
 	if d := cfg.Orchestrator.Dispatch; d != "" && d != "auto" && d != "ask" {

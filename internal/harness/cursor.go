@@ -34,6 +34,14 @@ var cursorCreateChatArgs = []string{"create-chat"}
 
 const cursorCreateChatTimeout = 15 * time.Second
 
+// VERIFIED: in a folder Cursor hasn't seen, an interactive cursor-agent opens
+// on a "Workspace Trust Required" dialog, and the opening prompt typed in
+// once the screen settles lands in it (an "a" in the text answers it; the
+// rest is lost). Every newly lifted capsule is such a folder. --trust skips
+// the dialog interactively too, alone or with --resume. ws made the capsule
+// and the user chose to launch crew in it.
+const cursorTrustFlag = "--trust"
+
 // A chat id is one token: letters, digits, dashes, underscores.
 var chatIDShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{5,}$`)
 
@@ -71,7 +79,7 @@ func (c *Cursor) Start(b Brief) (Launch, error) {
 		return Launch{}, err
 	}
 	conv, note := c.createChat(bin)
-	args := []string{bin}
+	args := []string{bin, cursorTrustFlag}
 	if conv != "" {
 		// Verified: --resume <id> opens the chat create-chat made,
 		// interactively.
@@ -92,7 +100,7 @@ func (c *Cursor) Resume(dir, conversation string) (Launch, error) {
 		return Launch{}, err
 	}
 	// VERIFIED: --resume <id> reopens an earlier chat interactively.
-	return Launch{Args: []string{bin, "--resume", conversation}, Dir: dir, Conversation: conversation}, nil
+	return Launch{Args: []string{bin, cursorTrustFlag, "--resume", conversation}, Dir: dir, Conversation: conversation}, nil
 }
 
 // createChat asks the CLI for a chat id up front. Any failure just means the
@@ -124,8 +132,11 @@ func (c *Cursor) createChat(bin string) (id, note string) {
 // every tool, --output-format text (the default) prints the final message,
 // --force runs commands unless explicitly denied, --trust skips the
 // workspace-trust prompt nobody is there to answer, and --model picks the
-// model. GUESS: the orchestrator's default model name is one Cursor accepts
-// (cursor-agent --list-models lists them).
+// model. VERIFIED: the default model name is one Cursor knows, but whether
+// an account may use it depends on its plan, and --list-models lists models
+// the plan doesn't include. A Free plan refuses it ("Model unavailable on
+// Free", exit 1), so set [orchestrator] model = "auto" there. An unknown
+// name fails the same way ("Cannot use this model").
 var cursorPrintArgs = []string{"-p", "--force", "--trust", "--output-format", "text"}
 
 // Orchestrate runs a headless orchestrator with Cursor's print mode.

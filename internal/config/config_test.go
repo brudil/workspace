@@ -446,6 +446,33 @@ default_branch = "main"
 	}
 }
 
+// A ws.local.toml with other settings but no [boarded] or [silo] still leaves
+// both maps ready to add to: ws lift used to panic boarding into a nil map.
+func TestLoad_LocalConfigWithoutBoardedOrSilo(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "ws.toml"), []byte(`[workspace]
+org = "test-org"
+default_branch = "main"
+
+[repos.repo-a]
+`), 0644)
+	os.WriteFile(filepath.Join(root, "ws.local.toml"), []byte(`[orchestrator]
+model = "auto"
+`), 0644)
+
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Boarded == nil || cfg.Silo == nil {
+		t.Fatalf("Boarded = %v, Silo = %v: both should be empty maps, not nil", cfg.Boarded, cfg.Silo)
+	}
+	cfg.Boarded["repo-a"] = append(cfg.Boarded["repo-a"], "cap") // must not panic
+	if cfg.Orchestrator.Model != "auto" {
+		t.Errorf("orchestrator model = %q, want auto", cfg.Orchestrator.Model)
+	}
+}
+
 func TestLoad_WithoutLocalConfig(t *testing.T) {
 	root := t.TempDir()
 	content := `[workspace]

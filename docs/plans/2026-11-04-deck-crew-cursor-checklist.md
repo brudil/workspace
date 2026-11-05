@@ -1,7 +1,42 @@
 # Deck crew: Cursor CLI verification checklist
 
 **Date:** 2026-11-04
-**Status:** To run locally. The Cursor adapter was written without access to a real `cursor-agent`.
+**Status:** Run locally on 2026-11-05 against `agent` 2026.11.05-86047df (macOS, deck driven through tmux). Everything except the orchestrator end to end (5d) and things that need a real terminal (mouse, links, notifications). Results below.
+
+## Results, 2026-11-05
+
+**Steps 1–4.**
+- `cursor-agent` and `agent` are both installed.
+- `create-chat` prints a bare UUID and exits 0 in about 1s.
+- Crew launch as `cursor-agent --trust --resume <id>`, and the prompt is typed in afterwards.
+- Print mode works with `--model auto` and with no `--model`, about 5s for a one-word reply.
+
+**Fixed after this run:**
+- **Trust dialog swallowed the opening prompt.** Cursor shows a "Workspace Trust Required" dialog in any folder it hasn't seen, which includes every newly lifted capsule. The prompt was typed into it, an `a` in the text answered it, and the rest was lost. Crew now launch with `--trust`, which skips the dialog interactively too, alone or with `--resume`.
+- **`ws lift` panicked with a `ws.local.toml` that has no `[boarded]` section** (e.g. only `[orchestrator]`): the first lift wrote to a nil map. This was older than missions.
+- **Deck server shutdown race.** The server signalled it was done before it removed its socket.
+
+**Environment, not ws:**
+- **Agents found an older `ws`.** Cursor's shell loads `~/.zshrc`, and a `PATH` line there (`$HOME/go/bin`) put an installed `workspace` ahead of `.ws/bin`. Crew got `unknown command "mission"`. Keep the installed `ws` current; on the test machine `~/go/bin/workspace` is a symlink to `bin/workspace`.
+- **The orchestrator's default model is refused on a Free plan.** On Cursor Free, `--model claude-haiku-5-5-medium` exits 1 with "Model unavailable on Free". `--list-models` lists it anyway. Test with `[orchestrator] model = "auto"`; haiku stays the default.
+- **A stale trust dialog stays drawn after it's answered.** Cursor leaves it on screen until it next redraws, in plain tmux as well, so it isn't the deck's emulator.
+
+**Passed:**
+- **Launch:** launching crew, opening prompt delivery (trusted folder), `WS_MISSION`/`WS_CREW` in the agent's shell, cwd is the capsule.
+- **Input and screen:** multi-line bracketed paste arrives as one paste, scrollback, zoom in and out (redraws on return).
+- **Crew:** second crew asks before sharing a capsule, stop (`hangup`), `R` resumes the same crew, chat and capsule with history.
+- **Deck server:** detach, `deck server status`, reattach with screens intact, stop and quit, transcripts saved, idle server exit, long-path socket fallback under `$TMPDIR`.
+- **Status and signals:** working/waiting; Cursor's command approval counts as waiting (Needs you); ask (`? asks`, question in the view, log); done (`✓ done`, summary); orchestrator skipped with `enabled = false`.
+- **Briefing:** `n` → briefing agent → brief, title, capsule → `ws mission ready --slug` → lands on the ready mission.
+
+**Not run:**
+- 5d, the orchestrator end to end: it runs `agent -p --force`.
+- Mouse selection, Cmd-click links, bell and desktop notifications: these need a real terminal.
+- `ctrl+r`, `shift+tab`, `alt+enter`, `ctrl+g n`/`p`, artifacts from a real PR.
+
+**Tip:** keys typed while Cursor shows a command approval go to the approval. A `y` approves it, and the next few characters can be dropped while Cursor changes screens.
+
+---
 
 Every assumption about the Cursor CLI is in `internal/harness/cursor.go`, marked `GUESS`. This checklist confirms or corrects each one. Paste the outputs (or "works" / "broken: …") back and the adapter gets fixed to match.
 
