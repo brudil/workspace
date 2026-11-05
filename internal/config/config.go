@@ -17,6 +17,8 @@ type Config struct {
 	Workspace    WorkspaceConfig        `toml:"workspace"`
 	Repos        map[string]RepoConfig  `toml:"repos"`
 	Groups       map[string]GroupConfig `toml:"groups"`
+	Crew         AgentConfig            `toml:"crew"`
+	Briefing     AgentConfig            `toml:"briefing"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator"`
 	Boarded      map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
 	Git          string                 `toml:"-"` // from ws.local.toml only
@@ -29,7 +31,29 @@ type LocalConfig struct {
 	Groups       map[string]GroupConfig `toml:"groups,omitempty"`
 	Boarded      map[string][]string    `toml:"boarded"`
 	Silo         map[string]string      `toml:"silo"`
+	Crew         AgentConfig            `toml:"crew,omitempty"`
+	Briefing     AgentConfig            `toml:"briefing,omitempty"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator,omitempty"`
+}
+
+// AgentConfig says which harness (agent CLI: cursor, claude, shell) runs a
+// role, [crew] or [briefing], and on which model. Empty means the default:
+// see harness.Roles. ws.local.toml settings override ws.toml's.
+type AgentConfig struct {
+	Harness string `toml:"harness,omitempty"`
+	// Model is passed to the harness as is, so it's in that agent's own
+	// naming ("opus" for claude, "claude-opus-5-5-high" for cursor).
+	Model string `toml:"model,omitempty"`
+}
+
+// merge overrides c with whatever local sets.
+func (c *AgentConfig) merge(local AgentConfig) {
+	if local.Harness != "" {
+		c.Harness = local.Harness
+	}
+	if local.Model != "" {
+		c.Model = local.Model
+	}
 }
 
 // OrchestratorConfig controls the orchestrator: a headless agent run when
@@ -37,6 +61,10 @@ type LocalConfig struct {
 // decides what's next (dispatch crew, flag the user, conclude…).
 // ws.local.toml settings override ws.toml's.
 type OrchestratorConfig struct {
+	// Harness and Model pick the agent that runs it; empty means the
+	// crew's harness (if it can run headless) and that harness's own
+	// orchestrator model. See harness.Roles.
+	Harness string `toml:"harness,omitempty"`
 	Model   string `toml:"model,omitempty"`
 	Enabled *bool  `toml:"enabled,omitempty"`
 	// Dispatch is "auto" (launch dispatched crew at once, the default) or
@@ -47,19 +75,9 @@ type OrchestratorConfig struct {
 	MaxDispatches int `toml:"max_dispatches,omitempty"`
 }
 
-// Orchestrator defaults.
-const (
-	DefaultOrchestratorModel         = "claude-haiku-5-5-medium"
-	DefaultOrchestratorMaxDispatches = 3
-)
-
-// OrchestratorModel is the configured model, or the default.
-func (c *Config) OrchestratorModel() string {
-	if c.Orchestrator.Model != "" {
-		return c.Orchestrator.Model
-	}
-	return DefaultOrchestratorModel
-}
+// DefaultOrchestratorMaxDispatches is how many crew the orchestrator may
+// dispatch in a row without the user, unless configured.
+const DefaultOrchestratorMaxDispatches = 3
 
 // OrchestratorEnabled reports whether the orchestrator runs automatically
 // (default on).
@@ -164,6 +182,8 @@ func Discover(startDir string) (string, error) {
 func Merge(base, local *Config) *Config {
 	merged := &Config{
 		Workspace:    base.Workspace,
+		Crew:         base.Crew,
+		Briefing:     base.Briefing,
 		Orchestrator: base.Orchestrator,
 		Repos:        make(map[string]RepoConfig, len(base.Repos)),
 		Groups:       make(map[string]GroupConfig, len(base.Groups)),
@@ -232,6 +252,11 @@ func Load(startDir string) (*Config, string, error) {
 
 		if local.Git != "" {
 			cfg.Git = local.Git
+		}
+		cfg.Crew.merge(local.Crew)
+		cfg.Briefing.merge(local.Briefing)
+		if local.Orchestrator.Harness != "" {
+			cfg.Orchestrator.Harness = local.Orchestrator.Harness
 		}
 		if local.Orchestrator.Model != "" {
 			cfg.Orchestrator.Model = local.Orchestrator.Model

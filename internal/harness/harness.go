@@ -1,5 +1,7 @@
-// Package harness knows how to launch and resume each kind of agent (crew)
-// that the deck can run on a mission.
+// Package harness knows how to launch and resume each kind of agent CLI
+// (Cursor, Claude Code, a plain shell) in the roles agents play on a
+// mission: crew doing the work, briefing a new mission, and the headless
+// orchestrator. Roles says which harness and model each role uses.
 //
 // A harness only builds commands. Running them in a terminal pane, setting
 // WS_MISSION/WS_CREW, and recording crew are the deck's job.
@@ -8,12 +10,11 @@ package harness
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
 
-// EnvDefault picks the harness the deck launches by default.
+// EnvDefault picks the harness crew run, over [crew] harness in config.
 const EnvDefault = "WS_DECK_HARNESS"
 
 // Brief is what a harness needs to know about the mission it starts on.
@@ -22,6 +23,8 @@ type Brief struct {
 	Title string
 	Brief string // brief.md contents
 	Dir   string // working directory (a mission capsule, or the workspace root when briefing)
+	// Model is the model to run, or "" for the agent's own default.
+	Model string
 
 	// Role is "" for crew working on the mission, or "briefing" for crew
 	// turning a request into a brief and capsules.
@@ -91,14 +94,6 @@ func Names() []string {
 	return names
 }
 
-// Default is $WS_DECK_HARNESS, or cursor.
-func Default() string {
-	if n := os.Getenv(EnvDefault); n != "" {
-		return n
-	}
-	return "cursor"
-}
-
 // InitialPrompt is the first message given to new crew. It points the agent at
 // the mission rather than pasting everything, so the brief stays the single
 // source of truth, but includes the brief too so the agent can start at once.
@@ -159,5 +154,20 @@ func briefingPrompt(b Brief) string {
 // Orchestrator is a harness that can run a one-shot, headless agent: a
 // prompt in, its final message out, using tools (shell) along the way.
 type Orchestrator interface {
-	Orchestrate(prompt, dir, model string) (Launch, error)
+	Harness
+	// Orchestrate builds the headless command.
+	Orchestrate(r OrchestratorRun) (Launch, error)
+	// OrchestratorModel is the model it runs the orchestrator on when
+	// none is configured: small and quick, it only decides what's next.
+	OrchestratorModel() string
+}
+
+// OrchestratorRun is one headless orchestrator run.
+type OrchestratorRun struct {
+	Prompt string // what's passed: one line pointing at the prompt file
+	Dir    string // where it runs (the workspace root)
+	Model  string // "" for the agent's own default
+	// Capsules are the paths of the mission's capsules, which it may
+	// inspect read-only (git -C <path> log, …).
+	Capsules []string
 }

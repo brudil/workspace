@@ -48,3 +48,24 @@ func TestEnv_PutsThisBinaryFirstOnPath(t *testing.T) {
 		}
 	}
 }
+
+// A deck started from inside a Claude Code session mustn't hand that
+// session's identity to crew, but Claude Code settings pass through.
+func TestEnv_DropsAgentSessionIdentity(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "parent-session")
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/parent.sock")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/home/me/.claude-work")
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+	env := strings.Join(Env(t.TempDir(), "m", "c1"), "\n") + "\n"
+	for _, gone := range []string{"CLAUDECODE=", "CLAUDE_CODE_SESSION_ID=", "CLAUDE_CODE_MESSAGING_SOCKET="} {
+		if strings.Contains(env, "\n"+gone) || strings.HasPrefix(env, gone) {
+			t.Errorf("%s passed to crew", gone)
+		}
+	}
+	for _, kept := range []string{"CLAUDE_CONFIG_DIR=/home/me/.claude-work\n", "CLAUDE_CODE_USE_BEDROCK=1\n"} {
+		if !strings.Contains(env, kept) {
+			t.Errorf("%q dropped", kept)
+		}
+	}
+}

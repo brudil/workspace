@@ -946,21 +946,23 @@ func TestOrchestratorConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.OrchestratorModel() != "claude-haiku-5-5-medium" || !cfg.OrchestratorEnabled() || !cfg.OrchestratorAutoDispatch() || cfg.OrchestratorMaxDispatches() != 3 {
-		t.Errorf("defaults: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
+	// The model's default belongs to the harness (harness.Roles), so it's
+	// empty here.
+	if cfg.Orchestrator.Model != "" || cfg.Orchestrator.Harness != "" || !cfg.OrchestratorEnabled() || !cfg.OrchestratorAutoDispatch() || cfg.OrchestratorMaxDispatches() != 3 {
+		t.Errorf("defaults: %+v %v", cfg.Orchestrator, cfg.OrchestratorEnabled())
 	}
 
-	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n[orchestrator]\nmodel = \"team-model\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, FileName), []byte("[workspace]\norg = \"acme\"\ndefault_branch = \"main\"\n[orchestrator]\nmodel = \"team-model\"\nharness = \"cursor\"\n"), 0o644)
 	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\nenabled = false\n"), 0o644)
 	cfg, _, _ = Load(root)
-	if cfg.OrchestratorModel() != "team-model" || cfg.OrchestratorEnabled() {
-		t.Errorf("team model + local off: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
+	if cfg.Orchestrator.Model != "team-model" || cfg.Orchestrator.Harness != "cursor" || cfg.OrchestratorEnabled() {
+		t.Errorf("team model + local off: %+v %v", cfg.Orchestrator, cfg.OrchestratorEnabled())
 	}
 
-	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\nmodel = \"mine\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\nmodel = \"mine\"\nharness = \"claude\"\n"), 0o644)
 	cfg, _, _ = Load(root)
-	if cfg.OrchestratorModel() != "mine" || !cfg.OrchestratorEnabled() {
-		t.Errorf("local model: %q %v", cfg.OrchestratorModel(), cfg.OrchestratorEnabled())
+	if cfg.Orchestrator.Model != "mine" || cfg.Orchestrator.Harness != "claude" || !cfg.OrchestratorEnabled() {
+		t.Errorf("local model: %+v %v", cfg.Orchestrator, cfg.OrchestratorEnabled())
 	}
 
 	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\ndispatch = \"ask\"\nmax_dispatches = 5\n"), 0o644)
@@ -971,5 +973,49 @@ func TestOrchestratorConfig(t *testing.T) {
 	os.WriteFile(filepath.Join(root, LocalFileName), []byte("[orchestrator]\ndispatch = \"sometimes\"\n"), 0o644)
 	if _, _, err := Load(root); err == nil || !strings.Contains(err.Error(), "must be \"auto\" or \"ask\"") {
 		t.Errorf("bad dispatch: %v", err)
+	}
+}
+
+// [crew] and [briefing] pick a role's harness and model; ws.local.toml
+// overrides ws.toml field by field, and other local settings don't drop them.
+func TestAgentRoleConfig(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, FileName), []byte(`[workspace]
+org = "acme"
+default_branch = "main"
+
+[repos.api]
+
+[crew]
+harness = "cursor"
+model = "claude-opus-5-5-high"
+
+[briefing]
+harness = "claude"
+`), 0o644)
+	cfg, _, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Crew != (AgentConfig{Harness: "cursor", Model: "claude-opus-5-5-high"}) || cfg.Briefing != (AgentConfig{Harness: "claude"}) {
+		t.Errorf("team: crew %+v briefing %+v", cfg.Crew, cfg.Briefing)
+	}
+
+	os.WriteFile(filepath.Join(root, LocalFileName), []byte(`[crew]
+harness = "claude"
+model = "opus"
+
+[briefing]
+model = "sonnet"
+
+[repos.api]
+color = "red"
+`), 0o644)
+	cfg, _, err = Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Crew != (AgentConfig{Harness: "claude", Model: "opus"}) || cfg.Briefing != (AgentConfig{Harness: "claude", Model: "sonnet"}) {
+		t.Errorf("local: crew %+v briefing %+v", cfg.Crew, cfg.Briefing)
 	}
 }

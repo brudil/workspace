@@ -366,11 +366,11 @@ The same commands work by hand: `ws mission brief` prints or replaces a brief, `
 - **Working or waiting.** Each crew row shows what the agent is doing: `●c2 working` while its screen is changing, `◐c2 waiting 4m` once it has been still for 5 seconds (usually: it's waiting for you). When crew goes quiet and you aren't looking at it, the deck says so, rings the bell and sends a desktop notification (iTerm2, kitty, Ghostty and WezTerm show these).
 - **Ask and done.** Crew are taught to say where they are. `ws mission ask "<question>"` marks them `?c2 asks` with the question; `ws mission done "<summary>"` marks them `✓c2 done`. Each is announced once, and clears when you next type to that crew. A crew asking or waiting moves its mission under **Needs you**.
 - **Artifacts.** The mission view lists what the mission has produced: each capsule's PR (found from its branch, so a mission in several repos lists one per capsule) and links crew record with `ws mission artifact add <url> "<label>"`. Once every PR is merged it says the mission has concluded, and `x` archives it.
-- **Harnesses.** `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`. If the mission's last crew can be resumed (the agent reported a conversation id), `⏎` asks whether to resume it or launch new crew, and `R` resumes it directly. Resuming continues the same crew: same `c1`, same conversation, back in the capsule it worked in.
+- **Harnesses.** A harness is the agent CLI crew run in: `cursor` (the Cursor CLI, the default), `claude` (Claude Code) or `shell` (your `$SHELL`). `⏎` launches the one configured for crew (see [Agents](#agents) below), and `L` picks another for one launch. If the mission's last crew can be resumed (the agent reported a conversation id), `⏎` asks whether to resume it or launch new crew, and `R` resumes it directly. Resuming continues the same crew: same `c1`, same conversation and harness, back in the capsule it worked in.
 - **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, as a debugging aid: they start, end and are recorded exactly as on the server (the orchestrator runs too), but they stop when the deck quits, and dispatches are queued for you.
 - If a deck server dies, crew records it left open are marked `lost` the next time a deck opens.
 
-**Orchestrator.** When crew report done, or end by themselves (not when you stop them), ws runs the orchestrator: a headless agent (`cursor-agent -p`) that reads the brief, the log, the crew so far, each capsule's diff and PR checks, and the end of the latest crew's output, then decides what happens next. There's no fixed plan: if the brief says "write a proposal and commit it to docs, then a new agent implements it", the orchestrator sees from the history that the proposal is done and dispatches the implementation. It acts only through `ws` commands, so a mistake comes back as an error it corrects:
+**Orchestrator.** When crew report done, or end by themselves (not when you stop them), ws runs the orchestrator: a headless agent (`cursor-agent -p` or `claude -p`) that reads the brief, the log, the crew so far, each capsule's diff and PR checks, and the end of the latest crew's output, then decides what happens next. There's no fixed plan: if the brief says "write a proposal and commit it to docs, then a new agent implements it", the orchestrator sees from the history that the proposal is done and dispatches the implementation. It acts only through `ws` commands, so a mistake comes back as an error it corrects:
 
 | Command | Means | In the deck |
 |---|---|---|
@@ -389,11 +389,33 @@ Configure it in `ws.toml` or `ws.local.toml`:
 
 ```toml
 [orchestrator]
-model = "claude-haiku-5-5-medium"   # the default
+harness = "claude"                  # which agent runs it: see Agents below
+model = "haiku"                     # default: claude-haiku-5-5-medium on cursor, haiku on claude
 enabled = true                      # false turns the automatic runs off
 dispatch = "auto"                   # "ask" queues dispatched crew: → on the mission row, ⏎ launches, F dismisses
 max_dispatches = 3                  # in a row without you
 ```
+
+**Agents.** Three roles run agents, and each picks its harness and model in its own section of `ws.toml` or `ws.local.toml` (local settings win, field by field):
+
+```toml
+[crew]                 # agents doing the work
+harness = "claude"     # cursor (default), claude or shell
+model = "opus"         # passed as --model, in that agent's own naming; default: the agent's
+
+[briefing]             # agents turning a request into a ready mission
+harness = "cursor"     # default: crew's harness (and model)
+model = "claude-opus-5-5-high"
+
+[orchestrator]         # the headless agent deciding what's next
+harness = "claude"     # cursor or claude (it must run headless); default: crew's, if it can
+```
+
+- A model belongs to the harness it's configured with: crew picked with `L` in another harness run on that agent's default. A `[briefing]` model with no harness applies to crew's harness.
+- `WS_DECK_HARNESS` overrides `[crew] harness` for one session. `WS_CURSOR_AGENT` and `WS_CLAUDE_BIN` name the binaries if they aren't `cursor-agent` and `claude`.
+- **Cursor.** Crew launch with `--trust`, so Cursor's workspace-trust dialog doesn't swallow the opening prompt, which is typed in once its screen settles. The orchestrator runs with `--force`: Cursor's print mode can't limit which commands it runs, so it relies on being told to act only through `ws`. A model your Cursor plan doesn't include fails the run ("Model unavailable on Free"); `auto` works on every plan.
+- **Claude Code.** Crew get the opening prompt as their first argument and a session id ws chose (`--session-id`), so `R` resumes them. The first launch in a folder Claude Code hasn't been trusted in shows its trust dialog; answer it, and the prompt runs. Trust covers subfolders, so trusting the workspace root once covers every capsule. The orchestrator runs with `--permission-mode dontAsk` and an allowlist: `ws mission`, `ws lift`, `ws status`, read-only `git` (`diff`, `log`, `show`, `status`) and `gh pr view/checks/list`, and reading files. Anything else is refused without a prompt.
+- Crew and the orchestrator don't inherit the session identity of an agent ws itself runs in (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and the like), so a deck started from Claude Code's terminal launches independent sessions.
 
 **Files.** Missions live in `.ws/missions/<slug>/` at the workspace root (`mission.toml`, `brief.md`, `log.jsonl`, and crew and review output). They are local to your machine. `ws` adds `.ws/` to the config repo's `.git/info/exclude` so they never show up in its `git status`, and `ws doctor` checks this.
 
@@ -483,7 +505,7 @@ backend = [".ground"]
 |---|---|
 | `git` | Clone protocol: `"ssh"` or `"https"` (default). |
 
-**Orchestrator overrides:** each `[orchestrator]` setting replaces the shared value (see [Missions](#missions)).
+**Agent overrides:** each `[crew]`, `[briefing]` and `[orchestrator]` setting replaces the shared value (see [Agents](#missions) under Missions), so you can run Claude Code while the team default is Cursor.
 
 **Repo overrides:**
 

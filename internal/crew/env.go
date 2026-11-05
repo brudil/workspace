@@ -12,11 +12,28 @@ import (
 // it would mislead crew started somewhere else.
 const envOriginPWD = "WS_ORIGIN_PWD"
 
+// agentSessionEnv is the identity of an agent session ws itself may be
+// running in (a deck started from Claude Code's terminal, or ws mission
+// orchestrate run by an agent). Crew and the orchestrator are sessions of
+// their own: inheriting these would make Claude Code treat them as nested
+// in, or talking to, that session. Settings such as CLAUDE_CONFIG_DIR or
+// CLAUDE_CODE_USE_BEDROCK aren't identity and pass through.
+var agentSessionEnv = []string{
+	"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT",
+	"CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH",
+	"CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ATTENDED",
+	"CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+}
+
 // Env is the environment for crew: ours, minus anything that would mislead
-// it (another mission's identity, a role), plus the mission and crew ids, a
-// capable TERM, and a PATH on which ws and workspace are this binary.
+// it (another mission's identity, a role, another agent session's identity),
+// plus the mission and crew ids, a capable TERM, and a PATH on which ws and
+// workspace are this binary.
 func Env(root, slug, crewID string) []string {
 	drop := map[string]bool{mission.EnvMission: true, mission.EnvCrew: true, mission.EnvRole: true, envOriginPWD: true, "TERM": true, "COLORTERM": true}
+	for _, k := range agentSessionEnv {
+		drop[k] = true
+	}
 	var env []string
 	path := os.Getenv("PATH")
 	for _, kv := range os.Environ() {

@@ -28,6 +28,7 @@ Pass a mission slug to open with it selected.`,
 				return err
 			}
 			m := newDeckModel(ctx.WS, ctx.GitHub, firstArg(args))
+			m.roles = agentRoles(ctx.Config)
 			if deckServerEnabled() {
 				m.host = deckserver.NewHost(ctx.WS.Root)
 			}

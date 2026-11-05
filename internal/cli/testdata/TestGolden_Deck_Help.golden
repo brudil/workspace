@@ -10,7 +10,7 @@
   F          Dismiss the flag, then any queued crew
   M          Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)
   J/K        Scroll the main pane (also ctrl+d/u, mouse wheel)
-  n          New mission: say what you want (⏎ on the overview too); a briefing agent writes the brief and lifts capsules
+  n          New mission: say what you want (⏎ on the overview too); a briefing agent (cursor) writes the brief and lifts capsules
   N          New mission you name and brief yourself (in $EDITOR)
   e          Edit the selected mission's brief in $EDITOR
   a          Attach: a loose capsule to this mission, or this loose capsule to a mission

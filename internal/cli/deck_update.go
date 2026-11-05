@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 )
@@ -289,7 +288,7 @@ func (m deckModel) handleTitleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.wantRow("m:" + created.Slug)
-			next, launch := m.launchBriefing(created, "", harness.Default())
+			next, launch := m.launchBriefing(created, "", m.roles.ForBriefing().Harness)
 			return next, tea.Batch(launch, loadDeckCmd(m.ws, m.prs))
 		}
 		created, err := m.store.Create(title)

@@ -154,7 +154,16 @@ func (m deckModel) startDispatch() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	d := dm.M.Dispatch
-	return m.startCrewWith(firstNonEmpty(d.Harness, harness.Default()), d.Capsule, d.Text)
+	return m.startCrewWith(firstNonEmpty(d.Harness, m.roles.ForCrew().Harness), d.Capsule, d.Text)
+}
+
+// launchHarness is what ⏎ launches on a mission: the briefing harness on a
+// mission being briefed, else the crew's.
+func (m deckModel) launchHarness(dm *deckMission) string {
+	if dm != nil && dm.M.State == mission.Briefing {
+		return m.roles.ForBriefing().Harness
+	}
+	return m.roles.ForCrew().Harness
 }
 
 // startCrewWith launches crew, in capsule (repo/name) if given and it
@@ -185,7 +194,8 @@ func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Mode
 		m.flash = err.Error()
 		return m, nil
 	}
-	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.Dir, Handoff: handoff}
+	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.Dir, Handoff: handoff,
+		Model: m.roles.ForCrew().ModelFor(harnessName)}
 	launch := m.launchCmd(crew.Request{Slug: slug, Harness: harnessName, Place: place, Handoff: handoff, By: "you",
 		Prepare: func() (harness.Launch, error) { return h.Start(b) }})
 
@@ -279,7 +289,7 @@ func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 	}
 	last, ok := m.resumableCrew(dm)
 	if !ok {
-		return m.startCrew(harness.Default())
+		return m.startCrew(m.launchHarness(dm))
 	}
 	when := ""
 	if c, found := crewRecord(dm.M, last.ID); found && c.Ended != nil {
@@ -290,7 +300,7 @@ func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 	}
 	m.openPick("Launch crew on "+dm.M.Slug, []string{
 		fmt.Sprintf("Resume %s (%s%s)", last.ID, last.Harness, when),
-		"New crew (" + harness.Default() + ")",
+		"New crew (" + m.launchHarness(dm) + ")",
 		"New crew with another harness…",
 	}, func(i int) tea.Cmd {
 		return func() tea.Msg { return deckLaunchChoiceMsg{choice: i} }
@@ -306,7 +316,8 @@ func (m deckModel) handleLaunchChoice(msg deckLaunchChoiceMsg) (tea.Model, tea.C
 	case 0:
 		return m.resumeCrew()
 	case 1:
-		return m.startCrew(harness.Default())
+		dm, _ := m.selectedMission()
+		return m.startCrew(m.launchHarness(dm))
 	default:
 		return m.chooseHarness()
 	}
@@ -776,7 +787,7 @@ func (m deckModel) crewSummary(dm deckMission) string {
 			last = r
 		}
 	}
-	hint := "⏎ launch " + harness.Default() + " · L choose harness"
+	hint := "⏎ launch " + m.launchHarness(&dm) + " · L choose harness"
 	if c, ok := m.resumableCrew(&dm); ok {
 		hint = "⏎ resume " + c.ID + " or launch new · R resume " + c.ID + " · L choose harness"
 		if c.ResumeWith != "" {
@@ -845,6 +856,7 @@ func (m deckModel) launchBriefing(mm *mission.Mission, brief, harnessName string
 	b := harness.Brief{
 		Slug: mm.Slug, Title: mm.Title, Brief: brief, Dir: m.ws.Root,
 		Role: mission.RoleBriefing, Request: mm.Request, Org: m.ws.Org,
+		Model: m.roles.ForBriefing().ModelFor(harnessName),
 	}
 	m.launching[mm.Slug] = true
 	m.flash = "briefing " + mm.Slug + " with " + harnessName + "…"

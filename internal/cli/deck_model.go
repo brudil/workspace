@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/github"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/workspace"
 )
@@ -87,6 +88,9 @@ type deckModel struct {
 	ws    *workspace.Workspace
 	gh    github.Client
 	store mission.Store
+	// roles is which harness and model crew and briefing agents launch
+	// with (the zero value means the defaults).
+	roles harness.Roles
 
 	width, height int
 

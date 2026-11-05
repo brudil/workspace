@@ -85,6 +85,9 @@ func (c *Cursor) Start(b Brief) (Launch, error) {
 		// interactively.
 		args = append(args, "--resume", conv)
 	}
+	if b.Model != "" {
+		args = append(args, "--model", b.Model)
+	}
 	// The opening prompt is typed in once the agent has drawn (see
 	// Launch.Prompt), not passed as an argument: a long multi-line prompt
 	// argument got new crew killed before they rendered.
@@ -139,15 +142,22 @@ func (c *Cursor) createChat(bin string) (id, note string) {
 // name fails the same way ("Cannot use this model").
 var cursorPrintArgs = []string{"-p", "--force", "--trust", "--output-format", "text"}
 
-// Orchestrate runs a headless orchestrator with Cursor's print mode.
-func (c *Cursor) Orchestrate(prompt, dir, model string) (Launch, error) {
+// CursorOrchestratorModel is the model Cursor runs the orchestrator on
+// unless [orchestrator] model says otherwise.
+const CursorOrchestratorModel = "claude-haiku-5-5-medium"
+
+func (c *Cursor) OrchestratorModel() string { return CursorOrchestratorModel }
+
+// Orchestrate runs a headless orchestrator with Cursor's print mode. It
+// can't be limited to the capsules: --force lets it run anything.
+func (c *Cursor) Orchestrate(r OrchestratorRun) (Launch, error) {
 	bin, err := c.bin()
 	if err != nil {
 		return Launch{}, err
 	}
 	args := append([]string{bin}, cursorPrintArgs...)
-	if model != "" {
-		args = append(args, "--model", model)
+	if r.Model != "" {
+		args = append(args, "--model", r.Model)
 	}
-	return Launch{Args: append(args, prompt), Dir: dir}, nil
+	return Launch{Args: append(args, r.Prompt), Dir: r.Dir}, nil
 }

@@ -54,8 +54,9 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				return fmt.Errorf("mission %s is still being briefed", m.Slug)
 			}
 			handoff := strings.TrimSpace(strings.Join(args, " "))
+			crewPick := agentRoles(ctx.Config).ForCrew()
 			if harnessName == "" {
-				harnessName = harness.Default()
+				harnessName = crewPick.Harness
 			}
 			queued := queue || !ctx.Config.OrchestratorAutoDispatch() || !deckServerEnabled()
 			// Out of dispatches is the answer that matters most: say it
@@ -99,7 +100,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 				store.UserActed(m.Slug)
 			}
 			brief, _ := store.ReadBrief(m.Slug)
-			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Handoff: handoff}
+			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Handoff: handoff, Model: crewPick.ModelFor(h.Name())}
 			host := dispatchHost(ctx.WS.Root)
 			defer host.Leave()
 			started, err := crew.Start(crew.Request{
@@ -128,7 +129,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 	}
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&capsule, "capsule", "", "capsule to work in, as repo/name (default: one no crew is working in)")
-	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: $WS_DECK_HARNESS, or cursor)")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: the crew's: $WS_DECK_HARNESS, [crew] harness, or cursor)")
 	cmd.Flags().BoolVar(&queue, "queue", false, "queue it for the user to launch from the deck instead of launching now")
 	return cmd
 }

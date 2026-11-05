@@ -3,7 +3,6 @@ package orchestrator
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"github.com/brudil/workspace/internal/execlog"
 	"os"
@@ -33,24 +32,6 @@ var (
 	// timed out.
 	WaitDelay = 5 * time.Second
 )
-
-// Harness is the harness that runs the orchestrator: the default one if it
-// can run headless, else Cursor.
-func Harness() (harness.Orchestrator, error) {
-	h, err := harness.Get(harness.Default())
-	if err != nil {
-		return nil, err
-	}
-	if o, ok := h.(harness.Orchestrator); ok {
-		return o, nil
-	}
-	if h, err = harness.Get("cursor"); err == nil {
-		if o, ok := h.(harness.Orchestrator); ok {
-			return o, nil
-		}
-	}
-	return nil, errors.New("no harness here can run a headless orchestrator")
-}
 
 // Run runs the orchestrator on a mission with its role, returning what it
 // printed. It runs in its own process group so a timeout kills everything it

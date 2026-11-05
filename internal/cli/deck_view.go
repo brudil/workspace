@@ -9,7 +9,6 @@ import (
 	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"github.com/brudil/workspace/internal/github"
-	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/workspace"
@@ -513,7 +512,7 @@ func (m deckModel) sidebarRowAt(x, y int) (int, bool) {
 func (m deckModel) renderHelp() string {
 	help := []struct{ key, desc string }{
 		{"j/k ↑/↓", "Move through the overview, missions and their crew"},
-		{"⏎", "Launch crew (" + harness.Default() + ") on the mission, or focus its live crew"},
+		{"⏎", "Launch crew (" + m.roles.ForCrew().Harness + ") on the mission, or focus its live crew"},
 		{"L", "Launch crew with a chosen harness"},
 		{"R", "Resume the mission's last crew conversation"},
 		{"tab", "Focus the mission's live crew terminal"},
@@ -522,7 +521,7 @@ func (m deckModel) renderHelp() string {
 		{"F", "Dismiss the flag, then any queued crew"},
 		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
-		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent writes the brief and lifts capsules"},
+		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent (" + m.roles.ForBriefing().Harness + ") writes the brief and lifts capsules"},
 		{"N", "New mission you name and brief yourself (in $EDITOR)"},
 		{"e", "Edit the selected mission's brief in $EDITOR"},
 		{"a", "Attach: a loose capsule to this mission, or this loose capsule to a mission"},

@@ -74,7 +74,9 @@ Read the brief and the history below and decide what should happen next: is what
 - ws mission title "<terse name>"   (at most 50 characters, plain English; only when the title below is still the raw request, or no longer says what the mission is)
 
 If the next crew needs a capsule the mission doesn't have yet, create it first with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule.
-You may investigate read-only: ws mission show -f llm, git diff/log in the capsule paths below, gh pr view/checks. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
+You may investigate read-only: ws mission show -f llm, git -C <capsule path> diff/log/show/status for the capsule paths below, gh pr view/checks, and reading files. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
+
+Run one command per shell call rather than chaining them with && or ;. You may only be allowed the commands above: one outside them is refused, and the refusal covers that command alone, so carry on with the ones above. Always end by running your ws mission commands; never stop at saying what you would run.
 
 `)
 	if m.TitleIsRequest() {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brudil/workspace/internal/config"
 	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/execlog"
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/orchestrator"
 	"github.com/brudil/workspace/internal/ui"
@@ -40,10 +40,11 @@ doesn't change code.
 
 The deck runs this automatically when crew report done, or end by
 themselves. Configure it under [orchestrator] in ws.toml / ws.local.toml:
-model (default ` + config.DefaultOrchestratorModel + `), enabled = false to stop the
-automatic runs, dispatch = "ask" to queue dispatched crew for you instead of
-launching them, and max_dispatches (default 3) dispatches in a row without
-you before it must flag you.`,
+harness (cursor or claude; default the crew's, if it can run headless),
+model (default ` + harness.CursorOrchestratorModel + ` on cursor, ` + harness.ClaudeOrchestratorModel + ` on claude),
+enabled = false to stop the automatic runs, dispatch = "ask" to queue
+dispatched crew for you instead of launching them, and max_dispatches
+(default 3) dispatches in a row without you before it must flag you.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()
@@ -64,16 +65,23 @@ you before it must flag you.`,
 					return fmt.Errorf("mission %s has no crew %s", m.Slug, crewID)
 				}
 			}
-			if model == "" {
-				model = ctx.Config.OrchestratorModel()
-			}
-			prompt := orchestrator.Prompt(orchestratorInput(ctx, m, crewID, trigger))
-			rv, err := orchestrator.Harness()
+			pick, rv, err := agentRoles(ctx.Config).ForOrchestrator()
 			if err != nil {
 				return err
 			}
+			if model == "" {
+				model = pick.Model
+			}
+			in := orchestratorInput(ctx, m, crewID, trigger)
+			prompt := orchestrator.Prompt(in)
+			run := harness.OrchestratorRun{Prompt: "<a line pointing at the prompt file>", Dir: ctx.WS.Root, Model: model}
+			for _, c := range in.Capsules {
+				if c.Exists {
+					run.Capsules = append(run.Capsules, c.Path)
+				}
+			}
 			if printPrompt {
-				l, err := rv.Orchestrate("<a line pointing at the prompt file>", ctx.WS.Root, model)
+				l, err := rv.Orchestrate(run)
 				if err != nil {
 					return err
 				}
@@ -97,14 +105,15 @@ you before it must flag you.`,
 			if crewID != "" {
 				what = crewID + " (" + trigger + ")"
 			}
-			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + model})
-			fmt.Fprintf(ui.Stderr, "  %s orchestrator looking at %s on %s with %s…\n", ui.Dim.Render("·"), what, m.Slug, model)
+			with := rv.Name() + " " + model
+			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + with})
+			fmt.Fprintf(ui.Stderr, "  %s orchestrator looking at %s on %s with %s…\n", ui.Dim.Render("·"), what, m.Slug, with)
 
-			pointer, err := orchestrator.WritePrompt(store, m.Slug, prompt)
+			run.Prompt, err = orchestrator.WritePrompt(store, m.Slug, prompt)
 			if err != nil {
 				return err
 			}
-			l, err := rv.Orchestrate(pointer, ctx.WS.Root, model)
+			l, err := rv.Orchestrate(run)
 			if err != nil {
 				return err
 			}
@@ -118,7 +127,7 @@ you before it must flag you.`,
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&crewID, "crew", "", "the crew whose event prompted this")
 	cmd.Flags().StringVar(&trigger, "trigger", "manual", "what prompted the run: done, ended or manual")
-	cmd.Flags().StringVar(&model, "model", "", "model to use (default: [orchestrator] model, or "+config.DefaultOrchestratorModel+")")
+	cmd.Flags().StringVar(&model, "model", "", "model to use (default: [orchestrator] model, or the harness's own)")
 	cmd.Flags().BoolVar(&auto, "auto", false, "run as the deck's automatic run: honour [orchestrator] enabled, handle each crew event once")
 	cmd.Flags().BoolVar(&printPrompt, "print-prompt", false, "print the orchestrator's prompt and command instead of running it")
 	return cmd

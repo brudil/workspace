@@ -23,9 +23,10 @@ func (echoOrchestrator) Start(harness.Brief) (harness.Launch, error) {
 func (echoOrchestrator) Resume(string, string) (harness.Launch, error) {
 	return harness.Launch{}, harness.ErrNoResume
 }
-func (echoOrchestrator) Orchestrate(prompt, dir, model string) (harness.Launch, error) {
-	return harness.Launch{Args: []string{"/bin/sh", "-c", `echo "ran as $WS_ROLE on $WS_MISSION with ` + model + `"`, prompt}, Dir: dir}, nil
+func (echoOrchestrator) Orchestrate(r harness.OrchestratorRun) (harness.Launch, error) {
+	return harness.Launch{Args: []string{"/bin/sh", "-c", `echo "ran as $WS_ROLE on $WS_MISSION with ` + r.Model + ` in ` + strings.Join(r.Capsules, ",") + `"`, r.Prompt}, Dir: r.Dir}, nil
 }
+func (echoOrchestrator) OrchestratorModel() string { return "echo-small" }
 
 func orchestrateFixture(t *testing.T) (*testutil.Workspace, mission.Store) {
 	t.Helper()
@@ -73,7 +74,10 @@ func TestOrchestrate_RunsAsOrchestratorAndLogs(t *testing.T) {
 			reviews = append(reviews, e.Text)
 		}
 	}
-	if len(reviews) != 2 || !strings.Contains(reviews[1], "ran as orchestrator on cache with claude-haiku-5-5-medium") {
+	// With no [orchestrator] model, the harness's own default; it's told
+	// the mission's capsule paths (Claude Code allows git -C on exactly those).
+	capsule := filepath.Join(w.Root, "repos", "backend", "cache-lookup")
+	if len(reviews) != 2 || !strings.Contains(reviews[0], "with echo-orchestrator echo-small") || !strings.Contains(reviews[1], "ran as orchestrator on cache with echo-small in "+capsule) {
 		t.Fatalf("review events = %q", reviews)
 	}
 	// The same event isn't reviewed twice.
@@ -173,9 +177,9 @@ func TestProposals_FlagResumeWithConclude(t *testing.T) {
 type fileOrchestrator struct{ echoOrchestrator }
 
 func (fileOrchestrator) Name() string { return "file-orchestrator" }
-func (fileOrchestrator) Orchestrate(prompt, dir, model string) (harness.Launch, error) {
+func (fileOrchestrator) Orchestrate(r harness.OrchestratorRun) (harness.Launch, error) {
 	script := `printf 'lines=%s\n' "$(printf '%s' "$0" | wc -l | tr -d ' ')"; for w in $0; do case "$w" in /*orchestrator-prompt.md) head -n 1 "$w";; esac; done`
-	return harness.Launch{Args: []string{"/bin/sh", "-c", script, prompt}, Dir: dir}, nil
+	return harness.Launch{Args: []string{"/bin/sh", "-c", script, r.Prompt}, Dir: r.Dir}, nil
 }
 
 func TestOrchestrate_PromptGoesInAFileNotTheCommandLine(t *testing.T) {
