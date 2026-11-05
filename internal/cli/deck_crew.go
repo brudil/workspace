@@ -130,7 +130,9 @@ func deckCapsules(dm *deckMission) []crew.Capsule {
 func (m deckModel) placeFor(dm *deckMission, want string) (crew.Place, bool) {
 	busy := crew.BusyIn(dm.M)
 	for _, r := range m.reg.live("") {
-		busy[r.capsule] = r.crewID
+		if !m.runHandedBack(r) {
+			busy[r.capsule] = r.crewID
+		}
 	}
 	caps := deckCapsules(dm)
 	p, err := crew.PickPlace(caps, busy, want)
@@ -202,6 +204,15 @@ func (m deckModel) startCrewWith(harnessName, capsule, handoff string) (tea.Mode
 	if place.Busy != "" {
 		m.openConfirm(fmt.Sprintf("%s is already working in %s. Launch another crew there too?", place.Busy, place.Capsule),
 			func() tea.Msg { return deckLaunchNowMsg{slug: slug, harness: harnessName, launch: launch} })
+		return m, nil
+	}
+	if ids := crew.HandedBackIn(dm.M)[place.Capsule]; len(ids) > 0 {
+		who := strings.Join(ids, ", ")
+		m.openConfirm(fmt.Sprintf("%s handed back its work in %s. End its session and launch new crew there? (R resumes it later)", who, place.Capsule),
+			func() tea.Msg {
+				m.endHandedBack(slug, place.Capsule, ids)
+				return deckLaunchNowMsg{slug: slug, harness: harnessName, launch: launch}
+			})
 		return m, nil
 	}
 	m.launching[slug] = true
@@ -335,6 +346,43 @@ func agoText(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+// runHandedBack reports whether a live crew run has handed its work back
+// (reported done, or finished briefing), by its mission's records.
+func (m deckModel) runHandedBack(r *deckCrewRun) bool {
+	for _, dm := range m.data.Missions {
+		if dm.M.Slug == r.slug {
+			c, ok := crewRecord(dm.M, r.crewID)
+			return ok && c.HandedBack(dm.M)
+		}
+	}
+	return false
+}
+
+// endHandedBack ends the sessions of crew that handed back in capsule, so
+// new crew can work there alone: through this deck's terminal when it has
+// one, else through the host. Ends are recorded as stopped, so they can be
+// resumed. It runs off the UI thread (closing waits for the hang-up).
+func (m deckModel) endHandedBack(slug, capsule string, ids []string) {
+	var others []string
+	for _, id := range ids {
+		closed := false
+		for _, r := range m.reg.live(slug) {
+			if r.crewID == id {
+				r.term.Close(3 * time.Second)
+				closed = true
+			}
+		}
+		if !closed {
+			others = append(others, slug+"/"+id)
+		}
+	}
+	if len(others) > 0 {
+		crew.StopHandedBack(m.host, others)
+	}
+	m.store.AppendLog(slug, mission.Event{Kind: mission.EventNote,
+		Text: fmt.Sprintf("ended %s's session in %s: it had handed back its work, and new crew start there (R resumes it)", strings.Join(ids, ", "), capsule)})
 }
 
 func crewRecord(m *mission.Mission, id string) (mission.Crew, bool) {

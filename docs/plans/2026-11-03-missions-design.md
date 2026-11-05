@@ -1,7 +1,7 @@
 # Missions: the Workspace Owns the Work, Agents Do It
 
 **Date:** 2026-11-03. What and why rewritten 2026-11-05.
-**Status:** Phases 1–5 built (see [Built so far](#built-so-far)); phases 6–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
+**Status:** Phases 1–5 built (see [Built so far](#built-so-far)), and the first part of phase 8; phases 6–9 are next and close the gap between the build and the idea. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
 ## Why
 
@@ -282,7 +282,7 @@ An artifact has a **location** and a **kind**:
 
 The deck and dispatch still reason about processes: a capsule is busy while a crew's terminal is open. So crew that reported done, but whose session is still open, block dispatching the next stage into their capsule. This happened with both Cursor and Claude Code.
 
-- Crew that have reported done have handed the work back, so they don't make a capsule busy. Dispatching into that capsule ends their session (it can still be resumed) and logs it.
+- **Built:** crew that have reported done (or finished briefing) have handed the work back, so they don't make a capsule busy. Dispatching into that capsule ends their session (it can still be resumed) and logs it, and launching there from the deck offers to.
 - The mission view becomes the deck's main surface: intent, stage progress, artifacts and log, with crew terminals one step away.
 
 ### 9. Stages ws understands

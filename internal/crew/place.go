@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/brudil/workspace/internal/mission"
 )
@@ -72,16 +73,54 @@ func PickPlace(capsules []Capsule, busy map[string]string, want string) (Place, 
 }
 
 // BusyIn is which capsules crew are working in, by the mission's records:
-// crew that haven't ended, and whose process is alive (or not started yet).
-// A record whose process is gone (a crashed deck server) works nowhere.
+// crew that are running (see running) and haven't handed their work back.
+// Crew that reported done are idle until someone talks to them, so they
+// don't keep the next crew out of their capsule.
 func BusyIn(m *mission.Mission) map[string]string {
 	busy := map[string]string{}
 	for _, c := range m.Crew {
-		if c.Ended == nil && c.Capsule != "" && (c.PID == 0 || ProcessAlive(c.PID)) {
+		if running(c) && !c.HandedBack(m) {
 			busy[c.Capsule] = c.ID
 		}
 	}
 	return busy
+}
+
+// HandedBackIn is which capsules have crew that handed their work back but
+// whose session is still running: capsule → crew ids. Starting new crew in
+// one of those capsules ends them (they can be resumed), so two agents never
+// share a worktree.
+func HandedBackIn(m *mission.Mission) map[string][]string {
+	idle := map[string][]string{}
+	for _, c := range m.Crew {
+		if running(c) && c.HandedBack(m) {
+			idle[c.Capsule] = append(idle[c.Capsule], c.ID)
+		}
+	}
+	return idle
+}
+
+// running is crew that haven't ended, in a capsule, whose process is alive
+// (or not started yet). A record whose process is gone (a crashed deck
+// server) runs nowhere.
+func running(c mission.Crew) bool {
+	return c.Ended == nil && c.Capsule != "" && (c.PID == 0 || ProcessAlive(c.PID))
+}
+
+// StopHandedBack ends the sessions of crew that handed back, by key
+// (slug/crew), through the host running them, so their ends are recorded as
+// stopped (and resumable). It returns the keys it reached.
+func StopHandedBack(h Host, keys []string) []string {
+	want := map[string]bool{}
+	for _, k := range keys {
+		want[k] = true
+	}
+	var stopped []string
+	for _, hc := range h.Running(func(key string) bool { return !want[key] }) {
+		hc.Term.Close(3 * time.Second)
+		stopped = append(stopped, hc.Spec.Key())
+	}
+	return stopped
 }
 
 // ProcessAlive reports whether pid is a running process.

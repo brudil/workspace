@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -204,6 +205,59 @@ func TestDispatch_BusyCapsuleRefusedUnlessQueued(t *testing.T) {
 	store.SetCrewProcess("cache", "c2", 999999, "backend/cache-lookup")
 	store.QueueDispatch("cache", nil)
 	run(t, w, nil, "mission", "dispatch", "--capsule", "backend/cache-lookup", "x")
+}
+
+// Crew that reported done have handed back: dispatching into their capsule
+// isn't refused, and ends their still-open session (resumably) so the new
+// crew works there alone.
+func TestDispatch_IntoCapsuleOfCrewThatReportedDone(t *testing.T) {
+	w, store, out := dispatchFixture(t)
+	run(t, w, nil, "mission", "dispatch", "stage one")
+	waitFile(t, out) // c2 got its prompt and is sitting in the capsule
+	os.Remove(out)
+	store.SetCrewStatus("cache", "c2", mission.CrewDone, "stage one done")
+
+	r := run(t, w, nil, "mission", "dispatch", "--capsule", "backend/cache-lookup", "stage two")
+	if !strings.Contains(r.Stderr, "ended c2's session in backend/cache-lookup") || !strings.Contains(r.Stderr, "dispatched c3 on cache in backend/cache-lookup") {
+		t.Fatalf("stderr: %s", r.Stderr)
+	}
+	if got := waitFile(t, out); got != "handoff: stage two" {
+		t.Errorf("c3 got %q", got)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		m, _ := store.Load("cache")
+		c2, _ := crewByID(m, "c2")
+		if c2.Ended != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("c2's session was never ended")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Ended as stopped (so no orchestrator run for it), not by itself.
+	execLog, _ := os.ReadFile(filepath.Join(w.Root, ".ws", "exec.log"))
+	if !regexp.MustCompile(`\[crew cache/c2\] end[^\n]*\(stopped\)`).Match(execLog) {
+		t.Errorf("c2's end isn't logged as stopped:\n%s", execLog)
+	}
+	events, _ := store.ReadLog("cache", 0)
+	var noted bool
+	for _, e := range events {
+		noted = noted || (e.Kind == mission.EventNote && strings.Contains(e.Text, "ended c2's session"))
+	}
+	if !noted {
+		t.Error("the log doesn't say c2's session was ended")
+	}
+}
+
+func crewByID(m *mission.Mission, id string) (mission.Crew, bool) {
+	for _, c := range m.Crew {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return mission.Crew{}, false
 }
 
 func TestOrchestrate_PromptFitsInOneArgument(t *testing.T) {

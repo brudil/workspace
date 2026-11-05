@@ -7,6 +7,7 @@ import (
 
 	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/deckserver"
+	"github.com/brudil/workspace/internal/execlog"
 	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
@@ -103,6 +104,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Handoff: handoff, Model: crewPick.ModelFor(h.Name())}
 			host := dispatchHost(ctx.WS.Root)
 			defer host.Leave()
+			endHandedBack(ctx.WS.Root, store, host, m, place.Capsule)
 			started, err := crew.Start(crew.Request{
 				Store: store, Host: host, Root: ctx.WS.Root,
 				Slug: m.Slug, Harness: h.Name(), Place: place, Handoff: handoff, By: by,
@@ -132,6 +134,43 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: the crew's: $WS_DECK_HARNESS, [crew] harness, or cursor)")
 	cmd.Flags().BoolVar(&queue, "queue", false, "queue it for the user to launch from the deck instead of launching now")
 	return cmd
+}
+
+// endHandedBack ends the sessions of crew that reported done in capsule but
+// are still open, before new crew start there: they're idle, and two agents
+// in one worktree would edit the same files. Their ends are recorded as
+// stopped, so they can be resumed, and nothing runs the orchestrator for
+// them again (their done already did).
+func endHandedBack(root string, store mission.Store, host crew.Host, m *mission.Mission, capsule string) {
+	ids := crew.HandedBackIn(m)[capsule]
+	if len(ids) == 0 {
+		return
+	}
+	keys := make([]string, len(ids))
+	for i, id := range ids {
+		keys[i] = m.Slug + "/" + id
+	}
+	reached := map[string]bool{}
+	for _, k := range crew.StopHandedBack(host, keys) {
+		reached[k] = true
+	}
+	var ended, left []string
+	for i, id := range ids {
+		if reached[keys[i]] {
+			ended = append(ended, id)
+		} else {
+			left = append(left, id)
+		}
+	}
+	if len(ended) > 0 {
+		text := fmt.Sprintf("ended %s's session in %s: it had handed back its work, and new crew start there (R resumes it)", strings.Join(ended, ", "), capsule)
+		store.AppendLog(m.Slug, mission.Event{Kind: mission.EventNote, Text: text})
+		execlog.Note(root, "crew "+m.Slug, "%s", text)
+		fmt.Fprintf(ui.Stderr, "  %s %s\n", ui.Dim.Render("·"), text)
+	}
+	if len(left) > 0 {
+		fmt.Fprintf(ui.Stderr, "  %s %s handed back but couldn't be reached to end its session; it stays open in %s\n", ui.Orange.Render("⚠"), strings.Join(left, ", "), capsule)
+	}
 }
 
 // dispatchLimitErr tells the orchestrator what to do instead.

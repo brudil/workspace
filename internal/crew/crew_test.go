@@ -60,6 +60,32 @@ func TestBusyIn_IgnoresDeadProcesses(t *testing.T) {
 	}
 }
 
+// Crew that handed back (reported done, or finished briefing) are idle:
+// they don't make their capsule busy, but they're listed so whoever starts
+// new crew there can end them first.
+func TestBusyIn_HandedBackCrewAreIdle(t *testing.T) {
+	m := &mission.Mission{State: mission.Active, Crew: []mission.Crew{
+		{ID: "c1", Capsule: "fe/a", PID: os.Getpid(), Status: mission.CrewDone},   // reported done
+		{ID: "c2", Capsule: "fe/a", PID: os.Getpid(), Status: mission.CrewAsking}, // asking: still on it
+		{ID: "c3", Capsule: "fe/b", PID: os.Getpid(), Role: mission.RoleBriefing}, // briefed, mission ready
+		{ID: "c4", Capsule: "fe/c", PID: 999999, Status: mission.CrewDone},        // done, process gone
+		{ID: "c5", Capsule: "fe/d", PID: os.Getpid()},                             // working
+	}}
+	busy := BusyIn(m)
+	if busy["fe/a"] != "c2" || busy["fe/b"] != "" || busy["fe/c"] != "" || busy["fe/d"] != "c5" {
+		t.Errorf("busy = %v", busy)
+	}
+	idle := HandedBackIn(m)
+	if strings.Join(idle["fe/a"], ",") != "c1" || strings.Join(idle["fe/b"], ",") != "c3" || len(idle["fe/c"]) != 0 || len(idle["fe/d"]) != 0 {
+		t.Errorf("handed back = %v", idle)
+	}
+	// While the mission is still being briefed, the briefing crew is busy.
+	m.State = mission.Briefing
+	if BusyIn(m)["fe/b"] != "c3" {
+		t.Errorf("briefing crew should be busy while briefing: %v", BusyIn(m))
+	}
+}
+
 type ended struct {
 	exit    string
 	stopped bool

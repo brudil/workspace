@@ -218,6 +218,43 @@ func TestDeckCrew_SharingACapsuleAsksFirst(t *testing.T) {
 	}
 }
 
+// Crew that reported done have handed back: launching new crew in their
+// capsule doesn't ask about sharing it, but offers to end their session
+// first, so two agents never work in one worktree.
+func TestDeckCrew_LaunchingOverCrewThatReportedDone(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m = launch(t, m)
+	first, _ := liveRun(m, slug)
+	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m.store.SetCrewStatus(slug, "c1", mission.CrewDone, "stage one done") // what `ws mission done` does
+	m, _ = reloadRecords(m)
+	m = selectMission(t, m, slug)
+
+	m, _ = press(t, m, "enter")
+	if m.mode != deckModeConfirm || !strings.Contains(m.confirm.prompt, "c1 handed back its work in frontend/work. End its session") {
+		t.Fatalf("no handed-back confirm: mode %v, prompt %q", m.mode, m.confirm.prompt)
+	}
+	m, cmd := press(t, m, "y")
+	m = completeLaunch(t, m, cmd)
+	select {
+	case <-first.term.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("c1's session wasn't ended")
+	}
+	runs := m.reg.all()
+	if len(runs) != 2 || runs[1].crewID != "c2" || runs[1].capsule != "frontend/work" {
+		t.Fatalf("runs = %+v", runs)
+	}
+	events, _ := m.store.ReadLog(slug, 0)
+	noted := false
+	for _, e := range events {
+		noted = noted || strings.Contains(e.Text, "ended c1's session in frontend/work")
+	}
+	if !noted {
+		t.Error("the log doesn't record ending c1's session")
+	}
+}
+
 func TestDeckCrew_CycleBetweenCrew(t *testing.T) {
 	m, slug := shellCrewDeck(t, "one", "two")
 	m = launch(t, m)

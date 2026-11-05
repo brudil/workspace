@@ -459,6 +459,14 @@ func (c Crew) Done(m *Mission) bool {
 	return c.Role == RoleBriefing && m.State != Briefing
 }
 
+// HandedBack reports whether crew has handed its work back: it reported
+// done (and nobody has talked to it since), or it finished briefing. Its
+// session may still be open, but it's no longer working: it doesn't make
+// its capsule busy, and whoever starts new crew there ends it.
+func (c Crew) HandedBack(m *Mission) bool {
+	return c.Status == CrewDone || c.Done(m)
+}
+
 // ReconcileCrew closes crew records left open by a deck that died without
 // recording their end: any open crew whose process isn't alive is ended as
 // "lost". It returns how many were closed.
