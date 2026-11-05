@@ -319,7 +319,7 @@ ws mission note "Went with a mutex, not a channel"
 
 **Brief.** `brief.md` is yours. `ws mission new --brief "..."` or `--brief-file path|-` writes it without an editor. Agents add to the log with `ws mission note` rather than editing the brief.
 
-**The deck.** `ws deck` is a full-screen view of your missions. It opens on the **Overview**: a *What do you want to do?* field (`⏎`, then say it; a briefing agent turns it into a mission), everything that needs you and why, and what's been happening across every mission's log, newest first. The header and the terminal's tab title say how many missions need you.
+**The deck.** `ws deck` is a full-screen view of your missions. It opens on the **Overview**: a *What do you want to do?* field (`⏎`, then say it; a briefing agent turns it into a mission), everything that needs you and why, and what's been happening across every mission's log, newest first. Click a mission there to open it. The header and the terminal's tab title say how many missions need you.
 
 The sidebar groups missions by what they ask of you, each shown by its title with a short status, and its live crew beneath it:
 

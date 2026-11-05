@@ -97,6 +97,11 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && m.mode == deckModeNormal {
 			if idx, ok := m.sidebarRowAt(msg.Mouse().X, msg.Mouse().Y); ok {
 				m.cursor = idx
+			} else if msg.Mouse().X < m.mainWidth() && m.onOverview() {
+				// A mission named under Needs you or Recently: open it.
+				if slug, ok := m.overviewMissionAt(msg.Mouse().Y); ok {
+					m.openMission(slug)
+				}
 			}
 		}
 		return m, nil
