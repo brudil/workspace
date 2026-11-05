@@ -31,7 +31,7 @@ func (m deckModel) renderAskBox(width int) string {
 	boxW := min(askBoxMaxWidth, width-4)
 	textW := max(boxW-6, 10) // inside the box's padding
 	on := lipgloss.NewStyle().Background(askBoxBg)
-	title := on.Bold(true).Render("What do you want to do?")
+	title := on.Bold(true).Width(textW).Align(lipgloss.Center).Render("What do you want to do?")
 	var body string
 	if m.mode == deckModeNewTitle && m.newBriefing {
 		in := m.input
