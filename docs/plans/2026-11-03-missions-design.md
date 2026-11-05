@@ -1,7 +1,7 @@
 # Missions: the Workspace Owns the Work, Agents Do It
 
 **Date:** 2026-11-03. What and why rewritten 2026-11-05.
-**Status:** Phases 1–7 built (see [Built so far](#built-so-far)), with the agents' own hooks, answerable flags and a reworked deck along the way; phase 8 partly built. Next: the rest of 8, and 9. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
+**Status:** Phases 1–7 built (see [Built so far](#built-so-far)), with the agents' own hooks, answerable flags and a reworked deck along the way; phase 8 partly built. Phase 9 is designed below and next, then the rest of 8. Cursor CLI verified locally on 2026-11-05, except the orchestrator end to end (`2026-11-04-deck-crew-cursor-checklist.md`). Claude Code verified end to end in every role on 2026-11-05 (claude 2.1.318).
 
 ## Why
 
@@ -355,11 +355,76 @@ The deck and dispatch still reason about processes: a capsule is busy while a cr
 
 ### 9. Stages ws understands
 
-The orchestrator rereads the brief's prose on every run and decides from it. The mechanical decisions shouldn't depend on a model.
+Briefs list staged work under `## Stages`, but nothing in ws reads it. Each time crew report done, the orchestrator works out from the brief's prose which stage that was, whether it's finished, what comes next and whether you asked to check in first, then acts through `dispatch` or `flag`. Most of that is bookkeeping, yet a model answers it, and the answers vary: in one live run the orchestrator's note said the crew should carry on, then it dispatched new crew. ws should keep the plan's progress itself, take the mechanical steps, and ask the orchestrator only what needs judgement.
 
-- ws parses `## Stages` as an ordered list. A stage can name what it produces and whether to check in with the human after it. ws records which stage each crew was dispatched for and when it reported done.
-- ws shows stage progress and handles the mechanical cases itself: the next stage is dispatched, and a check-in becomes a flag. The orchestrator is asked only for judgement: is the output good enough, does the plan need to change, is the mission finished.
-- The brief's acceptance criteria are what a suggested conclusion is checked against.
+**Writing stages.** Stages stay prose, written by you or a briefing agent, as a numbered list:
+
+```markdown
+## Stages
+1. Write a proposal for per-org token caching in `records/cache-adr`. Check in with me.
+2. Implement it in `api/cache-lookup`.
+3. Update the API docs in `docs/cache-docs`.
+```
+
+ws reads two things from each item, and needs neither:
+
+- **Where it happens:** a capsule named in it as `repo/name`, one of the mission's. With none named, a mission with one capsule uses that one; otherwise the orchestrator chooses, as now.
+- **A check-in:** "check in" anywhere in the item means you want to hear from ws before the next stage starts.
+
+What a stage produces isn't declared. Since phase 7 it's what its crew recorded (artifacts and handoffs) and the PRs from its capsule. A brief without `## Stages` is one stage, the whole brief, which works as it does today. Briefing agents are taught this shape, and `ws mission brief --set` and `ws mission ready` warn, without refusing, when a stage names a capsule the mission doesn't have.
+
+**Progress.** The plan is the brief, which stays yours. Its progress is ws's, recorded in `mission.toml`: per stage, the crew that worked on it, when it started and when it was accepted.
+
+```toml
+[[stages]]
+text = "Write a proposal for per-org token caching in records/cache-adr. Check in with me."
+crew = ["c2"]
+started = 2026-11-06T10:00:00Z
+accepted = 2026-11-06T10:40:00Z
+```
+
+A record matches its stage by text (ignoring case, spacing and formatting), or else by position while the number of stages is unchanged, so rewording a stage keeps its progress. A record that matches no stage is kept and shown as no longer in the brief. The current stage is the first not accepted.
+
+**When a stage's crew reports done:**
+
+| Step | Who |
+|---|---|
+| Is the stage's work complete and good enough? | The orchestrator: `ws mission accept` (it is), `resume-with` (the crew carries on), `dispatch` (fresh crew to finish it) or `flag` (you're needed) |
+| A check-in after an accepted stage | ws flags you: "Stage 1 is done: \<summary\>. Go on to stage 2?", answered *Go on* or *Not yet* |
+| Starting the next stage | ws dispatches it, in its capsule, with its text, after an accept with no check-in or your *Go on* |
+| The plan needs to change | The orchestrator flags you with the change it suggests; it doesn't edit the brief |
+| The last stage is accepted | The orchestrator checks the acceptance criteria (below) |
+
+- **`ws mission accept "<why>"`** is new, for the orchestrator and you. It accepts the current stage, and is refused while that stage's crew are still working or asking.
+- **Answers ws can act on, it acts on.** Answering a check-in with one of its answers is handled by ws, without running the orchestrator; writing your own answer still goes to the orchestrator, as now.
+- **With the orchestrator off** (`[orchestrator] enabled = false`), ws asks you to accept: "c2 reports stage 1 done: \<summary\>", answered *Accept and go on*, *Accept, but wait* or *Not done: resume c2*.
+- **Dispatches join a stage.** A dispatch by hand or by the orchestrator joins the current stage unless it names another with `--stage <n>`, so a fix-up crew doesn't move the plan. Crew launched from the deck work on the current stage and are told which ("You're on stage 2 of 3: …"), instead of being told to find the first stage not yet done.
+- **The same limits.** ws's own dispatches count toward `max_dispatches`, and `dispatch = "ask"` queues them for you, as for the orchestrator's.
+
+**What the orchestrator is told:** the stages with their progress (accepted, current with its crew, still to come), which stage the reporting crew was on, and its handoff. Its question narrows from "what should happen next?" to "is stage N's work complete and good enough, and does the plan still hold?"
+
+**Acceptance.** The brief's `## Acceptance` says what done means. When the last stage is accepted, or a brief without stages looks finished, the orchestrator checks each criterion and concludes with a verdict on every one:
+
+```sh
+ws mission conclude "Cache shipped and documented" \
+  --met "1: go test ./... passes in api/cache-lookup" \
+  --met "2: docs PR #14 merged" \
+  --unmet "3: no load test was run"
+```
+
+`conclude` is refused unless every criterion has a `--met` or `--unmet`. With any unmet, it becomes a flag for you instead of a suggested conclusion. ws doesn't judge whether a criterion is met; it makes sure each was looked at and says how. The deck shows the checklist with the conclusion, and a brief without `## Acceptance` concludes as today.
+
+**Defaults.** `dispatch` and `max_dispatches` stay as they are. The brief's check-ins are each mission's "approve this stage" switch, and briefing agents ask you where you want them. `[orchestrator] check_in = "every-stage"` makes every stage a check-in, for a workspace that wants to approve each one.
+
+**The deck** leads the mission's Summary with its stages ("✓ 1 Write the proposal (c2) · ▸ 2 Implement it (c3 working) · 3 Update the docs"), which is what's left of phase 8. Check-ins and acceptance questions are flags, with their answers.
+
+**Build order.** Each step works on its own:
+
+1. Parse stages and record progress, shown in `ws mission show -f llm`, the orchestrator's prompt and the deck. Nothing acts on them yet.
+2. `ws mission accept`, the check-in flags, and ws dispatching the next stage.
+3. Acceptance checking on `conclude`.
+
+**Not in this phase:** waiting for a stage's PR to merge before the next starts (a check-in flags when the stage is accepted; you answer *Go on* once it has merged), stages that run side by side, and the orchestrator proposing edits to the brief itself.
 
 ### Later
 
@@ -369,8 +434,8 @@ The orchestrator rereads the brief's prose on every run and decides from it. The
 
 ## Open questions
 
-1. **When is a mission done?** With every output arriving by PR, records included, "landed" (every PR merged) now covers docs-only missions too. What's left: should the brief's acceptance criteria also be checked before a mission counts as done, or is merged enough?
-2. **How autonomous by default?** "Brief once, come back to a PR" and "approve each stage" want different defaults for `max_dispatches`, for check-ins, and for whether dispatched crew launch at once (`dispatch = "auto"`) or wait (`"ask"`).
+1. **When is a mission done?** With every output arriving by PR, records included, "landed" (every PR merged) now covers docs-only missions too. What's left: should the brief's acceptance criteria also be checked before a mission counts as done, or is merged enough? *Phase 9 proposes: a suggested conclusion gives a verdict on every acceptance criterion, and landed still means every PR merged.*
+2. **How autonomous by default?** "Brief once, come back to a PR" and "approve each stage" want different defaults for `max_dispatches`, for check-ins, and for whether dispatched crew launch at once (`dispatch = "auto"`) or wait (`"ask"`). *Phase 9 proposes: the defaults stay, check-ins written in the brief decide per mission, and `check_in = "every-stage"` for approving every stage.*
 
 Settled:
 - **Missions are personal**, kept in `.ws/` on one machine. What they produce is shared through repos: proposals, ADRs and notes in the records repo, persisted on the default branch. Artifacts can point at those files and at anything else (see phase 6).
