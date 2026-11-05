@@ -31,7 +31,21 @@ func shellCrewDeck(t *testing.T, capsules ...string) (deckModel, string) {
 	}
 	slug := seedMission(t, ws, "Crewed", "", owned...)
 	m := loadedDeck(t, ws, prIndex{}) // its cleanup stops the crew
-	return m, slug
+	return selectMission(t, m, slug), slug
+}
+
+// selectMission puts the cursor on a mission's row (the deck opens on the
+// overview, and missions move between groups as their crew change).
+func selectMission(t *testing.T, m deckModel, slug string) deckModel {
+	t.Helper()
+	for i, r := range m.rows {
+		if r.kind == deckRowMission && m.data.Missions[r.mission].M.Slug == slug {
+			m.cursor = i
+			return m
+		}
+	}
+	t.Fatalf("no sidebar row for mission %s", slug)
+	return m
 }
 
 // launch presses enter on the selected row and completes the launch.
@@ -127,7 +141,7 @@ func TestDeckCrew_LaunchRunsInCapsuleWithMissionEnv(t *testing.T) {
 	waitScreen(t, r, "M="+slug+" C=c1 D=work T=xterm-256color")
 
 	view := plainView(m)
-	if !strings.Contains(view, "M="+slug) || !strings.Contains(view, "c1 working frontend/work") {
+	if !strings.Contains(view, "M="+slug) || !strings.Contains(view, "c1 working") {
 		t.Errorf("view doesn't show the crew:\n%s", view)
 	}
 }
@@ -136,7 +150,7 @@ func TestDeckCrew_MissionRowShowsBriefWhileCrewRuns(t *testing.T) {
 	m, slug := shellCrewDeck(t)
 	m = launch(t, m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g") // mission row
+	m = selectMission(t, m, slug)
 	if _, ok := m.shownRun(); ok {
 		t.Fatal("mission row should show the mission, not a terminal")
 	}
@@ -155,7 +169,7 @@ func TestDeckCrew_SecondCrewTakesAFreeCapsule(t *testing.T) {
 	m, slug := shellCrewDeck(t, "one", "two")
 	m = launch(t, m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m = launch(t, m) // free capsule: no confirm
 
 	runs := m.reg.live(slug)
@@ -176,8 +190,8 @@ func TestDeckCrew_SecondCrewTakesAFreeCapsule(t *testing.T) {
 		t.Errorf("crew rows = %d", crewRows)
 	}
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if !strings.Contains(plainView(m), "●2") {
-		t.Errorf("sidebar doesn't count crew:\n%s", plainView(m))
+	if view := plainView(m); !strings.Contains(view, "c1 ") || !strings.Contains(view, "c2 ") {
+		t.Errorf("sidebar doesn't list both crew:\n%s", view)
 	}
 }
 
@@ -185,7 +199,7 @@ func TestDeckCrew_SharingACapsuleAsksFirst(t *testing.T) {
 	m, slug := shellCrewDeck(t)
 	m = launch(t, m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 
 	m, cmd := press(t, m, "enter")
 	if m.mode != deckModeConfirm || !strings.Contains(m.confirm.prompt, "c1 is already working in frontend/work") {
@@ -208,7 +222,7 @@ func TestDeckCrew_CycleBetweenCrew(t *testing.T) {
 	m, slug := shellCrewDeck(t, "one", "two")
 	m = launch(t, m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m = launch(t, m)
 	runs := m.reg.live(slug)
 
@@ -364,8 +378,8 @@ func TestDeckCrew_LeftoversAreStoppedAndRecordedOnce(t *testing.T) {
 func TestDeckCrew_NeedsACapsule(t *testing.T) {
 	t.Setenv(harness.EnvDefault, "shell")
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
-	seedMission(t, ws, "Empty", "")
-	m := loadedDeck(t, ws, prIndex{})
+	slug := seedMission(t, ws, "Empty", "")
+	m := selectMission(t, loadedDeck(t, ws, prIndex{}), slug)
 	m, cmd := press(t, m, "enter")
 	if cmd != nil || !strings.Contains(m.flash, "no capsule to work in") {
 		t.Errorf("flash = %q", m.flash)
@@ -519,7 +533,8 @@ func TestDeckCrew_EnterOffersResumeAndKeepsCrewID(t *testing.T) {
 	m = stopRun(t, m, r1)
 
 	// ⏎ on the mission now asks, with resume first.
-	m, _ = press(t, m, "g", "enter")
+	m = selectMission(t, m, slug)
+	m, _ = press(t, m, "enter")
 	if m.mode != deckModePick || !strings.HasPrefix(m.pick.items[0], "Resume c1 (resumable") || !strings.HasPrefix(m.pick.items[1], "New crew") {
 		t.Fatalf("picker = %+v", m.pick)
 	}
@@ -543,7 +558,8 @@ func TestDeckCrew_EnterOffersResumeAndKeepsCrewID(t *testing.T) {
 
 	// Choosing "New crew" still makes c2.
 	m = stopRun(t, m, r)
-	m, _ = press(t, m, "g", "enter")
+	m = selectMission(t, m, slug)
+	m, _ = press(t, m, "enter")
 	m = choose(t, m, 1)
 	if r2, _ := liveRun(m, slug); r2.crewID != "c2" {
 		t.Errorf("new crew id = %s", r2.crewID)
@@ -554,14 +570,14 @@ func TestDeckCrew_ResumeReturnsToItsCapsule(t *testing.T) {
 	m, slug := resumableDeck(t, "one", "two")
 	m = launch(t, m) // c1 in one
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m = launch(t, m) // c2 in two
 	runs := m.reg.live(slug)
 	m = stopRun(t, m, runs[1])
 	m = stopRun(t, m, runs[0])
 
 	// The most recent resumable crew is c2; "one" is free, but c2 worked in two.
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m, cmd := press(t, m, "R")
 	m = completeLaunch(t, m, cmd)
 	r, _ := liveRun(m, slug)
@@ -721,7 +737,7 @@ func TestDeckSignals_AskNotifiesAndClearsOnInput(t *testing.T) {
 		t.Fatalf("flash = %q", m.flash)
 	}
 	view := plainView(m)
-	if !strings.Contains(view, "?c1 asks") || !strings.Contains(view, "?1") {
+	if !strings.Contains(view, "?c1 asks") || !strings.Contains(view, "? asks") || !strings.Contains(view, "NEEDS YOU") {
 		t.Errorf("sidebar doesn't show the ask:\n%s", view)
 	}
 	// Announced once.
@@ -763,7 +779,7 @@ func TestDeckSignals_DoneShowsAndSilencesWaiting(t *testing.T) {
 	if !strings.Contains(m.flash, "is done: Added the cache") {
 		t.Errorf("flash = %q", m.flash)
 	}
-	if view := plainView(m); !strings.Contains(view, "✓c1 done") || !strings.Contains(view, "✓1") {
+	if view := plainView(m); !strings.Contains(view, "✓c1 done") || !strings.Contains(view, "✓ done") {
 		t.Errorf("sidebar:\n%s", view)
 	}
 	// Going quiet after reporting done isn't announced again as waiting.
@@ -773,7 +789,7 @@ func TestDeckSignals_DoneShowsAndSilencesWaiting(t *testing.T) {
 	if m.flash != "" {
 		t.Errorf("waiting announced for done crew: %q", m.flash)
 	}
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	if !strings.Contains(plainView(m), "✓c1 done shell in frontend/work: Added the cache") {
 		t.Errorf("mission view:\n%s", plainView(m))
 	}
@@ -867,7 +883,7 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	m.store.SetResumeWith(slug, "c1", "add a test for the error path")
 	m.store.SetFlag(slug, "CI is red", "orchestrator")
 	m, _ = reloadRecords(m)
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	view := plainView(m)
 	for _, want := range []string{"! Needs you: CI is red (orchestrator)", "Suggested: resume c1 with: add a test for the error path"} {
 		if !strings.Contains(view, want) {
@@ -892,7 +908,7 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	m.store.SetFlag(slug, "look at this", "orchestrator")
 	m, _ = reloadRecords(m)
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m, cmd = press(t, m, "F")
 	cmd()
 	if got, _ := m.store.Load(slug); got.Flag != nil {
@@ -905,7 +921,7 @@ func TestDeckDispatch_QueuedLaunchesOnEnter(t *testing.T) {
 	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "implement the proposal", Capsule: "frontend/work", By: "orchestrator"})
 	m.store.CountDispatch(slug, 3)
 	m, _ = reloadRecords(m)
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	view := plainView(m)
 	if !strings.Contains(view, "→ Next in frontend/work: implement the proposal (orchestrator)") || !strings.Contains(view, "⏎ launch the queued crew") {
 		t.Errorf("view doesn't show the queued dispatch:\n%s", view)
@@ -926,7 +942,7 @@ func TestDeckDispatch_FDismissesQueued(t *testing.T) {
 	m, slug := shellCrewDeck(t)
 	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "x", By: "orchestrator"})
 	m, _ = reloadRecords(m)
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m, cmd := press(t, m, "F")
 	if cmd == nil {
 		t.Fatal("F did nothing")
@@ -1022,7 +1038,7 @@ func TestDeckF_FlagFirstThenQueuedCrew(t *testing.T) {
 	m.store.SetFlag(slug, "decide something", "orchestrator")
 	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "next stage", By: "orchestrator"})
 	m, _ = reloadRecords(m)
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 
 	m, cmd := press(t, m, "F")
 	if msg := cmd().(deckReloadMsg); msg.flash != "flag dismissed" {
@@ -1048,7 +1064,7 @@ func TestDeckDispatch_QueuedIntoBusyCapsuleAsks(t *testing.T) {
 	m, _ = prefixKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m.store.QueueDispatch(slug, &mission.Dispatch{Text: "next stage", Capsule: "frontend/work", By: "orchestrator"})
 	m, _ = reloadRecords(m)
-	m, _ = press(t, m, "g")
+	m = selectMission(t, m, slug)
 	m, _ = press(t, m, "enter")
 	if m.confirm == nil || !strings.Contains(plainView(m), "c1 is already working in frontend/work") {
 		t.Errorf("launched into a busy capsule without asking; flash %q", m.flash)

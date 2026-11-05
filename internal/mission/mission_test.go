@@ -590,3 +590,26 @@ func TestProposalsAndReviewMarks(t *testing.T) {
 		t.Fatal("ending is a new event")
 	}
 }
+
+func TestTitles_TerseAndNamed(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	m, _ := s.CreateBriefing("The import job keeps hitting the rate limiter on large orgs, see fe issue 45\nand the api side")
+	if !m.TitleIsRequest() {
+		t.Errorf("a briefing mission starts titled with its request: %q", m.Title)
+	}
+	err := s.SetTitle(m.Slug, strings.Repeat("x", MaxTitle+1))
+	if err == nil || !strings.Contains(err.Error(), "keep it to 50 or fewer") {
+		t.Errorf("long title: %v", err)
+	}
+	if err := s.SetTitle(m.Slug, "Rate limits for large-org imports"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = s.Load(m.Slug)
+	if m.TitleIsRequest() {
+		t.Error("a named mission still reads as its request")
+	}
+	plain, _ := s.Create("Cache tokens")
+	if plain.TitleIsRequest() {
+		t.Error("a mission created with a title has no request to read as")
+	}
+}

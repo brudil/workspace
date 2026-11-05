@@ -165,12 +165,19 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mainVP.HalfPageUp()
 	case "enter", "space":
 		r, ok := m.selected()
-		if ok && r.kind == deckRowLooseHeader {
+		switch {
+		case !ok:
+		case r.kind == deckRowOverview:
+			return m.askWhatToDo()
+		case r.kind == deckRowPastHeader:
+			m.pastOpen = !m.pastOpen
+			m.rebuildRows()
+		case r.kind == deckRowLooseHeader:
 			m.looseOpen = !m.looseOpen
 			m.rebuildRows()
-		} else if ok && r.kind == deckRowCrew {
+		case r.kind == deckRowCrew:
 			m.focusTerm = true
-		} else if ok && (r.kind == deckRowMission || r.kind == deckRowCapsule) && msg.String() == "enter" {
+		case r.kind == deckRowMission && msg.String() == "enter":
 			return m.launchOrOffer()
 		}
 	case "tab", "l", "right":
@@ -212,26 +219,21 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.sidebarHidden = !m.sidebarHidden
 		m.resizePanes()
 	case "A":
-		m.showArchived = !m.showArchived
+		m.pastOpen = !m.pastOpen
 		m.rebuildRows()
-		if m.showArchived {
-			m.flash = "showing archived missions"
-		}
 	case "r":
 		m.flash = "refreshing…"
 		return m, tea.Batch(loadDeckCmd(m.ws, m.prs), fetchDeckPRsCmd(m.ws, m.gh))
-	case "n", "N":
-		// n: say what the mission is and a briefing crew sets it up.
-		// N: name it and write the brief yourself.
+	case "n":
+		// Say what the mission is and a briefing crew sets it up.
+		return m.askWhatToDo()
+	case "N":
+		// Name it and write the brief yourself.
 		m.mode = deckModeNewTitle
-		m.newBriefing = msg.String() == "n"
+		m.newBriefing = false
 		m.input.SetValue("")
 		m.input.CharLimit = 120
 		m.input.Placeholder = "Mission title"
-		if m.newBriefing {
-			m.input.CharLimit = 1000
-			m.input.Placeholder = "an idea, or an issue like 'fe issue 45'"
-		}
 		return m, m.input.Focus()
 	case "e":
 		return m.editBrief()
@@ -245,6 +247,17 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.toggleArchive()
 	}
 	return m, nil
+}
+
+// askWhatToDo opens the "what do you want to do?" field: the answer becomes
+// a mission, and a briefing crew sets it up.
+func (m deckModel) askWhatToDo() (tea.Model, tea.Cmd) {
+	m.mode = deckModeNewTitle
+	m.newBriefing = true
+	m.input.SetValue("")
+	m.input.CharLimit = 1000
+	m.input.Placeholder = "an idea, or an issue like 'fe issue 45'"
+	return m, m.input.Focus()
 }
 
 func (m *deckModel) moveCursor(delta int) {
@@ -378,19 +391,25 @@ func deckAttachCmd(ws *workspace.Workspace, slug, repo, name string) tea.Cmd {
 }
 
 func (m deckModel) startDetach() (tea.Model, tea.Cmd) {
-	r, ok := m.selected()
-	if !ok || r.kind != deckRowCapsule {
-		m.flash = "select a mission capsule to detach"
+	dm, ok := m.selectedMission()
+	if !ok || len(dm.Capsules) == 0 {
+		m.flash = "select a mission with capsules to detach one"
 		return m, nil
 	}
-	dm := m.data.Missions[r.mission]
-	c := dm.Capsules[r.capsule]
+	caps := dm.Capsules
+	labels := make([]string, len(caps))
+	for i, c := range caps {
+		labels[i] = c.Repo + "/" + c.Name
+	}
 	ws, slug := m.ws, dm.M.Slug
-	m.openConfirm(fmt.Sprintf("Detach %s/%s from %s? The capsule is kept.", c.Repo, c.Name, slug), func() tea.Msg {
-		if _, err := detachCapsule(ws, slug, c.Repo, c.Name); err != nil {
-			return deckReloadMsg{flash: "detach failed: " + err.Error()}
+	m.openPick("Detach from "+slug+" (the capsule is kept)", labels, func(i int) tea.Cmd {
+		c := caps[i]
+		return func() tea.Msg {
+			if _, err := detachCapsule(ws, slug, c.Repo, c.Name); err != nil {
+				return deckReloadMsg{flash: "detach failed: " + err.Error()}
+			}
+			return deckReloadMsg{flash: fmt.Sprintf("%s/%s detached", c.Repo, c.Name)}
 		}
-		return deckReloadMsg{flash: fmt.Sprintf("%s/%s detached", c.Repo, c.Name)}
 	})
 	return m, nil
 }

@@ -31,7 +31,11 @@ func (m deckModel) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.MouseMode = m.mouseMode()
+	// The tab says when you're needed, so a background tab can tell you.
 	v.WindowTitle = "Deck"
+	if n := m.groupCounts()[groupNeedsYou]; m.loaded && n > 0 {
+		v.WindowTitle = fmt.Sprintf("Deck · %d need you", n)
+	}
 	// With a crew terminal focused, put the real cursor where the agent's is.
 	if r, ok := m.focusedRun(); ok && !m.showHelp && m.mode == deckModeNormal && r.scroll == 0 {
 		if x, y, visible := r.term.Cursor(); visible {
@@ -114,8 +118,11 @@ func (m deckModel) renderHeader() string {
 func (m deckModel) renderFooter() string {
 	switch m.mode {
 	case deckModeNewTitle:
+		if m.newBriefing && m.onOverview() {
+			return ui.Dim.Render(" ⏎ start it · esc cancel") // the field is on the overview
+		}
 		if m.newBriefing {
-			return " " + ui.Bold.Render("What's the mission?") + " " + m.input.View()
+			return " " + ui.Bold.Render("What do you want to do?") + " " + m.input.View()
 		}
 		return " " + ui.Bold.Render("Mission title:") + " " + m.input.View()
 	case deckModeConfirm:
@@ -139,6 +146,9 @@ func (m deckModel) renderFooter() string {
 		return " " + m.flash
 	}
 	hints := " j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit"
+	if m.onOverview() {
+		hints = " ⏎ start a mission  j/k move  ? help  q quit"
+	}
 	return ui.Dim.Render(ansi.Truncate(hints, m.width, "…"))
 }
 
@@ -179,12 +189,17 @@ func (m deckModel) mainContent(width int) (string, string) {
 		return "empty", m.renderWelcome(indent)
 	}
 	switch r.kind {
-	case deckRowMission, deckRowCapsule:
+	case deckRowOverview:
+		return "overview", m.renderOverview(indent, inner)
+	case deckRowMission, deckRowCrew:
 		dm := m.data.Missions[r.mission]
 		return "m:" + dm.M.Slug, m.renderMission(dm, indent, inner)
 	case deckRowLoose:
 		c := m.data.Loose[r.capsule]
 		return "l:" + c.Repo + "/" + c.Name, m.renderLoose(c, indent)
+	case deckRowPastHeader:
+		return "past", "\n" + indent + fmt.Sprintf("%d missions have landed or been archived.", m.groupCounts()[groupPast]) +
+			"\n" + indent + ui.Dim.Render("⏎ lists them; selecting one shows it as it was. x on an archived mission reopens it.")
 	default:
 		return "loose", "\n" + indent + fmt.Sprintf("%d capsules belong to no mission.", len(m.data.Loose)) +
 			"\n" + indent + ui.Dim.Render("⏎ shows them; select one and press a to attach it to a mission.")
@@ -203,7 +218,8 @@ func (m deckModel) renderWelcome(indent string) string {
 func (m deckModel) renderMission(dm deckMission, indent string, inner int) string {
 	var b strings.Builder
 	b.WriteString("\n" + indent + ui.Bold.Render(dm.M.Title) + "\n")
-	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + stateStyle(dm.State).Render(string(dm.State)) + "\n")
+	// Where it stands for you, as the sidebar says; the slug is its id.
+	b.WriteString(indent + ui.TagDim.Render(dm.M.Slug) + "  " + m.missionStatus(&dm).label + "\n")
 	b.WriteString(indent + m.crewSummary(dm) + "\n")
 	if dm.State == mission.Briefing {
 		if len(m.reg.live(dm.M.Slug)) > 0 {
@@ -346,71 +362,66 @@ func deckBadges(st workspace.WorktreeStatus, exists bool, pr *github.PR, prs mis
 // shows (-1 for headings and spacing). It is shared by rendering and mouse
 // hit-testing so the two can't disagree.
 func (m deckModel) sidebarLines(width int) ([]string, []int) {
-	lines := []string{ui.Bold.Render(" MISSIONS")}
-	rowOf := []int{-1}
+	var lines []string
+	var rowOf []int
 	add := func(s string, row int) {
 		lines = append(lines, s)
 		rowOf = append(rowOf, row)
 	}
-
-	if m.loaded && len(m.data.Missions) == 0 {
-		add(ui.Dim.Render("   none yet · n to create"), -1)
+	// right puts a label at the end of a row of this width.
+	right := func(left, label string) string {
+		avail := width - lipgloss.Width(label) - 2 // a space either side of the label
+		left = ansi.Truncate(left, avail, "…")
+		return left + strings.Repeat(" ", avail-lipgloss.Width(left)+1) + label + " "
+	}
+	marker := func(selected bool) string {
+		if selected {
+			return ui.Orange.Render("▸ ")
+		}
+		return "  "
 	}
 
-	firstMission := true
+	group := deckGroup(-1)
 	for i, r := range m.rows {
 		selected := i == m.cursor && m.mode == deckModeNormal
 		var line string
 		switch r.kind {
+		case deckRowOverview:
+			line = " " + marker(selected) + ui.Bold.Render("Overview")
 		case deckRowMission:
-			if !firstMission {
+			if g := r.status.group; g != group && g != groupPast {
+				group = g
+				add("", -1)
+				heading := ui.Bold.Render(" " + strings.ToUpper(deckGroupNames[g]))
+				if g == groupNeedsYou {
+					heading = ui.Orange.Bold(true).Render(" " + strings.ToUpper(deckGroupNames[g]))
+				}
+				add(heading, -1)
+			}
+			dm := m.data.Missions[r.mission]
+			title := firstNonEmpty(dm.M.Title, dm.M.Slug)
+			if r.status.group == groupPast {
+				title = ui.Dim.Render(title)
+			}
+			line = right(" "+marker(selected)+title, r.status.label)
+		case deckRowCrew:
+			mk := "   "
+			if selected && m.focusTerm {
+				mk = ui.Green.Render(" ▸ ")
+			}
+			line = "  " + mk + m.crewBadge(r.run)
+			if what := m.crewPurpose(r.run); what != "" {
+				line += ui.Dim.Render(" · " + what)
+			}
+		case deckRowPastHeader:
+			add("", -1)
+			line = "  " + ui.Dim.Render(fmt.Sprintf("%s Past (%d)", arrow(m.pastOpen), m.groupCounts()[groupPast]))
+		case deckRowLooseHeader:
+			// One gap before the entries to the past, not one each.
+			if i == 0 || m.rows[i-1].kind != deckRowPastHeader {
 				add("", -1)
 			}
-			firstMission = false
-			dm := m.data.Missions[r.mission]
-			marker := "  "
-			if selected {
-				marker = ui.Orange.Render("▸ ")
-			}
-			state := stateStyle(dm.State).Render(string(dm.State))
-			if dm.M.Flag != nil {
-				state = ui.Orange.Render("!") + " " + state
-			} else if dm.M.Dispatch != nil {
-				state = ui.Orange.Render("→") + " " + state
-			}
-			if runs := m.reg.live(dm.M.Slug); len(runs) > 0 {
-				state = m.missionMark(runs) + " " + state
-			} else if m.launching[dm.M.Slug] {
-				state = ui.Dim.Render("…") + " " + state
-			}
-			left := " " + marker + ui.Bold.Render(dm.M.Slug)
-			avail := width - lipgloss.Width(state) - 2
-			left = ansi.Truncate(left, avail, "…")
-			line = left + strings.Repeat(" ", max(avail-lipgloss.Width(left), 1)) + state + " "
-		case deckRowCapsule:
-			dm := m.data.Missions[r.mission]
-			c := dm.Capsules[r.capsule]
-			line = "     " + c.Repo + "/" + c.Name
-			if badges := deckBadges(dm.Git[mission.Capsule{Repo: c.Repo, Name: c.Name}], c.Exists, c.PR, c.PRS); badges != "" {
-				line += " " + badges
-			}
-		case deckRowCrew:
-			marker := "   "
-			if selected && m.focusTerm {
-				marker = ui.Green.Render(" ▸ ")
-			}
-			label := ui.Dim.Render(" " + r.run.capsule)
-			if r.run.role == mission.RoleBriefing {
-				label = ui.Dim.Render(" briefing")
-			}
-			line = "  " + marker + m.crewBadge(r.run) + label
-		case deckRowLooseHeader:
-			add("", -1)
-			arrow := "▸"
-			if m.looseOpen {
-				arrow = "▾"
-			}
-			line = ui.Dim.Render(fmt.Sprintf(" %s loose capsules (%d)", arrow, len(m.data.Loose)))
+			line = "  " + ui.Dim.Render(fmt.Sprintf("%s Loose capsules (%d)", arrow(m.looseOpen), len(m.data.Loose)))
 		case deckRowLoose:
 			c := m.data.Loose[r.capsule]
 			line = "     " + c.Repo + "/" + c.Name
@@ -423,8 +434,40 @@ func (m deckModel) sidebarLines(width int) ([]string, []int) {
 			line = lipgloss.NewStyle().Background(deckSelBg).Width(width).Render(line)
 		}
 		add(line, i)
+		if r.kind == deckRowOverview && m.loaded && len(m.data.Missions) == 0 {
+			add(ui.Dim.Render("   no missions yet · n starts one"), -1)
+		}
 	}
 	return lines, rowOf
+}
+
+func arrow(open bool) string {
+	if open {
+		return "▾"
+	}
+	return "▸"
+}
+
+// crewPurpose is what a crew is for, in a few words: briefing, or the
+// handoff it was dispatched with.
+func (m deckModel) crewPurpose(r *deckCrewRun) string {
+	if r.role == mission.RoleBriefing {
+		return "briefing"
+	}
+	for _, dm := range m.data.Missions {
+		if dm.M.Slug == r.slug {
+			if c, ok := crewRecord(dm.M, r.crewID); ok && c.Handoff != "" {
+				return c.Handoff
+			}
+		}
+	}
+	return ""
+}
+
+// onOverview reports whether the overview is selected.
+func (m deckModel) onOverview() bool {
+	r, ok := m.selected()
+	return ok && r.kind == deckRowOverview
 }
 
 // sidebarOffset scrolls the sidebar so the cursor's line stays visible.
@@ -469,7 +512,7 @@ func (m deckModel) sidebarRowAt(x, y int) (int, bool) {
 
 func (m deckModel) renderHelp() string {
 	help := []struct{ key, desc string }{
-		{"j/k ↑/↓", "Move through missions and capsules"},
+		{"j/k ↑/↓", "Move through the overview, missions and their crew"},
 		{"⏎", "Launch crew (" + harness.Default() + ") on the mission, or focus its live crew"},
 		{"L", "Launch crew with a chosen harness"},
 		{"R", "Resume the mission's last crew conversation"},
@@ -479,15 +522,15 @@ func (m deckModel) renderHelp() string {
 		{"F", "Dismiss the flag, then any queued crew"},
 		{"M", "Mouse: let the terminal select text and open links everywhere (again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
-		{"n", "New mission: say what it is; a briefing agent writes the brief and lifts capsules"},
+		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent writes the brief and lifts capsules"},
 		{"N", "New mission you name and brief yourself (in $EDITOR)"},
 		{"e", "Edit the selected mission's brief in $EDITOR"},
 		{"a", "Attach: a loose capsule to this mission, or this loose capsule to a mission"},
-		{"d", "Detach the selected capsule from its mission"},
+		{"d", "Detach one of the mission's capsules (it's kept)"},
 		{"p", "Park / reopen the selected mission"},
 		{"x", "Archive / reopen the selected mission"},
-		{"A", "Show or hide archived missions"},
-		{"⏎ (loose)", "Expand loose capsules"},
+		{"A", "Show or hide past missions (landed and archived; also ⏎ on Past)"},
+		{"⏎ (loose)", "Show or hide capsules that belong to no mission"},
 		{"s", "Toggle the sidebar"},
 		{"r", "Refresh (including PRs)"},
 		{"?", "Toggle this help"},
@@ -531,35 +574,6 @@ func (c *markdownCache) render(md string, width int) string {
 	}
 	c.entries[key] = out
 	return out
-}
-
-// missionMark summarises a mission's live crew for its sidebar row, most
-// urgent first: ? one asks you, ◐ one waits, ✓ all are done, ● working.
-func (m deckModel) missionMark(runs []*deckCrewRun) string {
-	asking, waiting, done := false, false, 0
-	for _, r := range runs {
-		switch status, _ := m.crewStatus(r); status {
-		case mission.CrewAsking:
-			asking = true
-		case mission.CrewDone:
-			done++
-		default:
-			if working, _ := r.activity(); !working {
-				waiting = true
-			}
-		}
-	}
-	n := fmt.Sprint(len(runs))
-	switch {
-	case asking:
-		return ui.Orange.Render("?" + n)
-	case waiting:
-		return ui.Orange.Render("◐" + n)
-	case done == len(runs):
-		return ui.Green.Render("✓" + n)
-	default:
-		return ui.Green.Render("●" + n)
-	}
 }
 
 // renderArtifacts lists what the mission has produced: each capsule's PR

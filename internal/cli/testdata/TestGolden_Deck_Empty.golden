@@ -1,16 +1,14 @@
- acme deck                                                                                0 missions · 0 live 
+ acme deck                                                                                          all quiet 
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                                                           │ MISSIONS                         
-  No missions yet                                                          │   none yet · n to create         
+                                                                           │ ▸ Overview                       
+  What do you want to do?                                                  │   no missions yet · n starts one 
+  ⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An agent tur…  │                                  
                                                                            │                                  
-  A mission is a unit of work: a brief, the capsules that carry it out,    │                                  
-  and a log of what happened.                                              │                                  
+  Needs you                                                                │                                  
+  Nothing right now.                                                       │                                  
                                                                            │                                  
-  Press n to create one.                                                   │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
-                                                                           │                                  
+  Recently                                                                 │                                  
+  Nothing yet.                                                             │                                  
                                                                            │                                  
                                                                            │                                  
                                                                            │                                  
@@ -21,4 +19,6 @@
                                                                            │                                  
                                                                            │                                  
                                                                            │                                  
- j/k move  ⏎ crew  tab focus  n new  e brief  a attach  p park  R resume  S stop  ? help  q quit
+                                                                           │                                  
+                                                                           │                                  
+ ⏎ start a mission  j/k move  ? help  q quit

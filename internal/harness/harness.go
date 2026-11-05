@@ -146,7 +146,7 @@ func briefingPrompt(b Brief) string {
 	s.WriteString("3. Write the brief, replacing it whole:\n\n")
 	s.WriteString("   ws mission brief --set - <<'EOF'\n   ## Goal\n   ...\n   ## Context\n   (links to issues/PRs, relevant files)\n   ## Constraints\n   ...\n   ## Acceptance\n   ...\n   EOF\n\n")
 	s.WriteString("   If the work falls into stages that separate crew should do one after another (a proposal, then its implementation), list them in order under `## Stages`, saying where each one's output goes and where the user wants to check in before the next. ws's orchestrator reads the brief and dispatches crew stage by stage.\n")
-	s.WriteString("4. Give it a short title: `ws mission title \"...\"`.\n")
+	s.WriteString("4. Name it: `ws mission title \"...\"`. A terse, plain-English name of at most 50 characters (it's how the mission reads in the user's deck), not the request or an issue number: \"Cache token lookups\", not \"fe issue 45\".\n")
 	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name.\n")
 	s.WriteString("6. Show the user the brief and capsules (`ws mission show -f llm`) and check they're right.\n")
 	s.WriteString("7. When they agree, run `ws mission ready` (add `--slug <short-slug>` if the current slug is poor). That marks the mission ready and ends this session; work crew is launched from the deck.\n")

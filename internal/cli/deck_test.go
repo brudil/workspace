@@ -245,7 +245,7 @@ func TestDeck_NewMissionEscCancels(t *testing.T) {
 func TestDeck_AttachLooseToSelectedMission(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": {"spare", "other"}})
 	slug := seedMission(t, ws, "Target", "")
-	m := loadedDeck(t, ws, prIndex{})
+	m := selectMission(t, loadedDeck(t, ws, prIndex{}), slug)
 
 	m, _ = press(t, m, "a")
 	if m.mode != deckModePick || len(m.pick.items) != 2 {
@@ -270,7 +270,7 @@ func TestDeck_AttachFromLooseRowPicksMission(t *testing.T) {
 	beta := seedMission(t, ws, "Beta", "")
 	m := loadedDeck(t, ws, prIndex{})
 
-	m, _ = press(t, m, "j", "j", "enter", "j") // loose header, expand, the capsule
+	m, _ = press(t, m, "G", "enter", "j") // loose capsules (last), expand, the capsule
 	if r, _ := m.selected(); r.kind != deckRowLoose {
 		t.Fatalf("not on loose capsule: %v", r.kind)
 	}
@@ -284,33 +284,33 @@ func TestDeck_AttachFromLooseRowPicksMission(t *testing.T) {
 	}
 }
 
-func TestDeck_DetachNeedsConfirm(t *testing.T) {
-	ws := deckWorkspace(t, map[string][]string{"frontend": {"x"}})
-	slug := seedMission(t, ws, "Det", "", [2]string{"frontend", "x"})
-	m := loadedDeck(t, ws, prIndex{})
-	m, _ = press(t, m, "j") // capsule row
+func TestDeck_DetachPicksACapsule(t *testing.T) {
+	ws := deckWorkspace(t, map[string][]string{"frontend": {"x", "y"}})
+	slug := seedMission(t, ws, "Det", "", [2]string{"frontend", "x"}, [2]string{"frontend", "y"})
+	m := selectMission(t, loadedDeck(t, ws, prIndex{}), slug)
 
 	m, _ = press(t, m, "d")
-	if m.mode != deckModeConfirm {
-		t.Fatalf("no confirm")
+	if m.mode != deckModePick || len(m.pick.items) != 2 || m.pick.items[1] != "frontend/y" {
+		t.Fatalf("picker = %+v", m.pick)
 	}
-	m, cmd := press(t, m, "n")
+	m, cmd := press(t, m, "esc")
 	if cmd != nil || m.mode != deckModeNormal {
-		t.Fatal("n should cancel")
+		t.Fatal("esc should cancel")
 	}
 
-	m, _ = press(t, m, "d")
-	_, cmd = press(t, m, "y")
+	m, _ = press(t, m, "d", "j")
+	_, cmd = press(t, m, "enter")
 	runCmd(t, m, cmd)
-	if got, _ := (mission.Store{Root: ws.Root}).Load(slug); got.HasCapsule("frontend", "x") {
-		t.Error("capsule still attached")
+	got, _ := (mission.Store{Root: ws.Root}).Load(slug)
+	if got.HasCapsule("frontend", "y") || !got.HasCapsule("frontend", "x") {
+		t.Errorf("capsules = %+v", got.Capsules)
 	}
 }
 
 func TestDeck_ParkArchiveToggle(t *testing.T) {
 	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
 	slug := seedMission(t, ws, "Toggle", "")
-	m := loadedDeck(t, ws, prIndex{})
+	m := selectMission(t, loadedDeck(t, ws, prIndex{}), slug)
 	state := func() mission.State {
 		got, _ := mission.Store{Root: ws.Root}.Load(slug)
 		return got.State
@@ -333,12 +333,13 @@ func TestDeck_ParkArchiveToggle(t *testing.T) {
 	if state() != mission.Archived {
 		t.Fatalf("state = %q", state())
 	}
-	if len(m.rows) != 0 {
+	// Archived missions are behind the Past entry: overview, Past.
+	if len(m.rows) != 2 || m.rows[1].kind != deckRowPastHeader {
 		t.Errorf("archived mission still listed: %d rows", len(m.rows))
 	}
-	m, _ = press(t, m, "A")
-	if len(m.rows) != 1 {
-		t.Errorf("A didn't show archived: %d rows", len(m.rows))
+	m, _ = press(t, m, "G", "enter")
+	if len(m.rows) != 3 || m.rows[2].kind != deckRowMission {
+		t.Errorf("⏎ on Past didn't list it: %d rows", len(m.rows))
 	}
 }
 
@@ -383,9 +384,13 @@ func goldenDeck(t *testing.T) deckModel {
 	slug := seedMission(t, ws, "Fix token refresh race",
 		"# Fix token refresh race\n\n## Goal\n\nStop concurrent refreshes clobbering each other.\n\n- keep the public API\n- add a regression test\n",
 		[2]string{"frontend", "token-race"}, [2]string{"backend", "token-race"})
-	seedMission(t, ws, "Billing export", "")
+	billing := seedMission(t, ws, "Billing export", "")
 	// Pin times so the log renders the same every run.
 	rewriteLogTimes(t, ws, slug)
+	rewriteLogTimes(t, ws, billing)
+	oldNow := nowFunc
+	nowFunc = func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { nowFunc = oldNow })
 	prs := prIndex{"backend": {open: map[string]*github.PR{"token-race": {Number: 88, HeadRefName: "token-race"}}}}
 	m := loadedDeck(t, ws, prs)
 	// Paths are temp dirs; show them relative to a fixed root.
@@ -414,8 +419,13 @@ func rewriteLogTimes(t *testing.T, ws *workspace.Workspace, slug string) {
 	}
 }
 
+func TestGolden_Deck_Overview(t *testing.T) {
+	m := goldenDeck(t) // the deck opens on the overview
+	golden.RequireEqual(t, plainView(m))
+}
+
 func TestGolden_Deck_Mission(t *testing.T) {
-	m := goldenDeck(t)
+	m := selectMission(t, goldenDeck(t), "fix-token-refresh-race")
 	golden.RequireEqual(t, plainView(m))
 }
 
@@ -426,7 +436,7 @@ func TestGolden_Deck_LooseCapsule(t *testing.T) {
 }
 
 func TestGolden_Deck_AttachPicker(t *testing.T) {
-	m := goldenDeck(t)
+	m := selectMission(t, goldenDeck(t), "fix-token-refresh-race")
 	m, _ = press(t, m, "a")
 	golden.RequireEqual(t, plainView(m))
 }
@@ -454,7 +464,7 @@ func TestDeck_ArtifactsAndConclusion(t *testing.T) {
 		"frontend": {open: map[string]*github.PR{"cache-ui": {Number: 12, HeadRefName: "cache-ui", Title: "Cache UI"}}},
 		"backend":  {merged: map[string]*github.PR{"cache-api": {Number: 88, HeadRefName: "cache-api", Title: "Cache API"}}},
 	}
-	m := loadedDeck(t, ws, open)
+	m := selectMission(t, loadedDeck(t, ws, open), slug)
 	_, content := m.mainContent(m.mainWidth()) // the whole pane, not just what fits on screen
 	view := ansi.Strip(content)
 	for _, want := range []string{"Artifacts", "frontend/cache-ui  #12 open  Cache UI", "backend/cache-api  #88 merged  Cache API", "Design doc  https://example.com/design"} {
@@ -471,6 +481,9 @@ func TestDeck_ArtifactsAndConclusion(t *testing.T) {
 		"backend":  {merged: map[string]*github.PR{"cache-api": {Number: 88, HeadRefName: "cache-api"}}},
 	}
 	m = loadedDeck(t, ws, merged)
+	m.pastOpen = true // landed: it's in the past
+	m.rebuildRows()
+	m = selectMission(t, m, slug)
 	_, content = m.mainContent(m.mainWidth())
 	if view := ansi.Strip(content); !strings.Contains(view, "✓ Concluded · every PR merged · x archives the mission") {
 		t.Errorf("no conclusion hint:\n%s", view)

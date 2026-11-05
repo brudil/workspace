@@ -1,13 +1,13 @@
- acme deck                                                                                2 missions · 1 live 
+ acme deck                                                                                          all quiet 
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                                                           │ MISSIONS                         
-  Attach to fix-token-refresh-race                                         │   fix-token-refresh-race active  
-                                                                           │     frontend/token-race          
-  ▸ frontend/feat-x                                                        │     backend/token-race #88       
+                                                                           │   Overview                       
+  Attach to fix-token-refresh-race                                         │                                  
+                                                                           │ UP NEXT                          
+  ▸ frontend/feat-x                                                        │   Fix token refresh race   ready 
+                                                                           │   Billing export           ready 
                                                                            │                                  
-                                                                           │   billing-export          draft  
+                                                                           │  ▸ Loose capsules (1)            
                                                                            │                                  
-                                                                           │ ▸ loose capsules (1)             
                                                                            │                                  
                                                                            │                                  
                                                                            │                                  

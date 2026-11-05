@@ -98,3 +98,14 @@ func TestAfterEnd_OnlyForCrewEndingByThemselves(t *testing.T) {
 		t.Errorf("calls = %v", calls)
 	}
 }
+
+func TestPrompt_AsksForANameWhileTitledWithTheRequest(t *testing.T) {
+	m := &mission.Mission{Slug: "the-import-job", Title: "The import job keeps hitting the rate limiter…", Request: "The import job keeps hitting the rate limiter on large orgs"}
+	if p := Prompt(Input{Mission: m}); !strings.Contains(p, "give it a name with ws mission title first") || !strings.Contains(p, `ws mission title "<terse name>"`) {
+		t.Errorf("prompt doesn't ask for a name:\n%s", p)
+	}
+	m.Title = "Rate limits for large-org imports"
+	if p := Prompt(Input{Mission: m}); strings.Contains(p, "give it a name") {
+		t.Error("asked to name a named mission")
+	}
+}

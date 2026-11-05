@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 )
@@ -534,6 +535,9 @@ func (s Store) SetTitle(slug, title string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("title is empty")
+	}
+	if n := utf8.RuneCountInString(title); n > MaxTitle {
+		return fmt.Errorf("title is %d characters; keep it to %d or fewer: a terse, plain-English name", n, MaxTitle)
 	}
 	_, err := s.Update(slug, func(m *Mission) error {
 		m.Title = title

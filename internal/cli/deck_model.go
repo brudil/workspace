@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"github.com/brudil/workspace/internal/crew"
+	"slices"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -20,29 +22,34 @@ const deckRefreshEvery = 10 * time.Second
 type deckRowKind int
 
 const (
-	deckRowMission deckRowKind = iota
-	deckRowCapsule
+	deckRowOverview deckRowKind = iota
+	deckRowMission
+	deckRowCrew
+	deckRowPastHeader
 	deckRowLooseHeader
 	deckRowLoose
-	deckRowCrew
 )
 
 // deckRow is one selectable line of the sidebar.
 type deckRow struct {
 	kind    deckRowKind
-	mission int // index into data.Missions (mission and capsule rows)
-	capsule int // index into the mission's Capsules, or into data.Loose
+	mission int // index into data.Missions (mission and crew rows)
+	capsule int // index into data.Loose
 	run     *deckCrewRun
+	// status is where the mission stood when the rows were built, so its
+	// heading and its label always agree.
+	status deckStatus
 }
 
 // key identifies a row across reloads so the cursor stays put.
 func (r deckRow) key(d deckData) string {
 	switch r.kind {
+	case deckRowOverview:
+		return "overview"
 	case deckRowMission:
 		return "m:" + d.Missions[r.mission].M.Slug
-	case deckRowCapsule:
-		c := d.Missions[r.mission].Capsules[r.capsule]
-		return "c:" + d.Missions[r.mission].M.Slug + ":" + c.Repo + "/" + c.Name
+	case deckRowPastHeader:
+		return "past"
 	case deckRowLooseHeader:
 		return "loose"
 	case deckRowCrew:
@@ -93,7 +100,7 @@ type deckModel struct {
 	cursorKey string // row key to restore after reload
 
 	sidebarHidden bool
-	showArchived  bool
+	pastOpen      bool // the Past entry is expanded
 	looseOpen     bool
 	showHelp      bool
 
@@ -206,17 +213,30 @@ func (m *deckModel) rebuildRows() {
 		key = m.rows[m.cursor].key(m.data)
 	}
 
-	m.rows = m.rows[:0]
-	for i, dm := range m.data.Missions {
-		if dm.State == mission.Archived && !m.showArchived {
-			continue
+	// Overview first, then missions by what they ask of you, each with its
+	// live crew. Past missions and loose capsules wait behind an entry row.
+	m.rows = append(m.rows[:0], deckRow{kind: deckRowOverview})
+	var groups [4][]deckRow
+	for i := range m.data.Missions {
+		st := m.missionStatus(&m.data.Missions[i])
+		groups[st.group] = append(groups[st.group], deckRow{kind: deckRowMission, mission: i, status: st})
+	}
+	addMissions := func(rows []deckRow) {
+		slices.SortStableFunc(rows, func(a, b deckRow) int { return a.status.rank - b.status.rank })
+		for _, r := range rows {
+			m.rows = append(m.rows, r)
+			for _, run := range m.reg.live(m.data.Missions[r.mission].M.Slug) {
+				m.rows = append(m.rows, deckRow{kind: deckRowCrew, mission: r.mission, run: run, status: r.status})
+			}
 		}
-		m.rows = append(m.rows, deckRow{kind: deckRowMission, mission: i})
-		for j := range dm.Capsules {
-			m.rows = append(m.rows, deckRow{kind: deckRowCapsule, mission: i, capsule: j})
-		}
-		for _, r := range m.reg.live(dm.M.Slug) {
-			m.rows = append(m.rows, deckRow{kind: deckRowCrew, mission: i, run: r})
+	}
+	for g := groupNeedsYou; g < groupPast; g++ {
+		addMissions(groups[g])
+	}
+	if len(groups[groupPast]) > 0 {
+		m.rows = append(m.rows, deckRow{kind: deckRowPastHeader})
+		if m.pastOpen {
+			addMissions(groups[groupPast])
 		}
 	}
 	if len(m.data.Loose) > 0 {
@@ -249,28 +269,29 @@ func (m deckModel) selected() (deckRow, bool) {
 }
 
 // selectedMission returns the mission the cursor is on (directly or via one
-// of its capsules).
+// of its crew).
 func (m deckModel) selectedMission() (*deckMission, bool) {
 	r, ok := m.selected()
-	if !ok || (r.kind != deckRowMission && r.kind != deckRowCapsule && r.kind != deckRowCrew) {
+	if !ok || (r.kind != deckRowMission && r.kind != deckRowCrew) {
 		return nil, false
 	}
 	return &m.data.Missions[r.mission], true
 }
 
+// counts is the header's summary: what needs you and what's moving.
 func (m deckModel) counts() string {
-	live := 0
-	for _, dm := range m.data.Missions {
-		if dm.State == mission.Active || dm.State == mission.Review {
-			live++
-		}
+	n := m.groupCounts()
+	var parts []string
+	if n[groupNeedsYou] > 0 {
+		parts = append(parts, fmt.Sprintf("%d need you", n[groupNeedsYou]))
 	}
-	n := len(m.data.Missions)
-	noun := "missions"
-	if n == 1 {
-		noun = "mission"
+	if n[groupInProgress] > 0 {
+		parts = append(parts, fmt.Sprintf("%d in progress", n[groupInProgress]))
 	}
-	return fmt.Sprintf("%d %s · %d live", n, noun, live)
+	if len(parts) == 0 {
+		return "all quiet"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func rowKeyFound(rows []deckRow, d deckData, key string) bool {

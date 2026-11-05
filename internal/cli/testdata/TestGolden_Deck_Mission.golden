@@ -1,13 +1,13 @@
- acme deck                                                                                2 missions · 1 live 
+ acme deck                                                                                          all quiet 
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                                                           │ MISSIONS                         
-  Fix token refresh race                                                   │ ▸ fix-token-refresh-race active  
-   fix-token-refresh-race   active                                         │     frontend/token-race          
-  no crew yet · ⏎ launch cursor · L choose harness                         │     backend/token-race #88       
-                                                                           │                                  
-  Capsules                                                                 │   billing-export          draft  
-    Frontend (frontend)   token-race                                       │                                  
-    /ws/repos/frontend/token-race                                          │ ▸ loose capsules (1)             
+                                                                           │   Overview                       
+  Fix token refresh race                                                   │                                  
+   fix-token-refresh-race   ready                                          │ UP NEXT                          
+  no crew yet · ⏎ launch cursor · L choose harness                         │ ▸ Fix token refresh race   ready 
+                                                                           │   Billing export           ready 
+  Capsules                                                                 │                                  
+    Frontend (frontend)   token-race                                       │  ▸ Loose capsules (1)            
+    /ws/repos/frontend/token-race                                          │                                  
     API (backend)         token-race   #88                                 │                                  
     /ws/repos/backend/token-race                                           │                                  
                                                                            │                                  

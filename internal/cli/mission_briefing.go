@@ -92,7 +92,7 @@ func newMissionTitleCmd() *cobra.Command {
 	var slug string
 	cmd := &cobra.Command{
 		Use:   "title <title>",
-		Short: "Set a mission's title (its slug stays)",
+		Short: "Set a mission's title: a terse name of at most 50 characters (its slug stays)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := LoadContext()

@@ -920,6 +920,9 @@ func (m deckModel) handleActivityTick() (tea.Model, tea.Cmd) {
 		r.wasWorking = working
 	}
 	m.ticks++
+	// Crew going from working to waiting moves their mission between
+	// groups.
+	m.rebuildRows()
 	if m.ticks%recordsEveryTicks == 0 {
 		cmds = append(cmds, loadRecordsCmd(m.store))
 	}
@@ -952,6 +955,7 @@ func (m deckModel) handleRecords(msg deckRecordsMsg) (tea.Model, tea.Cmd) {
 			m.data.Missions[i].M = mm
 		}
 	}
+	m.rebuildRows() // a crew asking, a flag, queued crew: groups move
 	return m, tea.Batch(m.announceSignals(), m.adoptNewCmd(msg.missions))
 }
 

@@ -13,6 +13,7 @@ package mission
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,20 @@ const (
 	// capsules. `ws mission ready` ends it.
 	Briefing State = "briefing"
 )
+
+// MaxTitle is the longest title a mission can be given: titles name
+// missions in the deck, so they're terse, plain-English names.
+const MaxTitle = 50
+
+// TitleIsRequest reports whether the title is still the request the
+// mission was raised with (or the start of it), not a name for it yet.
+func (m *Mission) TitleIsRequest() bool {
+	if m.Request == "" {
+		return false
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(m.Request), "\n")
+	return strings.HasPrefix(first, strings.TrimSuffix(m.Title, "…"))
+}
 
 // RoleBriefing marks crew that brief a mission rather than work on it.
 const RoleBriefing = "briefing"

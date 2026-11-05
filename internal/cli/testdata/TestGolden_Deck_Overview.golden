@@ -1,0 +1,24 @@
+ acme deck                                                                                          all quiet 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                           │ ▸ Overview                       
+  What do you want to do?                                                  │                                  
+  ⏎ to say: an idea, a bug, or an issue like 'fe issue 45'. An agent tur…  │ UP NEXT                          
+                                                                           │   Fix token refresh race   ready 
+  Needs you                                                                │   Billing export           ready 
+  Nothing right now.                                                       │                                  
+                                                                           │  ▸ Loose capsules (1)            
+  2 up next                                                                │                                  
+                                                                           │                                  
+  Recently                                                                 │                                  
+  09:32  Fix token refresh race    capsule backend/token-race added        │                                  
+  09:31  Fix token refresh race    capsule frontend/token-race added       │                                  
+  09:30  Fix token refresh race    mission created                         │                                  
+  09:30  Billing export            mission created                         │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+                                                                           │                                  
+ ⏎ start a mission  j/k move  ? help  q quit

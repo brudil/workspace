@@ -36,7 +36,7 @@ func TestDeckServer_DetachAndReattach(t *testing.T) {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 24})
 		data, _ := loadDeckData(ws, prIndex{})
 		next, _ = next.Update(deckLoadedMsg{data: data})
-		return next.(deckModel)
+		return selectMission(t, next.(deckModel), slug)
 	}
 
 	// First deck: launch crew and type into it.

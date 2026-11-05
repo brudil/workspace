@@ -71,11 +71,15 @@ Read the brief and the history below and decide what should happen next: is what
 - ws mission flag "<why the user is needed>"   (a decision or problem only the user can resolve, or the brief says to check with them before the next stage)
 - ws mission new "<follow-up, what and why>"   (separate work worth doing, outside this mission's scope)
 - ws mission conclude "<why it's finished>"   (everything in the brief is met; PRs merged or ready)
+- ws mission title "<terse name>"   (at most 50 characters, plain English; only when the title below is still the raw request, or no longer says what the mission is)
 
 If the next crew needs a capsule the mission doesn't have yet, create it first with ws lift <repo> <branch> (it joins the mission), then dispatch with --capsule.
 You may investigate read-only: ws mission show -f llm, git diff/log in the capsule paths below, gh pr view/checks. Don't change code, commit or push yourself. Prefer one clear next step; don't invent work, and if nothing is needed, just note why. If a command fails, read its message and correct it (a refused dispatch means flag the user instead). Finish with one short paragraph saying what you did.
 
 `)
+	if m.TitleIsRequest() {
+		b.WriteString("The mission's title is still the request it was raised with: give it a name with ws mission title first.\n\n")
+	}
 	brief := strings.TrimSpace(in.Brief)
 	if brief == "" {
 		brief = "(empty)"

@@ -319,25 +319,35 @@ ws mission note "Went with a mutex, not a channel"
 
 **Brief.** `brief.md` is yours. `ws mission new --brief "..."` or `--brief-file path|-` writes it without an editor. Agents add to the log with `ws mission note` rather than editing the brief.
 
-**The deck.** `ws deck` is a full-screen view of your missions: the selected mission on the left (capsules with git and PR state, the rendered brief, recent log) and every mission on the right. From there, `n` starts a new mission (see Briefing below), `N` creates one you name and brief yourself in `$EDITOR`, `e` edits the brief, `a` attaches a capsule, `d` detaches one, `p` parks and `x` archives. Capsules that belong to no mission are listed at the bottom of the sidebar. `?` lists every key.
+**The deck.** `ws deck` is a full-screen view of your missions. It opens on the **Overview**: a *What do you want to do?* field (`⏎`, then say it; a briefing agent turns it into a mission), everything that needs you and why, and what's been happening across every mission's log, newest first. The header and the terminal's tab title say how many missions need you.
+
+The sidebar groups missions by what they ask of you, each shown by its title with a short status, and its live crew beneath it:
+
+| Group | When | Status |
+|---|---|---|
+| **Needs you** | crew ask something or have gone quiet waiting for you, the orchestrator flagged it or queued crew for you to launch, it looks finished, or crew have worked on it and nobody is now | `? asks`, `◐ waiting`, `! flagged`, `→ next crew`, `✓ wrap up`, `idle` |
+| **In progress** | crew working, crew done but still running, the orchestrator deciding, PRs in review | `● working`, `✓ done`, `◆ deciding`, `in review` |
+| **Up next** | waiting to be briefed, briefed but never started, parked | `to brief`, `ready`, `parked` |
+
+Landed and archived missions are behind a collapsed **Past** entry at the bottom, and capsules that belong to no mission behind **Loose capsules**; `⏎` opens either. Selecting a mission shows it in full on the left: its capsules with git and PR state, the rendered brief, artifacts and recent log. From there, `n` starts a new mission (see Briefing below), `N` creates one you name and brief yourself in `$EDITOR`, `e` edits the brief, `a` attaches a capsule, `d` detaches one (it asks which), `p` parks and `x` archives. `?` lists every key.
 
 **Briefing.** `n` in the deck asks one thing: what's the mission? Answer however you like: `fe issue 45`, a pasted issue URL, or a sentence. The deck creates the mission in the `briefing` state and launches a briefing agent in the workspace root. Its only job is to turn your request into a ready mission:
 
 1. Work out what you mean: repos and aliases from `ws status -f llm`, issues and PRs with `gh`, code in `.ground`.
 2. Ask you about anything unclear.
-3. Write the brief with `ws mission brief --set -`, and title it with `ws mission title`.
+3. Write the brief with `ws mission brief --set -`, and name the mission with `ws mission title`: a terse, plain-English name of at most 50 characters, which is how it reads in the deck.
 4. Lift (or dock) the capsules the work needs.
 5. Check with you, then run `ws mission ready`.
 
-`ws mission ready` refuses until the brief is written and a capsule exists (`--no-capsules` if none is needed), can rename the mission (`--slug`), records the briefing agent as `briefed` and ends its session. The deck then lands on the ready mission, and `⏎` launches crew to do the work. Briefing missions sit at the top of the sidebar while they wait on you. Stop a briefing early and `⏎` offers to resume it.
+`ws mission ready` refuses until the brief is written and a capsule exists (`--no-capsules` if none is needed), can rename the mission (`--slug`), records the briefing agent as `briefed` and ends its session. The deck then lands on the ready mission, and `⏎` launches crew to do the work. A briefing agent asking you something puts its mission under **Needs you**; one nobody has started briefing waits under **Up next**. Stop a briefing early and `⏎` offers to resume it.
 
 `ws mission new "<what it is>"` does the same from a shell, or from an agent: the mission waits to be briefed (`⏎` on it in the deck starts the briefing agent). Crew that spot something outside their mission are taught to raise it this way; the new mission records which mission and crew raised it. To create a mission ready, with a brief you write yourself, pass `--brief`, `--brief-file`, `--edit` (opens `$EDITOR`) or `--no-edit` (the template).
 
-The same commands work by hand: `ws mission brief` prints or replaces a brief, `ws mission title` retitles, and `ws mission ready` finishes a briefing. Crew can only change the brief or title while briefing; after that they belong to you.
+The same commands work by hand: `ws mission brief` prints or replaces a brief, `ws mission title` renames (at most 50 characters), and `ws mission ready` finishes a briefing. Crew can only change the brief or title while briefing; after that they belong to you (and the orchestrator, which names a mission still titled with the request it was raised with).
 
 **Crew.** Press `⏎` on a mission to launch an agent on it. It starts in one of the mission's capsules, with `WS_MISSION` and `WS_CREW` set, and is told to read the mission with `ws mission show`, so the capsules it lifts join the mission. Each launch is recorded on the mission as crew (`c1`, `c2`, …) with how it ended. Crew get `.ws/bin` first on `PATH`, where `ws` and `workspace` point at the deck's own binary, so the commands they're told to run always match the deck's version.
 
-- **Several crew.** Each crew gets its own row under its mission in the sidebar. The mission row shows the brief and lists who is working; a crew row shows that agent's terminal. `⏎` on the mission launches more crew, in a capsule nobody is working in, and asks before two crew share one.
+- **Several crew.** Each crew gets its own row under its mission in the sidebar, saying what it's doing and what it was dispatched for. The mission row shows the mission; a crew row shows that agent's terminal. `⏎` on the mission launches more crew, in a capsule nobody is working in, and asks before two crew share one.
 - **Focus.** `tab` (or `⏎`) on a crew row hands it the keyboard: every key and paste goes to the agent. `ctrl+g` is the deck's prefix key while an agent has focus:
 
   | Key | Does |
@@ -354,7 +364,7 @@ The same commands work by hand: `ws mission brief` prints or replaces a brief, `
   The mouse wheel scrolls history too, or goes to the agent when it draws full-screen.
 - **Selecting and links.** While an agent has the keyboard, the deck lets go of the mouse, so your terminal's own selection, copy and Cmd-click on links work in its output (links the agent prints as hyperlinks stay clickable). With the sidebar focused, the deck takes the mouse back for clicking rows. `M` (or `ctrl+g m`) lets go everywhere until pressed again. To copy several lines without picking up the sidebar's column, hide it first (`ctrl+g s`) or zoom (`ctrl+g z`).
 - **Working or waiting.** Each crew row shows what the agent is doing: `●c2 working` while its screen is changing, `◐c2 waiting 4m` once it has been still for 5 seconds (usually: it's waiting for you). When crew goes quiet and you aren't looking at it, the deck says so, rings the bell and sends a desktop notification (iTerm2, kitty, Ghostty and WezTerm show these).
-- **Ask and done.** Crew are taught to say where they are. `ws mission ask "<question>"` marks them `?c2 asks` with the question; `ws mission done "<summary>"` marks them `✓c2 done`. Each is announced once, and clears when you next type to that crew. A mission's row shows the most urgent of its crew: `?` asks, `◐` waiting, `✓` all done, `●` working.
+- **Ask and done.** Crew are taught to say where they are. `ws mission ask "<question>"` marks them `?c2 asks` with the question; `ws mission done "<summary>"` marks them `✓c2 done`. Each is announced once, and clears when you next type to that crew. A crew asking or waiting moves its mission under **Needs you**.
 - **Artifacts.** The mission view lists what the mission has produced: each capsule's PR (found from its branch, so a mission in several repos lists one per capsule) and links crew record with `ws mission artifact add <url> "<label>"`. Once every PR is merged it says the mission has concluded, and `x` archives it.
 - **Harnesses.** `L` picks which harness to launch: `cursor` (the Cursor CLI, the default) or `shell` (your `$SHELL`). `WS_DECK_HARNESS` changes the default, and `WS_CURSOR_AGENT` names the Cursor binary if it isn't `cursor-agent`. If the mission's last crew can be resumed (the agent reported a conversation id), `⏎` asks whether to resume it or launch new crew, and `R` resumes it directly. Resuming continues the same crew: same `c1`, same conversation, back in the capsule it worked in.
 - **Detach and reattach.** Crew run in a per-workspace deck server, not in the deck itself, so they keep working when you quit the deck, close the terminal, or the deck crashes. Quitting with crew running asks whether to detach (crew keep running) or stop them. The next `ws deck` reattaches with their screens intact. The server starts with the first launch, logs to `.ws/deck-server.log`, and exits a minute after its last crew ends with no deck attached. `ws deck server status` shows what it holds; `ws deck server stop` hangs every crew up. `WS_DECK_SERVER=0` keeps crew inside the deck instead, as a debugging aid: they start, end and are recorded exactly as on the server (the orchestrator runs too), but they stop when the deck quits, and dispatches are queued for you.
