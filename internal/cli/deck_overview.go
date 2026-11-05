@@ -64,7 +64,9 @@ func (m deckModel) renderOverview(indent string, inner int) string {
 	line := func(slug, icon, title, text string) string {
 		title = ansi.Truncate(title, titleCol-2, "…")
 		title += strings.Repeat(" ", titleCol-ansi.StringWidth(title))
-		return indent + zone(zoneMission, slug, icon+" "+title+ansi.Truncate(text, max(inner-titleCol-2, 10), "…")) + "\n"
+		// The text gets what the icon (a bullet, or a time) and title leave.
+		textW := max(inner-ansi.StringWidth(icon)-1-titleCol, 10)
+		return indent + zone(zoneMission, slug, icon+" "+title+ansi.Truncate(text, textW, "…")) + "\n"
 	}
 
 	// What needs you, in the sidebar's order: each reason on its own line.

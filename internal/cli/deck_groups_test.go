@@ -205,3 +205,33 @@ func TestDeckNotify_OnlyWhileYoureAway(t *testing.T) {
 		t.Error("no notification while you're elsewhere")
 	}
 }
+
+// Long lines on the overview end in an ellipsis inside the pane, under
+// Recently (whose times are wider than Needs you's bullets) as well.
+func TestDeckOverview_LongLinesFit(t *testing.T) {
+	ws := deckWorkspace(t, map[string][]string{"frontend": nil})
+	store := mission.Store{Root: ws.Root}
+	slug := seedMission(t, ws, "Cache tokens", "")
+	long := strings.Repeat("a long note about caching ", 12)
+	store.AppendLog(slug, mission.Event{Kind: mission.EventNote, Text: long})
+	store.SetFlag(slug, long, "orchestrator")
+
+	m := loadedDeck(t, ws, prIndex{})
+	_, content := m.mainContent(m.mainWidth())
+	seen := 0
+	for _, l := range strings.Split(ansi.Strip(content), "\n") {
+		l = strings.TrimRight(l, " ") // the ask box pads to the pane's width
+		if w := ansi.StringWidth(l); w > m.mainWidth()-2 {
+			t.Errorf("%d columns, past the pane's margin (%d):\n%s", w, m.mainWidth()-2, l)
+		}
+		if strings.Contains(l, "a long note") {
+			seen++
+			if !strings.HasSuffix(l, "…") {
+				t.Errorf("cut without an ellipsis:\n%s", l)
+			}
+		}
+	}
+	if seen < 2 {
+		t.Errorf("want the note under Needs you and Recently:\n%s", ansi.Strip(content))
+	}
+}
