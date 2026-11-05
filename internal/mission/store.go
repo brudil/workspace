@@ -945,3 +945,56 @@ func (s Store) SetHandoff(slug, id, by, text string) error {
 	}
 	return s.AppendLog(slug, Event{Kind: EventDispatch, Crew: id, Text: "by " + by + ": " + text})
 }
+
+// Hook is what an agent reported through one of its hooks.
+type Hook struct {
+	// Prompted: the agent was sent a message (by you, or by ws for you). It's
+	// working, and what it said before (asking, done) has been answered.
+	Prompted bool
+	// Activity, when set, replaces the crew's (ActivityWaiting at the end of
+	// its turn, ActivityPermission when it asks for one).
+	Activity string
+	Reply    string // its turn's final message, when known
+	Notice   string // a notification it raised
+	// Conversation is its session id, recorded if the crew has none yet.
+	Conversation string
+}
+
+// lastReplyMax keeps a crew's last reply to what's worth showing.
+const lastReplyMax = 1500
+
+// CrewHook records what crew reported through their hooks. It's how the deck
+// knows, rather than guesses, whether crew are working or waiting for you.
+func (s Store) CrewHook(slug, id string, h Hook) error {
+	_, err := s.Update(slug, func(m *Mission) error {
+		for i := range m.Crew {
+			c := &m.Crew[i]
+			if c.ID != id {
+				continue
+			}
+			t := now()
+			switch {
+			case h.Prompted:
+				c.Activity, c.ActivityAt, c.Notice = ActivityWorking, &t, ""
+				c.Status, c.Note, c.StatusAt = "", "", nil
+			case h.Activity != "":
+				c.Activity, c.ActivityAt = h.Activity, &t
+			}
+			if r := strings.TrimSpace(h.Reply); r != "" {
+				if rs := []rune(r); len(rs) > lastReplyMax {
+					r = string(rs[:lastReplyMax]) + "…"
+				}
+				c.LastReply = r
+			}
+			if h.Notice != "" {
+				c.Notice = h.Notice
+			}
+			if h.Conversation != "" && c.Conversation == "" {
+				c.Conversation = h.Conversation
+			}
+			return nil
+		}
+		return fmt.Errorf("mission %s has no crew %s", slug, id)
+	})
+	return err
+}

@@ -47,10 +47,16 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	working, done := 0, 0
 	var waiting []*deckCrewRun
 	for _, r := range runs {
-		switch status, note := m.crewStatus(r); status {
-		case mission.CrewAsking:
+		switch status, note := m.crewStatus(r); {
+		case status == mission.CrewAsking:
 			need(0, ui.Orange.Render("? asks"), r.crewID+" asks: "+note)
-		case mission.CrewDone:
+		case status == "" && r.reported == mission.ActivityPermission:
+			why := r.crewID + " needs your permission"
+			if r.notice != "" {
+				why += ": " + r.notice
+			}
+			need(0, ui.Orange.Render("? permission"), why)
+		case status == mission.CrewDone:
 			done++
 		default:
 			if w, _ := r.activity(); w {
@@ -74,7 +80,11 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 	}
 	for _, r := range waiting {
 		_, since := r.activity()
-		need(3, ui.Orange.Render("◐ waiting"), fmt.Sprintf("%s has been waiting for you for %s", r.crewID, shortDuration(since)))
+		why := fmt.Sprintf("%s has been waiting for you for %s", r.crewID, shortDuration(since))
+		if said := replyLine(r.lastReply, 80); said != "" {
+			why += ": " + said
+		}
+		need(3, ui.Orange.Render("◐ waiting"), why)
 	}
 	if c := dm.M.Conclude; c != nil && dm.State != mission.Archived && dm.State != mission.Landed {
 		need(4, ui.Green.Render("✓ wrap up"), "looks finished: "+c.Text)

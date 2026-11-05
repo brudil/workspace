@@ -222,6 +222,7 @@ func (m *deckModel) wantRow(key string) {
 // rebuildRows recomputes the sidebar rows from data and keeps the cursor on
 // the same row (by key) where possible. Rows must match m.data on entry.
 func (m *deckModel) rebuildRows() {
+	m.syncActivity() // groups and badges read what crew reported
 	key := m.cursorKey
 	if key == "" && m.cursor < len(m.rows) {
 		key = m.rows[m.cursor].key(m.data)

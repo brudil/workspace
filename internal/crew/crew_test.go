@@ -3,6 +3,7 @@ package crew
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -202,5 +203,40 @@ func TestStart_LogsLaunchPromptAndEnd(t *testing.T) {
 		if !strings.Contains(log, want) {
 			t.Errorf("exec log missing %q:\n%s", want, log)
 		}
+	}
+}
+
+// Crew of a harness with hooks get them installed: the agent reports its
+// activity to this ws, told the workspace root.
+func TestHookArgs_InstalledForHarnessesWithHooks(t *testing.T) {
+	root := t.TempDir()
+	args, note := hookArgs(root, "claude")
+	if len(args) != 2 || args[0] != "--settings" || !strings.Contains(args[1], filepath.Join(root, ".ws", "bin", "ws")+" mission hook --root "+root+" stop") {
+		t.Errorf("claude: %q", args)
+	}
+	if !strings.Contains(note, "installed hooks") {
+		t.Errorf("note = %q", note)
+	}
+	if args, _ := hookArgs(root, "cursor"); len(args) != 2 || args[1] != filepath.Join(root, ".ws", "hooks", "cursor") {
+		t.Errorf("cursor: %q", args)
+	}
+	if args, note := hookArgs(root, "shell"); args != nil || note != "" {
+		t.Errorf("shell has no hooks: %q %q", args, note)
+	}
+}
+
+// A new crew takes a capsule nobody is in before one whose crew handed back
+// but is still open; it shares only when there's no choice.
+func TestPreferFree(t *testing.T) {
+	caps := []Capsule{{Name: "fe/a"}, {Name: "fe/b"}}
+	handed := map[string][]string{"fe/a": {"c1"}}
+	if p, _ := PreferFree(caps, map[string]string{}, handed, ""); p.Capsule != "fe/b" {
+		t.Errorf("picked %s, want the free fe/b", p.Capsule)
+	}
+	if p, _ := PreferFree(caps, map[string]string{"fe/b": "c2"}, handed, ""); p.Capsule != "fe/a" || p.Busy != "" {
+		t.Errorf("only fe/a is left (its crew handed back): got %+v", p)
+	}
+	if p, _ := PreferFree(caps, map[string]string{}, handed, "fe/a"); p.Capsule != "fe/a" {
+		t.Errorf("asked for fe/a: got %+v", p)
 	}
 }

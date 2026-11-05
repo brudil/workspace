@@ -102,6 +102,18 @@ type Crew struct {
 	Status   string     `toml:"status,omitempty"`
 	Note     string     `toml:"note,omitempty"`
 	StatusAt *time.Time `toml:"status_at,omitempty"`
+	// Activity is what the agent last reported through its own hooks, which
+	// ws installs when it launches crew: ActivityWorking once it's sent a
+	// message, ActivityWaiting once it has finished its turn,
+	// ActivityPermission when it has stopped to ask for one. "" for a
+	// harness without hooks: the deck then judges from the screen.
+	Activity   string     `toml:"activity,omitempty"`
+	ActivityAt *time.Time `toml:"activity_at,omitempty"`
+	// LastReply is the start of what the agent last said: its turn's final
+	// message. Notice is its last notification ("Claude needs your
+	// permission to use Bash").
+	LastReply string `toml:"last_reply,omitempty"`
+	Notice    string `toml:"notice,omitempty"`
 	// ResumeWith is a message to send when this crew is next resumed
 	// (ws mission resume-with); it's used once.
 	ResumeWith string `toml:"resume_with,omitempty"`
@@ -118,6 +130,11 @@ type Crew struct {
 const (
 	CrewAsking = "asking"
 	CrewDone   = "done"
+
+	// What crew report through their hooks (Crew.Activity).
+	ActivityWorking    = "working"
+	ActivityWaiting    = "waiting"
+	ActivityPermission = "permission"
 )
 
 // Mission is the contents of mission.toml plus its slug.

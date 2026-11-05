@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 )
 
@@ -247,6 +248,9 @@ func (w *Workspace) checkMissions() CheckCategory {
 		}
 	}
 	checks := []CheckResult{excluded}
+	if c, ok := cursorHooksCheck(); ok {
+		checks = append(checks, c)
+	}
 
 	missions, _ := store.List()
 	for _, m := range missions {
@@ -262,4 +266,25 @@ func (w *Workspace) checkMissions() CheckCategory {
 		}
 	}
 	return CheckCategory{Name: "Missions", Checks: checks}
+}
+
+// cursorHooksCheck checks Cursor will run ws's per-crew hooks, which tell
+// the deck when Cursor crew are working or waiting. Only with the Cursor CLI
+// installed.
+func cursorHooksCheck() (CheckResult, bool) {
+	h, err := harness.Get("cursor")
+	if err != nil || h.Available() != nil {
+		return CheckResult{}, false
+	}
+	c := CheckResult{Name: "Cursor crew hooks", Status: CheckOK}
+	missing, err := harness.CursorHooksMissing()
+	switch {
+	case err != nil:
+		c.Status, c.Detail = CheckWarn, err.Error()
+	case len(missing) > 0:
+		c.Status = CheckWarn
+		c.Detail = "Cursor runs ws's hooks for its crew only for events ~/.cursor/hooks.json has a hook for too (" + strings.Join(missing, ", ") + " missing), so the deck guesses from the screen whether Cursor crew are working; the fix adds hooks there that do nothing (/usr/bin/true)"
+		c.Fix = harness.EnableCursorHooks
+	}
+	return c, true
 }

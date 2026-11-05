@@ -2,7 +2,10 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -360,5 +363,81 @@ func TestAnswerPrompt(t *testing.T) {
 	}
 	if strings.Contains(p, "A long brief nobody needs here") || strings.Contains(p, "ws mission done") {
 		t.Errorf("answer prompt pastes the brief or asks for done:\n%s", p)
+	}
+}
+
+// ws's hooks go into the one session: Claude Code through an inline
+// --settings, Cursor through a plugin folder ws writes.
+func TestHookArgs(t *testing.T) {
+	cmd := []string{"/w/.ws/bin/ws", "mission", "hook", "--root", "/w s"}
+	args, err := (&Claude{}).HookArgs(cmd, t.TempDir())
+	if err != nil || len(args) != 2 || args[0] != "--settings" {
+		t.Fatalf("claude args = %q, %v", args, err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct{ Type, Command string }
+		}
+	}
+	if err := json.Unmarshal([]byte(args[1]), &settings); err != nil {
+		t.Fatal(err)
+	}
+	for event, ours := range map[string]string{"SessionStart": HookStart, "UserPromptSubmit": HookPrompt, "Stop": HookStop, "Notification": HookNotify} {
+		h := settings.Hooks[event]
+		if len(h) != 1 || h[0].Hooks[0].Type != "command" || h[0].Hooks[0].Command != "/w/.ws/bin/ws mission hook --root '/w s' "+ours {
+			t.Errorf("claude %s hook = %+v", event, h)
+		}
+	}
+
+	dir := t.TempDir()
+	args, err = (&Cursor{}).HookArgs(cmd, dir)
+	if err != nil || strings.Join(args, " ") != "--plugin-dir "+dir {
+		t.Fatalf("cursor args = %q, %v", args, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".cursor-plugin", "plugin.json")); err != nil {
+		t.Errorf("no plugin manifest: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "hooks", "hooks.json"))
+	var hooks struct {
+		Version int
+		Hooks   map[string][]struct{ Command string }
+	}
+	json.Unmarshal(data, &hooks)
+	for event, ours := range map[string]string{"sessionStart": HookStart, "beforeSubmitPrompt": HookPrompt, "afterAgentResponse": HookReply, "stop": HookStop} {
+		if h := hooks.Hooks[event]; hooks.Version != 1 || len(h) != 1 || !strings.HasSuffix(h[0].Command, "'/w s' "+ours) {
+			t.Errorf("cursor %s hook = %+v", event, h)
+		}
+	}
+}
+
+// Cursor runs ws's plugin hooks only for events your own hooks file has a
+// hook (by path) for: the fix adds do-nothing ones, keeping what's there.
+func TestEnableCursorHooks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	missing, err := CursorHooksMissing()
+	if err != nil || strings.Join(missing, ",") != "beforeSubmitPrompt,afterAgentResponse,stop" {
+		t.Fatalf("no file: missing %v, %v", missing, err)
+	}
+	path := filepath.Join(home, ".cursor", "hooks.json")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"version":1,"hooks":{"stop":[{"command":"/opt/mine/notify.sh"}],"beforeSubmitPrompt":[{"command":"true"}],"afterFileEdit":[{"command":"/opt/fmt.sh"}]},"extra":"kept"}`), 0o644)
+	if missing, _ := CursorHooksMissing(); strings.Join(missing, ",") != "beforeSubmitPrompt,afterAgentResponse" {
+		t.Errorf("your stop hook counts, a bare 'true' doesn't: missing %v", missing)
+	}
+	if err := EnableCursorHooks(); err != nil {
+		t.Fatal(err)
+	}
+	if missing, _ := CursorHooksMissing(); len(missing) != 0 {
+		t.Errorf("still missing %v", missing)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{`"/opt/mine/notify.sh"`, `"/opt/fmt.sh"`, `"extra": "kept"`, `"command": "true"`, `"command": "/usr/bin/true"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("hooks file lost or lacks %s:\n%s", want, data)
+		}
+	}
+	if strings.Count(string(data), "/usr/bin/true") != 2 {
+		t.Errorf("added a no-op where your own stop hook already counts:\n%s", data)
 	}
 }

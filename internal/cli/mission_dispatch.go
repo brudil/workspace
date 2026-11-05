@@ -224,7 +224,7 @@ func dispatchPlace(ctx *Context, m *mission.Mission, want string, shared bool) (
 			caps = append(caps, crew.Capsule{Name: c.Repo + "/" + c.Name, Path: c.Path})
 		}
 	}
-	p, err := crew.PickPlace(caps, crew.BusyIn(m), want)
+	p, err := crew.PreferFree(caps, crew.BusyIn(m), crew.HandedBackIn(m), want)
 	var unknown *crew.UnknownCapsuleError
 	switch {
 	case errors.As(err, &unknown):

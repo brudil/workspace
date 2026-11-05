@@ -86,6 +86,27 @@ func BusyIn(m *mission.Mission) map[string]string {
 	return busy
 }
 
+// PreferFree is PickPlace that keeps out of capsules crew handed back in
+// (their sessions are still open) while another capsule is free, rather
+// than ending their sessions to make room.
+func PreferFree(capsules []Capsule, busy map[string]string, handedBack map[string][]string, want string) (Place, error) {
+	if want == "" {
+		occupied := map[string]string{}
+		for c, id := range busy {
+			occupied[c] = id
+		}
+		for c, ids := range handedBack {
+			if _, ok := occupied[c]; !ok && len(ids) > 0 {
+				occupied[c] = ids[0]
+			}
+		}
+		if p, err := PickPlace(capsules, occupied, ""); err == nil && p.Busy == "" {
+			return p, nil
+		}
+	}
+	return PickPlace(capsules, busy, want)
+}
+
 // HandedBackIn is which capsules have crew that handed their work back but
 // whose session is still running: capsule → crew ids. Starting new crew in
 // one of those capsules ends them (they can be resumed), so two agents never

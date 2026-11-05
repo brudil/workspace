@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,6 +52,12 @@ func Start(r Request) (Started, error) {
 	if err != nil {
 		execlog.Note(r.Root, "crew "+r.Slug, "%s couldn't get ready to launch: %v", r.Harness, err)
 		return Started{}, err
+	}
+	if args, note := hookArgs(r.Root, r.Harness); len(args) > 0 && len(l.Args) > 0 {
+		l.Args = append([]string{l.Args[0]}, append(args, l.Args[1:]...)...)
+		l.Notes = append(l.Notes, note)
+	} else if note != "" {
+		l.Notes = append(l.Notes, note)
 	}
 	var c mission.Crew
 	prompt := l.Prompt
@@ -132,4 +139,29 @@ func typePrompt(t Term, prompt string) bool {
 	time.Sleep(300 * time.Millisecond)
 	t.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
 	return true
+}
+
+// hookArgs installs ws's hooks in the crew's session when its harness has
+// them, so the agent reports what it's doing (ws mission hook) instead of
+// the deck guessing from its screen. The command is this ws (through the
+// .ws/bin link crew get), told the workspace root.
+func hookArgs(root, harnessName string) ([]string, string) {
+	h, err := harness.Get(harnessName)
+	if err != nil {
+		return nil, ""
+	}
+	hk, ok := h.(harness.Hooks)
+	if !ok {
+		return nil, ""
+	}
+	shim, err := ShimDir(root)
+	if err != nil {
+		return nil, "no hooks: " + err.Error()
+	}
+	cmd := []string{filepath.Join(shim, "ws"), "mission", "hook", "--root", root}
+	args, err := hk.HookArgs(cmd, filepath.Join(root, ".ws", "hooks", harnessName))
+	if err != nil {
+		return nil, "no hooks: " + err.Error()
+	}
+	return args, "installed hooks: " + strings.Join(cmd, " ") + " <event>"
 }

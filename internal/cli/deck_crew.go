@@ -43,6 +43,13 @@ type deckCrewRun struct {
 	wasWorking bool
 	// notified is the crew status (and when it was set) already announced.
 	notified string
+
+	// What its agent last reported through ws's hooks, copied from its
+	// record (syncActivity): reported is "" for a harness without hooks.
+	reported   string
+	reportedAt time.Time
+	lastReply  string
+	notice     string
 }
 
 func (r *deckCrewRun) live() bool { return r != nil && !r.ended }
@@ -135,9 +142,10 @@ func (m deckModel) placeFor(dm *deckMission, want string) (crew.Place, bool) {
 		}
 	}
 	caps := deckCapsules(dm)
-	p, err := crew.PickPlace(caps, busy, want)
+	handedBack := crew.HandedBackIn(dm.M)
+	p, err := crew.PreferFree(caps, busy, handedBack, want)
 	if errors.As(err, new(*crew.UnknownCapsuleError)) {
-		p, err = crew.PickPlace(caps, busy, "") // it's gone: anywhere will do
+		p, err = crew.PreferFree(caps, busy, handedBack, "") // it's gone: anywhere will do
 	}
 	return p, err == nil
 }
@@ -850,8 +858,15 @@ func (m deckModel) crewSummary(dm deckMission) string {
 	var lines []string
 	for _, r := range m.reg.live(slug) {
 		line := m.crewBadge(r) + " " + r.harness + ui.Dim.Render(" in "+r.capsule)
-		if status, note := m.crewStatus(r); status != "" && note != "" {
+		status, note := m.crewStatus(r)
+		working, _ := r.activity()
+		switch {
+		case status != "" && note != "":
 			line += ": " + note
+		case r.reported == mission.ActivityPermission && r.notice != "":
+			line += ": " + r.notice
+		case !working && r.lastReply != "":
+			line += ui.Dim.Render(" · said: ") + replyLine(r.lastReply, 100)
 		}
 		lines = append(lines, line)
 	}
@@ -992,8 +1007,50 @@ func activityTick() tea.Cmd {
 // activity says whether crew is working (its screen changed recently) and
 // for how long it has been in that state's current stretch.
 func (r *deckCrewRun) activity() (working bool, since time.Duration) {
-	since = time.Since(r.term.LastChange())
-	return since < crewIdleAfter, since
+	still := time.Since(r.term.LastChange())
+	switch r.reported {
+	case mission.ActivityWorking:
+		// Working by its own account, unless its screen has been still a
+		// while: an approval prompt mid-turn, which not every agent
+		// reports (Cursor doesn't).
+		if still >= crewIdleAfter {
+			return false, still
+		}
+		return true, time.Since(r.reportedAt)
+	case mission.ActivityWaiting, mission.ActivityPermission:
+		return false, time.Since(r.reportedAt)
+	}
+	// No hooks: judge from the screen.
+	return still < crewIdleAfter, still
+}
+
+// syncActivity copies what each crew's agent last reported through its
+// hooks from the mission records onto the deck's runs.
+func (m *deckModel) syncActivity() {
+	for _, r := range m.reg.all() {
+		for _, dm := range m.data.Missions {
+			if dm.M.Slug != r.slug {
+				continue
+			}
+			if c, ok := crewRecord(dm.M, r.crewID); ok {
+				r.reported, r.lastReply, r.notice, r.reportedAt = c.Activity, c.LastReply, c.Notice, time.Time{}
+				if c.ActivityAt != nil {
+					r.reportedAt = *c.ActivityAt
+				}
+			}
+		}
+	}
+}
+
+// replyLine is the first line of what crew last said, short enough for a
+// status line.
+func replyLine(reply string, max int) string {
+	for _, l := range strings.Split(reply, "\n") {
+		if l = strings.TrimSpace(strings.TrimLeft(l, "#*->⏺ ")); l != "" {
+			return ansi.Truncate(l, max, "…")
+		}
+	}
+	return ""
 }
 
 // handleActivityTick notices crew that just went quiet and tells you, unless
@@ -1006,6 +1063,9 @@ func (m deckModel) handleActivityTick() (tea.Model, tea.Cmd) {
 		status, _ := m.crewStatus(r)
 		if r.wasWorking && !working && r != focused && status == "" {
 			msg := fmt.Sprintf("%s on %s is waiting for you", r.crewID, r.slug)
+			if said := replyLine(r.lastReply, 80); said != "" {
+				msg += ": " + said
+			}
 			m.flash = ui.Orange.Render("◐") + " " + msg
 			cmds = append(cmds, notifyCmd("ws deck: "+msg))
 		}
@@ -1166,6 +1226,9 @@ func (m deckModel) crewBadge(r *deckCrewRun) string {
 
 // activityBadge is how a crew's activity reads in the sidebar.
 func (r *deckCrewRun) activityBadge() string {
+	if r.reported == mission.ActivityPermission {
+		return ui.Orange.Render("?"+r.crewID) + ui.Dim.Render(" permission")
+	}
 	if working, _ := r.activity(); working {
 		return ui.Green.Render("●"+r.crewID) + ui.Dim.Render(" working")
 	}
