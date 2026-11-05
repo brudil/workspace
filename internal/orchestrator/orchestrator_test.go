@@ -109,3 +109,20 @@ func TestPrompt_AsksForANameWhileTitledWithTheRequest(t *testing.T) {
 		t.Error("asked to name a named mission")
 	}
 }
+
+func TestWritePrompt_OneLinePointingAtTheFile(t *testing.T) {
+	store := mission.Store{Root: t.TempDir()}
+	m, _ := store.Create("Cache")
+	prompt := strings.Repeat("a long\nmulti-line prompt\n", 5000)
+	line, err := WritePrompt(store, m.Slug, prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := PromptFile(store, m.Slug)
+	if strings.Contains(line, "\n") || len(line) > 300 || !strings.Contains(line, " "+path+" ") {
+		t.Errorf("line = %q", line)
+	}
+	if data, _ := os.ReadFile(path); string(data) != prompt {
+		t.Error("the file doesn't hold the prompt")
+	}
+}

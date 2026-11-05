@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -70,6 +71,24 @@ func Run(l harness.Launch, root, slug string) (string, error) {
 		err = fmt.Errorf("timed out after %s", Timeout)
 	}
 	return out.String(), err
+}
+
+// PromptFile is where a run's prompt is written for the agent to read.
+func PromptFile(store mission.Store, slug string) string {
+	return filepath.Join(store.Dir(), slug, "orchestrator-prompt.md")
+}
+
+// WritePrompt writes the prompt where the agent will read it, and returns
+// the one line that goes on the agent's command line instead. A long,
+// multi-line prompt passed as an argument gets cursor-agent killed (as it
+// did crew before their prompts were typed in), and could pass the
+// argument size limit; a file has neither problem.
+func WritePrompt(store mission.Store, slug, prompt string) (string, error) {
+	path := PromptFile(store, slug)
+	if err := os.WriteFile(path, []byte(prompt), 0o644); err != nil {
+		return "", err
+	}
+	return "You are the orchestrator for the ws mission " + slug + ". Read " + path + " first: it has your instructions and the mission's context. Then follow it.", nil
 }
 
 // Summary is what's logged of a run: the end of its final message, or why

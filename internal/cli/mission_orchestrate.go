@@ -70,13 +70,14 @@ you before it must flag you.`,
 			if err != nil {
 				return err
 			}
-			l, err := rv.Orchestrate(prompt, ctx.WS.Root, model)
-			if err != nil {
-				return err
-			}
 			if printPrompt {
+				l, err := rv.Orchestrate("<a line pointing at the prompt file>", ctx.WS.Root, model)
+				if err != nil {
+					return err
+				}
 				fmt.Println(prompt)
-				fmt.Fprintf(ui.Stderr, "  %s would run: %s\n", ui.Dim.Render("·"), strings.Join(append(l.Args[:len(l.Args)-1:len(l.Args)-1], "<prompt>"), " "))
+				fmt.Fprintf(ui.Stderr, "  %s would write that to %s and run: %s\n", ui.Dim.Render("·"),
+					orchestrator.PromptFile(store, m.Slug), strings.Join(l.Args, " "))
 				return nil
 			}
 
@@ -94,6 +95,14 @@ you before it must flag you.`,
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + model})
 			fmt.Fprintf(ui.Stderr, "  %s orchestrator looking at %s on %s with %s…\n", ui.Dim.Render("·"), what, m.Slug, model)
 
+			pointer, err := orchestrator.WritePrompt(store, m.Slug, prompt)
+			if err != nil {
+				return err
+			}
+			l, err := rv.Orchestrate(pointer, ctx.WS.Root, model)
+			if err != nil {
+				return err
+			}
 			out, runErr := orchestrator.Run(l, ctx.WS.Root, m.Slug)
 			summary := orchestrator.Summary(out, runErr)
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: summary})
