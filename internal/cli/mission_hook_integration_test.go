@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,8 +48,14 @@ func TestMissionHook_RecordsWhatCrewReport(t *testing.T) {
 	if c := crew(); c.Activity != mission.ActivityWorking || c.Status != "" || c.ActivityAt == nil {
 		t.Errorf("after a message: activity %q, status %q", c.Activity, c.Status)
 	}
-	hook(t, w, "reply", `{"text":"Stage two is in: hello.py prints hello.\nDetails…","hook_event_name":"afterAgentResponse"}`)
-	hook(t, w, "stop", `{"status":"completed","hook_event_name":"stop"}`)
+	// Cursor's final message is the last assistant entry in its transcript.
+	transcript := filepath.Join(t.TempDir(), "conv-77.jsonl")
+	os.WriteFile(transcript, []byte(`{"role":"user","message":{"content":[{"type":"text","text":"now stage two"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I'll look at the brief first."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Stage two is in: hello.py prints hello."},{"type":"text","text":"Details…"}]}}
+{"type":"turn_ended","status":"success"}
+`), 0o644)
+	hook(t, w, "stop", `{"status":"completed","hook_event_name":"stop","transcript_path":"`+transcript+`"}`)
 	if c := crew(); c.Activity != mission.ActivityWaiting || !strings.HasPrefix(c.LastReply, "Stage two is in") {
 		t.Errorf("after its turn: activity %q, reply %q", c.Activity, c.LastReply)
 	}

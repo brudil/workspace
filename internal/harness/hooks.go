@@ -76,23 +76,24 @@ func (c *Claude) HookArgs(cmd []string, dir string) ([]string, error) {
 //
 // VERIFIED (agent 2026.11.05): a plugin is a folder with
 // .cursor-plugin/plugin.json and hooks/hooks.json; sessionStart
-// (conversation_id), beforeSubmitPrompt, afterAgentResponse (text, the
-// turn's final message) and stop (status) fire from it with the session's
-// environment and the event as JSON on stdin. Cursor has no notification
-// for a permission prompt.
+// (conversation_id), beforeSubmitPrompt and stop (status, transcript_path)
+// fire from it with the session's environment and the event as JSON on
+// stdin. The turn's final message is the last assistant entry in the
+// transcript (JSON lines), read at stop: afterAgentResponse fires for every
+// message of a turn, and hooks finish out of order, so it can't say which
+// was last. Cursor has no notification for a permission prompt.
 //
 // VERIFIED: Cursor runs a plugin's hooks for an event only when one of your
 // own hooks files has a hook for that event too, and one whose command is a
 // path (a bare "true" doesn't count); sessionStart is the exception. So
-// without entries for beforeSubmitPrompt, afterAgentResponse and stop in
-// ~/.cursor/hooks.json, only sessionStart reaches ws. EnableCursorHooks adds
-// entries that do nothing (ws doctor --fix).
+// without entries for beforeSubmitPrompt and stop in ~/.cursor/hooks.json,
+// only sessionStart reaches ws. EnableCursorHooks adds entries that do
+// nothing (ws doctor --fix).
 func (c *Cursor) HookArgs(cmd []string, dir string) ([]string, error) {
 	hooks := map[string][]map[string]string{}
 	for event, ours := range map[string]string{
 		"sessionStart":       HookStart,
 		"beforeSubmitPrompt": HookPrompt,
-		"afterAgentResponse": HookReply,
 		"stop":               HookStop,
 	} {
 		hooks[event] = []map[string]string{{"command": hookCommand(cmd, ours)}}
@@ -148,7 +149,7 @@ func writeAtomically(path string, data []byte) error {
 
 // cursorTurnEvents are the events Cursor runs ws's plugin hooks for only if
 // ~/.cursor/hooks.json has a hook for them too.
-var cursorTurnEvents = []string{"beforeSubmitPrompt", "afterAgentResponse", "stop"}
+var cursorTurnEvents = []string{"beforeSubmitPrompt", "stop"}
 
 // cursorNoopCommand is a hook that does nothing, by path.
 const cursorNoopCommand = "/usr/bin/true"

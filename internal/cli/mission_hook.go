@@ -69,7 +69,11 @@ func hookFromEvent(event string, p map[string]any) (mission.Hook, bool) {
 	case harness.HookReply:
 		return mission.Hook{Reply: str("text")}, true
 	case harness.HookStop:
-		return mission.Hook{Activity: mission.ActivityWaiting, Reply: str("last_assistant_message")}, true
+		reply := str("last_assistant_message") // Claude Code says it
+		if reply == "" {
+			reply = lastAssistantText(str("transcript_path")) // Cursor's is in its transcript
+		}
+		return mission.Hook{Activity: mission.ActivityWaiting, Reply: reply}, true
 	case harness.HookNotify:
 		h := mission.Hook{Notice: str("message")}
 		if t := str("notification_type"); strings.Contains(t, "permission") || strings.Contains(t, "elicitation") {
@@ -78,4 +82,51 @@ func hookFromEvent(event string, p map[string]any) (mission.Hook, bool) {
 		return h, true
 	}
 	return mission.Hook{}, false
+}
+
+// transcriptTail is how much of a transcript's end is read for its last
+// message.
+const transcriptTail = 512 << 10
+
+// lastAssistantText is the last message the agent wrote in a transcript of
+// JSON lines (Cursor's: {"role":"assistant","message":{"content":[{"type":
+// "text","text":…}]}}), or "" if there's none to read.
+func lastAssistantText(path string) string {
+	if !strings.HasSuffix(path, ".jsonl") {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err == nil && info.Size() > transcriptTail {
+		f.Seek(info.Size()-transcriptTail, io.SeekStart)
+	}
+	data, _ := io.ReadAll(f)
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		var entry struct {
+			Role    string `json:"role"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(lines[i]), &entry) != nil || entry.Role != "assistant" {
+			continue
+		}
+		var parts []string
+		for _, c := range entry.Message.Content {
+			if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
+				parts = append(parts, c.Text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return ""
 }

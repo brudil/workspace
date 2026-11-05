@@ -403,7 +403,10 @@ func TestHookArgs(t *testing.T) {
 		Hooks   map[string][]struct{ Command string }
 	}
 	json.Unmarshal(data, &hooks)
-	for event, ours := range map[string]string{"sessionStart": HookStart, "beforeSubmitPrompt": HookPrompt, "afterAgentResponse": HookReply, "stop": HookStop} {
+	if _, ok := hooks.Hooks["afterAgentResponse"]; ok {
+		t.Error("cursor's afterAgentResponse fires for every message, out of order: the reply comes from the transcript at stop")
+	}
+	for event, ours := range map[string]string{"sessionStart": HookStart, "beforeSubmitPrompt": HookPrompt, "stop": HookStop} {
 		if h := hooks.Hooks[event]; hooks.Version != 1 || len(h) != 1 || !strings.HasSuffix(h[0].Command, "'/w s' "+ours) {
 			t.Errorf("cursor %s hook = %+v", event, h)
 		}
@@ -416,13 +419,13 @@ func TestEnableCursorHooks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	missing, err := CursorHooksMissing()
-	if err != nil || strings.Join(missing, ",") != "beforeSubmitPrompt,afterAgentResponse,stop" {
+	if err != nil || strings.Join(missing, ",") != "beforeSubmitPrompt,stop" {
 		t.Fatalf("no file: missing %v, %v", missing, err)
 	}
 	path := filepath.Join(home, ".cursor", "hooks.json")
 	os.MkdirAll(filepath.Dir(path), 0o755)
 	os.WriteFile(path, []byte(`{"version":1,"hooks":{"stop":[{"command":"/opt/mine/notify.sh"}],"beforeSubmitPrompt":[{"command":"true"}],"afterFileEdit":[{"command":"/opt/fmt.sh"}]},"extra":"kept"}`), 0o644)
-	if missing, _ := CursorHooksMissing(); strings.Join(missing, ",") != "beforeSubmitPrompt,afterAgentResponse" {
+	if missing, _ := CursorHooksMissing(); strings.Join(missing, ",") != "beforeSubmitPrompt" {
 		t.Errorf("your stop hook counts, a bare 'true' doesn't: missing %v", missing)
 	}
 	if err := EnableCursorHooks(); err != nil {
@@ -437,7 +440,7 @@ func TestEnableCursorHooks(t *testing.T) {
 			t.Errorf("hooks file lost or lacks %s:\n%s", want, data)
 		}
 	}
-	if strings.Count(string(data), "/usr/bin/true") != 2 {
+	if strings.Count(string(data), "/usr/bin/true") != 1 {
 		t.Errorf("added a no-op where your own stop hook already counts:\n%s", data)
 	}
 }
