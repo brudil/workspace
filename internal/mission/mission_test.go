@@ -613,3 +613,38 @@ func TestTitles_TerseAndNamed(t *testing.T) {
 		t.Error("a mission created with a title has no request to read as")
 	}
 }
+
+// A flag is a question with answers to pick from; answering it keeps the
+// question and answer for the orchestrator, clears the flag, and counts as
+// the user stepping in.
+func TestFlagOptionsAndAnswer(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	s.Create("Cache")
+	if _, err := s.AnswerFlag("cache", "yes"); !errors.Is(err, ErrNoFlag) {
+		t.Errorf("answering an unflagged mission: %v", err)
+	}
+	s.CountDispatch("cache", 5)
+	s.SetFlag("cache", "Commit and open PRs?", "orchestrator", "Commit both and open PRs", " ", "Leave them uncommitted")
+	m, _ := s.Load("cache")
+	if m.Flag == nil || strings.Join(m.Flag.Options, "|") != "Commit both and open PRs|Leave them uncommitted" {
+		t.Fatalf("flag = %+v", m.Flag)
+	}
+	a, err := s.AnswerFlag("cache", "  Commit both and open PRs ")
+	if err != nil || a.Question != "Commit and open PRs?" || a.Text != "Commit both and open PRs" {
+		t.Fatalf("answer = %+v, %v", a, err)
+	}
+	m, _ = s.Load("cache")
+	if m.Flag != nil || m.Answer == nil || m.Answer.Text != "Commit both and open PRs" || m.Dispatches != 0 {
+		t.Errorf("after answering: flag %+v, answer %+v, dispatches %d", m.Flag, m.Answer, m.Dispatches)
+	}
+	events, _ := s.ReadLog("cache", 0)
+	last := events[len(events)-1]
+	if last.Kind != EventFlagAnswered || last.Crew != "you" || last.Text != "Commit both and open PRs" {
+		t.Errorf("last event = %+v", last)
+	}
+	// A flag without options stays without.
+	s.SetFlag("cache", "Anything else?", "orchestrator")
+	if m, _ := s.Load("cache"); len(m.Flag.Options) != 0 {
+		t.Errorf("options carried over: %v", m.Flag.Options)
+	}
+}

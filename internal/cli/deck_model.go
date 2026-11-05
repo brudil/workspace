@@ -110,9 +110,13 @@ type deckModel struct {
 
 	mode        deckMode
 	newBriefing bool // the title input is asking for a briefing request
-	input       textinput.Model
-	pick        *deckPick
-	confirm     *deckConfirm
+	answering   bool // the title input is your answer to the selected mission's flag
+	// orchestratorOff is [orchestrator] enabled = false: answers to flags
+	// aren't handed to it.
+	orchestratorOff bool
+	input           textinput.Model
+	pick            *deckPick
+	confirm         *deckConfirm
 
 	flash string
 

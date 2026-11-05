@@ -27,7 +27,7 @@ func TestMissionStatus_GroupsByWhatYouNeedToDo(t *testing.T) {
 		{"archived", mission.Archived, nil, groupPast, "archived"},
 		{"flagged", mission.Active, func(m *mission.Mission, _ *deckMission) {
 			m.Flag = &mission.Proposal{Text: "CI is red", By: "orchestrator"}
-		}, groupNeedsYou, "! flagged"},
+		}, groupNeedsYou, "! asks you"},
 		{"crew queued", mission.Active, func(m *mission.Mission, _ *deckMission) {
 			m.Dispatch = &mission.Dispatch{Text: "implement it"}
 		}, groupNeedsYou, "→ next crew"},
@@ -119,7 +119,7 @@ func TestDeckOverview_NeedsYouAndRecent(t *testing.T) {
 	view := ansi.Strip(content)
 	for _, want := range []string{
 		"What do you want to do?",
-		"Cache tokens", "flagged by orchestrator: CI is red",
+		"Cache tokens", "the orchestrator asks: CI is red",
 		"orchestrator: CI needs fixing first.", "c1 ended (exit 0)",
 	} {
 		if !strings.Contains(view, want) {

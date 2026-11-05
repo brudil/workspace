@@ -794,12 +794,20 @@ func TestDeckSignals_AskNotifiesAndClearsOnInput(t *testing.T) {
 		t.Errorf("announced twice: %q", m.flash)
 	}
 
-	// Talking to the crew clears it.
+	// Sending the crew a message clears it; typing, moving around and
+	// scrolling (which a terminal may turn into arrow keys) don't.
 	m, _ = press(t, m, "tab")
-	next, clear := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	for _, k := range []tea.KeyPressMsg{{Code: 'y', Text: "y"}, {Code: tea.KeyUp}, {Code: tea.KeyLeft}} {
+		next, cmd := m.Update(k)
+		m = next.(deckModel)
+		if cmd != nil {
+			t.Fatalf("%s cleared the crew's ask before a message was sent", k)
+		}
+	}
+	next, clear := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(deckModel)
 	if clear == nil {
-		t.Fatal("typing to an asking crew didn't clear its status")
+		t.Fatal("sending a message to an asking crew didn't clear its status")
 	}
 	clear()
 	if got, _ := m.store.Load(slug); got.Crew[0].Status != "" {
@@ -938,7 +946,7 @@ func TestDeckProposals_ResumeWithAndFlag(t *testing.T) {
 	m, _ = reloadRecords(m)
 	m = selectMission(t, m, slug)
 	view := plainView(m)
-	for _, want := range []string{"! Needs you: CI is red (orchestrator)", "Suggested: resume c1 with: add a test for the error path"} {
+	for _, want := range []string{"! The orchestrator asks: CI is red", "Suggested: resume c1 with: add a test for the error path"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q:\n%s", want, view)
 		}

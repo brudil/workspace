@@ -175,7 +175,9 @@ func eventSentence(e mission.Event) (string, bool) {
 	case mission.EventArtifact:
 		return who + " added " + text, true
 	case mission.EventFlag:
-		return "flagged for you: " + text, true
+		return "asks you: " + text, true
+	case mission.EventFlagAnswered:
+		return "you answered: " + text, true
 	case mission.EventConclude:
 		return "suggested concluding: " + text, true
 	case mission.EventResumeWith:

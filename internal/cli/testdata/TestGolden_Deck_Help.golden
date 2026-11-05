@@ -1,13 +1,13 @@
   Deck
 
   j/k ↑/↓    Move through the overview, missions and their crew
-  ⏎          Launch crew (cursor) on the mission, or focus its live crew
+  ⏎          Launch crew (cursor) on the mission, focus its live crew, or answer its question
   L          Launch crew with a chosen harness
   R          Resume the mission's last crew conversation
   tab        Focus the mission's live crew terminal
   ctrl+g     In a crew terminal: then tab returns here, s hides the sidebar, S stops crew
   S          Stop the mission's live crew
-  F          Dismiss the flag, then any queued crew
+  F          Dismiss the orchestrator's question, then any queued crew
   M          Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)
   J/K        Scroll the main pane (also ctrl+d/u, mouse wheel)
   n          New mission: say what you want (⏎ on the overview too); a briefing agent (cursor) writes the brief and lifts capsules

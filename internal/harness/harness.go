@@ -115,7 +115,7 @@ func InitialPrompt(b Brief) string {
 	}
 	s.WriteString("If you notice something worth doing outside this mission, don't do it: run `ws mission new \"<what it is and why>\"` (plain text; it waits for the user to brief it) and mention it in one line.\n\n")
 	s.WriteString("Tell the user's deck where you are, so they know when you need them:\n")
-	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`.\n")
+	s.WriteString("- When you need a decision from the user, ask in your reply and also run `ws mission ask \"<the question>\"`, then wait for their answer: don't report done while a question is open.\n")
 	s.WriteString("- When you make something the next crew or the user will need (a proposal, an ADR, notes, a doc), record it as you go: `ws mission artifact add <file> --kind <proposal|adr|note|doc> \"<label>\"` (a file in a capsule, in a .ground, or in the mission's private files folder; or a URL). `ws mission show -f llm` lists the mission's artifacts with where to read each, the private files folder, and the records repo for shared proposals and ADRs, if the workspace has one.\n")
 	s.WriteString("- When your part is finished (PRs opened, if that's how this repo works), run `ws mission done \"<one-line summary>\"`. ws finds PRs from the mission's capsules itself.\n")
 	if brief := strings.TrimSpace(b.Brief); brief != "" {

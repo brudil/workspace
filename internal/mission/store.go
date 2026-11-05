@@ -739,8 +739,51 @@ func (s Store) SaveTranscript(slug, id, exit, text string) error {
 }
 
 // SetFlag marks the mission as needing the user ("" clears it).
-func (s Store) SetFlag(slug, text, by string) error {
-	return s.setProposal(slug, text, by, EventFlag, func(m *Mission) **Proposal { return &m.Flag })
+func (s Store) SetFlag(slug, text, by string, options ...string) error {
+	if err := s.setProposal(slug, text, by, EventFlag, func(m *Mission) **Proposal { return &m.Flag }); err != nil {
+		return err
+	}
+	var opts []string
+	for _, o := range options {
+		if o = strings.TrimSpace(o); o != "" {
+			opts = append(opts, o)
+		}
+	}
+	if strings.TrimSpace(text) == "" || len(opts) == 0 {
+		return nil
+	}
+	_, err := s.Update(slug, func(m *Mission) error {
+		if m.Flag != nil {
+			m.Flag.Options = opts
+		}
+		return nil
+	})
+	return err
+}
+
+// ErrNoFlag is returned when answering a mission nobody flagged.
+var ErrNoFlag = errors.New("nothing to answer: the mission isn't flagged")
+
+// AnswerFlag records the user's answer to the mission's flag: it keeps the
+// question and answer for the orchestrator's next run, clears the flag, and
+// counts as the user stepping in (the dispatch count starts again).
+func (s Store) AnswerFlag(slug, answer string) (Answer, error) {
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return Answer{}, errors.New("the answer is empty")
+	}
+	var a Answer
+	if _, err := s.Update(slug, func(m *Mission) error {
+		if m.Flag == nil {
+			return ErrNoFlag
+		}
+		a = Answer{Question: m.Flag.Text, Text: answer, At: now()}
+		m.Answer, m.Flag, m.Dispatches = &a, nil, 0
+		return nil
+	}); err != nil {
+		return Answer{}, err
+	}
+	return a, s.AppendLog(slug, Event{Kind: EventFlagAnswered, Crew: "you", Text: answer})
 }
 
 // SetConclude records a suggestion that the mission is finished ("" clears).

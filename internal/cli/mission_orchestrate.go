@@ -102,8 +102,11 @@ dispatched crew for you instead of launching them, and max_dispatches
 			}
 
 			what := "the mission"
-			if crewID != "" {
+			switch {
+			case crewID != "":
 				what = crewID + " (" + trigger + ")"
+			case trigger == "answer":
+				what = "your answer"
 			}
 			with := rv.Name() + " " + model
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + with})
@@ -126,7 +129,7 @@ dispatched crew for you instead of launching them, and max_dispatches
 	}
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&crewID, "crew", "", "the crew whose event prompted this")
-	cmd.Flags().StringVar(&trigger, "trigger", "manual", "what prompted the run: done, ended or manual")
+	cmd.Flags().StringVar(&trigger, "trigger", "manual", "what prompted the run: done, ended, answer (the user answered a flag) or manual")
 	cmd.Flags().StringVar(&model, "model", "", "model to use (default: [orchestrator] model, or the harness's own)")
 	cmd.Flags().BoolVar(&auto, "auto", false, "run as the deck's automatic run: honour [orchestrator] enabled, handle each crew event once")
 	cmd.Flags().BoolVar(&printPrompt, "print-prompt", false, "print the orchestrator's prompt and command instead of running it")

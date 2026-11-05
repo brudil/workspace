@@ -190,9 +190,15 @@ func raisedBy() string {
 func newMissionFlagCmd() *cobra.Command {
 	var slug string
 	var clear bool
+	var options []string
 	cmd := &cobra.Command{
-		Use:   "flag <why the user is needed>",
-		Short: "Mark a mission as needing the user, with why (shown in the deck)",
+		Use:   "flag <question for the user>",
+		Short: "Mark a mission as needing the user, with a question (and answers to pick from)",
+		Long: `Mark a mission as needing the user: the deck shows the question under
+Needs you, with any --option answers to pick from, and the user answers it
+there or with ws mission answer. The orchestrator then runs again with
+their answer and acts on it. Give each option as a short instruction you'd
+act on ("Commit both and open PRs"); the user can always write their own.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if !clear && len(args) == 0 {
 				return errors.New("say why the user is needed")
@@ -213,7 +219,7 @@ func newMissionFlagCmd() *cobra.Command {
 				text = ""
 			}
 			store := missionStore(ctx)
-			if err := store.SetFlag(m.Slug, text, raisedBy()); err != nil {
+			if err := store.SetFlag(m.Slug, text, raisedBy(), options...); err != nil {
 				return err
 			}
 			if clear && raisedBy() == "you" {
@@ -229,7 +235,51 @@ func newMissionFlagCmd() *cobra.Command {
 	}
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().BoolVar(&clear, "clear", false, "remove the flag")
+	cmd.Flags().StringArrayVar(&options, "option", nil, "an answer the user can pick (repeatable)")
 	return cmd
+}
+
+func newMissionAnswerCmd() *cobra.Command {
+	var slug string
+	cmd := &cobra.Command{
+		Use:   "answer <your answer>",
+		Short: "Answer the question a mission is flagged with; the orchestrator acts on it",
+		Long: `Answer the question the orchestrator flagged a mission with (the deck does
+this with ⏎ on the mission). The flag clears, your answer goes in the log,
+and the orchestrator runs again with it, to dispatch crew, resume one, or
+conclude as you said.`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if raisedBy() != "you" {
+				return errors.New("only the user answers a flag; crew and the orchestrator ask with ws mission ask or flag")
+			}
+			ctx, err := LoadContext()
+			if err != nil {
+				return err
+			}
+			m, err := resolveMission(ctx, slug)
+			if err != nil {
+				return err
+			}
+			if _, err := missionStore(ctx).AnswerFlag(m.Slug, strings.Join(args, " ")); err != nil {
+				return err
+			}
+			fmt.Fprintf(ui.Stderr, "  %s answered on %s; %s\n", ui.Green.Render("✓"), m.Slug, afterAnswer(ctx, m.Slug))
+			return nil
+		},
+	}
+	addMissionFlag(cmd, &slug)
+	return cmd
+}
+
+// afterAnswer hands a flag's answer to the orchestrator, and says what
+// happens next.
+func afterAnswer(ctx *Context, slug string) string {
+	if !ctx.Config.OrchestratorEnabled() {
+		return "the orchestrator is off ([orchestrator] enabled = false), so act on it yourself"
+	}
+	orchestrateSpawner(ctx.WS.Root, slug, "", "answer")
+	return "the orchestrator is acting on it"
 }
 
 func newMissionResumeWithCmd() *cobra.Command {

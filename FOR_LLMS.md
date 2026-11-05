@@ -65,7 +65,7 @@ Use this to orient yourself before starting work.
 - A mission can span several capsules across repos. You may work in any capsule of your mission, but don't touch capsules outside it.
 - Create new capsules with `ws lift`. With `WS_MISSION` set, they join the mission automatically.
 - Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
-- When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it.
+- When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it, then wait for their answer: don't report done while a question is open.
 - If you notice something worth doing that's outside your mission, don't do it: run `ws mission new "<what it is and why>"` (plain text) and mention it in one line. It waits for the user to brief it, and records that it came from your mission.
 - If you were dispatched with a handoff, do that part only. If the brief describes stages for separate crew, do only the first one not yet done.
 - Record what you make that the next crew or the user will need (a proposal, an ADR, notes, a doc) with `ws mission artifact add <file|url> --kind <proposal|adr|note|doc> "<label>"`. A file can be in one of the mission's capsules, a `.ground`, or the mission's private files folder (`ws mission show -f llm` names it, and the records repo for shared proposals and ADRs if there is one). It lists every artifact with where to read it.

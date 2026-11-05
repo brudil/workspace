@@ -128,8 +128,12 @@ type Mission struct {
 	From     string    `toml:"from,omitempty"`
 	Capsules []Capsule `toml:"capsules,omitempty"`
 	Crew     []Crew    `toml:"crew,omitempty"`
-	// Flag marks the mission as needing the user, with why (ws mission flag).
+	// Flag marks the mission as needing the user, with why (ws mission flag):
+	// a question for them, with the answers it suggests.
 	Flag *Proposal `toml:"flag,omitempty"`
+	// Answer is the user's answer to the last flag (ws mission answer, or
+	// from the deck), which the orchestrator's next run acts on.
+	Answer *Answer `toml:"answer,omitempty"`
 	// Conclude is a suggestion that the mission is finished (ws mission
 	// conclude); archiving it is the user's call.
 	Conclude *Proposal `toml:"conclude,omitempty"`
@@ -150,6 +154,17 @@ type Proposal struct {
 	Text string    `toml:"text"`
 	By   string    `toml:"by,omitempty"`
 	At   time.Time `toml:"at"`
+	// Options are the answers a flag suggests, so the user can answer
+	// with one key (they can always write their own).
+	Options []string `toml:"options,omitempty"`
+}
+
+// Answer is the user's answer to a flag: what was asked, and what they
+// said.
+type Answer struct {
+	Question string    `toml:"question"`
+	Text     string    `toml:"text"`
+	At       time.Time `toml:"at"`
 }
 
 // Dispatch is new crew to launch on a mission, with the handoff it starts

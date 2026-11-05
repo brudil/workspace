@@ -25,6 +25,9 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deckLaunchChoiceMsg:
 		return m.handleLaunchChoice(msg)
 
+	case deckFlagChoiceMsg:
+		return m.handleFlagChoice(msg)
+
 	case deckZoomDoneMsg:
 		return m.handleZoomDone(msg)
 
@@ -45,8 +48,8 @@ func (m deckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		if r, ok := m.focusedRun(); ok && m.mode == deckModeNormal {
 			r.scroll = 0
-			r.term.Paste(msg.Content)
-			return m, m.clearStatusCmd(r)
+			r.term.Paste(msg.Content) // sent with enter, which clears what the crew said
+			return m, nil
 		}
 
 	case deckLoadedMsg:
@@ -271,7 +274,7 @@ func (m *deckModel) moveCursor(delta int) {
 func (m deckModel) handleTitleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.mode = deckModeNormal
+		m.mode, m.answering = deckModeNormal, false
 		m.input.Blur()
 		return m, nil
 	case "enter":
@@ -279,6 +282,14 @@ func (m deckModel) handleTitleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = deckModeNormal
 		m.input.Blur()
 		if title == "" {
+			m.answering = false
+			return m, nil
+		}
+		if m.answering {
+			m.answering = false
+			if dm, ok := m.selectedMission(); ok && dm.M.Flag != nil {
+				return m, m.answerFlag(dm.M.Slug, title)
+			}
 			return m, nil
 		}
 		if m.newBriefing {

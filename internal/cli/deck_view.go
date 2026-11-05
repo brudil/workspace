@@ -120,6 +120,9 @@ func (m deckModel) renderFooter() string {
 		if m.newBriefing && m.onOverview() {
 			return ui.Dim.Render(" ⏎ start it · esc cancel") // the field is on the overview
 		}
+		if m.answering {
+			return " " + ui.Bold.Render("Your answer:") + " " + m.input.View()
+		}
 		if m.newBriefing {
 			return " " + ui.Bold.Render("What do you want to do?") + " " + m.input.View()
 		}
@@ -234,17 +237,25 @@ func (m deckModel) renderMission(dm deckMission, indent string, inner int) strin
 		b.WriteString(indent + ui.Dim.Render("Raised from: "+dm.M.From) + "\n")
 	}
 	if f := dm.M.Flag; f != nil {
-		b.WriteString("\n" + indent + ui.Orange.Render("! Needs you: ") + f.Text + ui.Dim.Render(" ("+f.By+") · F dismisses") + "\n")
+		who := "The orchestrator asks"
+		if f.By != "orchestrator" {
+			who = f.By + " asks"
+		}
+		b.WriteString("\n" + wrapUnder(indent, ui.Orange.Render("! "+who+": "), f.Text, inner))
+		for i, o := range f.Options {
+			b.WriteString(wrapUnder(indent, "    "+ui.Dim.Render(fmt.Sprintf("%d.", i+1))+" ", o, inner))
+		}
+		b.WriteString(indent + ui.Dim.Render("  ⏎ answer · F dismiss") + "\n")
 	}
 	if d := dm.M.Dispatch; d != nil {
 		where := ""
 		if d.Capsule != "" {
 			where = " in " + d.Capsule
 		}
-		b.WriteString("\n" + indent + ui.Orange.Render("→ Next"+where+": ") + d.Text + ui.Dim.Render(" ("+d.By+")") + "\n")
+		b.WriteString("\n" + wrapUnder(indent, ui.Orange.Render("→ Next"+where+": "), d.Text+ui.Dim.Render(" ("+d.By+")"), inner))
 	}
 	if c := dm.M.Conclude; c != nil && dm.State != mission.Archived {
-		b.WriteString("\n" + indent + ui.Green.Render("✓ Suggested conclusion: ") + c.Text + ui.Dim.Render(" ("+c.By+") · x archives") + "\n")
+		b.WriteString("\n" + wrapUnder(indent, ui.Green.Render("✓ Suggested conclusion: "), c.Text+ui.Dim.Render(" ("+c.By+") · x archives"), inner))
 	}
 
 	b.WriteString("\n" + indent + ui.Bold.Render("Capsules") + "\n")
@@ -316,13 +327,31 @@ func prStateOf(pr *github.PR) mission.PRState {
 }
 
 func (m deckModel) renderPick(indent string) string {
+	width := max(m.mainWidth()-2*len(indent), 20)
 	var b strings.Builder
-	b.WriteString("\n" + indent + ui.Bold.Render(m.pick.title) + "\n\n")
+	b.WriteString("\n" + wrapUnder(indent, "", ui.Bold.Render(m.pick.title), width) + "\n")
 	for i, item := range m.pick.items {
 		if i == m.pick.cursor {
-			b.WriteString(indent + ui.Orange.Render("▸ ") + ui.Bold.Render(item) + "\n")
+			b.WriteString(wrapUnder(indent, ui.Orange.Render("▸ "), ui.Bold.Render(item), width))
 		} else {
-			b.WriteString(indent + "  " + item + "\n")
+			b.WriteString(wrapUnder(indent, "  ", item, width))
+		}
+	}
+	return b.String()
+}
+
+// wrapUnder writes lead then text, word-wrapped to width, with every line
+// after the first indented to start under the text: a question or answer
+// is read whole, not cut off at the pane's edge.
+func wrapUnder(indent, lead, text string, width int) string {
+	leadW := ansi.StringWidth(lead)
+	lines := strings.Split(ansi.Wordwrap(text, max(width-leadW, 20), ""), "\n")
+	var b strings.Builder
+	for i, l := range lines {
+		if i == 0 {
+			b.WriteString(indent + lead + l + "\n")
+		} else {
+			b.WriteString(indent + strings.Repeat(" ", leadW) + l + "\n")
 		}
 	}
 	return b.String()
@@ -512,13 +541,13 @@ func (m deckModel) sidebarRowAt(x, y int) (int, bool) {
 func (m deckModel) renderHelp() string {
 	help := []struct{ key, desc string }{
 		{"j/k ↑/↓", "Move through the overview, missions and their crew"},
-		{"⏎", "Launch crew (" + m.roles.ForCrew().Harness + ") on the mission, or focus its live crew"},
+		{"⏎", "Launch crew (" + m.roles.ForCrew().Harness + ") on the mission, focus its live crew, or answer its question"},
 		{"L", "Launch crew with a chosen harness"},
 		{"R", "Resume the mission's last crew conversation"},
 		{"tab", "Focus the mission's live crew terminal"},
 		{deckPrefixKey, "In a crew terminal: then tab returns here, s hides the sidebar, S stops crew"},
 		{"S", "Stop the mission's live crew"},
-		{"F", "Dismiss the flag, then any queued crew"},
+		{"F", "Dismiss the orchestrator's question, then any queued crew"},
 		{"M", "Mouse: let the terminal select text and open links without Shift (the wheel won't scroll; again: the deck takes the mouse back)"},
 		{"J/K", "Scroll the main pane (also ctrl+d/u, mouse wheel)"},
 		{"n", "New mission: say what you want (⏎ on the overview too); a briefing agent (" + m.roles.ForBriefing().Harness + ") writes the brief and lifts capsules"},

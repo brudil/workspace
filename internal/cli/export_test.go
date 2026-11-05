@@ -53,3 +53,14 @@ func (h *keepRunningHost) Running(skip func(key string) bool) []crew.Hosted {
 }
 
 func (h *keepRunningHost) Leave() {}
+
+// CaptureOrchestratorRuns records the orchestrator runs ws would spawn, as
+// slug/crew/trigger, instead of spawning them.
+func CaptureOrchestratorRuns() (*[]string, func()) {
+	old := orchestrateSpawner
+	var runs []string
+	orchestrateSpawner = func(root, slug, crewID, trigger string) {
+		runs = append(runs, slug+"/"+crewID+"/"+trigger)
+	}
+	return &runs, func() { orchestrateSpawner = old }
+}

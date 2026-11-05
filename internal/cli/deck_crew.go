@@ -294,6 +294,16 @@ func (m deckModel) launchOrOffer() (tea.Model, tea.Cmd) {
 		m.focusRun(runs[len(runs)-1])
 		return m, nil
 	}
+	// The orchestrator asked you something: ⏎ answers it.
+	if dm.M.Flag != nil {
+		return m.offerAnswers(dm)
+	}
+	return m.launchOrOfferCrew(dm)
+}
+
+// launchOrOfferCrew launches the queued crew, or new crew, or asks whether
+// to resume the mission's last crew instead.
+func (m deckModel) launchOrOfferCrew(dm *deckMission) (tea.Model, tea.Cmd) {
 	// The orchestrator queued crew for you to launch: ⏎ launches it.
 	if dm.M.Dispatch != nil {
 		return m.startDispatch()
@@ -612,7 +622,12 @@ func (m deckModel) handleTermKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		r.scroll = 0
 		r.term.SendKey(uv.KeyPressEvent(msg))
-		return m, m.clearStatusCmd(r)
+		// What crew said (asking, done) stands until you send it a message:
+		// moving around, typing or pasting doesn't count, enter does.
+		if msg.String() == "enter" {
+			return m, m.clearStatusCmd(r)
+		}
+		return m, nil
 	}
 
 	m.prefix = false
@@ -856,6 +871,9 @@ func (m deckModel) crewSummary(dm deckMission) string {
 	}
 	if dm.M.Dispatch != nil {
 		hint = "⏎ launch the queued crew · F dismiss it · L choose harness"
+	}
+	if dm.M.Flag != nil {
+		hint = "⏎ answer the orchestrator's question · F dismiss it · L choose harness"
 	}
 	briefedLast := last != nil && last.role == mission.RoleBriefing && dm.M.State != mission.Briefing
 	switch {

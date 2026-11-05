@@ -61,7 +61,7 @@ func (m deckModel) missionStatus(dm *deckMission) deckStatus {
 		}
 	}
 	if f := dm.M.Flag; f != nil {
-		need(1, ui.Orange.Render("! flagged"), "flagged by "+f.By+": "+f.Text)
+		need(1, ui.Orange.Render("! asks you"), "the orchestrator asks: "+f.Text)
 	}
 	if d := dm.M.Dispatch; d != nil {
 		need(2, ui.Orange.Render("→ next crew"), "next crew is queued: "+d.Text)
