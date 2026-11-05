@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/brudil/workspace/internal/ui"
@@ -158,14 +159,19 @@ func runRg(cmd *cobra.Command, args []string) error {
 	}
 	rgArgs = append(rgArgs, rewriteGlobs(rest, prefixes)...)
 	for _, r := range roots {
-		rgArgs = append(rgArgs, r.Path)
+		rgArgs = append(rgArgs, physicalPath(r.Path))
 	}
 
 	// Run from the workspace root: ripgrep matches slash-containing globs
 	// against paths relative to its cwd, so the rewritten globs only line up
 	// from there. Roots are absolute so output paths are absolute.
+	//
+	// Both are spelled physically. ripgrep finds its cwd with getcwd, which
+	// resolves symlinks, and only strips that exact prefix from a root before
+	// matching globs: a workspace reached through a symlink (/tmp or /var on
+	// macOS, a linked home folder) otherwise matched no slash glob at all.
 	c := exec.Command(rgPath, rgArgs...)
-	c.Dir = ctx.WS.Root
+	c.Dir = physicalPath(ctx.WS.Root)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -408,4 +414,12 @@ func completeRgArgs(cmd *cobra.Command, args []string, toComplete string) ([]str
 		out = append(out, prefix+n)
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// physicalPath is p with symlinks resolved, or p itself if it can't be.
+func physicalPath(p string) string {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	return p
 }

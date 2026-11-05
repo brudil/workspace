@@ -135,6 +135,19 @@ print -r -- "physical=$(command pwd -P 2>/dev/null)"
 	return res
 }
 
+// sameDir reports whether two paths name the same directory, however
+// they're spelled. getcwd resolves symlinks, so on macOS a shell standing
+// in a /var/... temp workspace reports /private/var/....
+func sameDir(a, b string) bool {
+	if ra, err := filepath.EvalSymlinks(a); err == nil {
+		a = ra
+	}
+	if rb, err := filepath.EvalSymlinks(b); err == nil {
+		b = rb
+	}
+	return a == b
+}
+
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 func quoteAll(args []string) string {
@@ -172,13 +185,13 @@ func TestWrapperBurn_FromInsideCapsule_LandsAtRoot(t *testing.T) {
 	// runs, not repositioned afterwards. Anything else leaves it standing in a
 	// deleted directory for the length of the removal, which is what gets the
 	// shell killed.
-	if res.during != w.Root {
+	if !sameDir(res.during, w.Root) {
 		t.Errorf("shell cwd during burn = %q, want workspace root %q", res.during, w.Root)
 	}
 	if res.pwd != w.Root {
 		t.Errorf("shell pwd = %q, want workspace root %q", res.pwd, w.Root)
 	}
-	if res.physical != w.Root {
+	if !sameDir(res.physical, w.Root) {
 		t.Errorf("shell is not in a live directory: getcwd = %q, want %q", res.physical, w.Root)
 	}
 }
@@ -200,13 +213,13 @@ func TestWrapperBurn_OtherCapsule_StaysPut(t *testing.T) {
 	if res.status != "0" {
 		t.Fatalf("burn exited %s\nstderr: %s", res.status, res.stderr)
 	}
-	if res.during != w.Root {
+	if !sameDir(res.during, w.Root) {
 		t.Errorf("shell cwd during burn = %q, want workspace root %q", res.during, w.Root)
 	}
 	if res.pwd != stay {
 		t.Errorf("shell pwd = %q, want %q — burning another capsule should not move the shell", res.pwd, stay)
 	}
-	if res.physical != stay {
+	if !sameDir(res.physical, stay) {
 		t.Errorf("getcwd = %q, want %q", res.physical, stay)
 	}
 }
@@ -232,7 +245,7 @@ func TestWrapperBurn_InfersRepoFromShellDir(t *testing.T) {
 	if _, err := os.Stat(wtDir); !os.IsNotExist(err) {
 		t.Errorf("capsule not removed, stat err = %v", err)
 	}
-	if res.physical != w.Root {
+	if !sameDir(res.physical, w.Root) {
 		t.Errorf("getcwd = %q, want %q", res.physical, w.Root)
 	}
 }

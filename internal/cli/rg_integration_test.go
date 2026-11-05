@@ -156,10 +156,11 @@ func TestRg_SearchesOneTreePerRepo(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("got %d lines, want 2:\n%s", len(lines), res.Stdout)
 	}
-	if !strings.HasPrefix(lines[0], filepath.Join(w.Root, "repos", "backend", ".ground", "src", "main.go")+":") {
+	root := physicalRoot(t, w.Root)
+	if !strings.HasPrefix(lines[0], filepath.Join(root, "repos", "backend", ".ground", "src", "main.go")+":") {
 		t.Errorf("line 0 = %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], filepath.Join(w.Root, "repos", "frontend", "login-fix", "src", "app.ts")+":") {
+	if !strings.HasPrefix(lines[1], filepath.Join(root, "repos", "frontend", "login-fix", "src", "app.ts")+":") {
 		t.Errorf("line 1 = %q", lines[1])
 	}
 	if !strings.Contains(lines[1], "frontend capsule") {
@@ -179,10 +180,23 @@ func TestRg_SlashGlobIsAnchoredPerRoot(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("rg: %v\nstderr: %s", res.Err, res.Stderr)
 	}
-	want := filepath.Join(w.Root, "repos", "frontend", ".ground", "src", "app.ts") + "\n"
+	want := filepath.Join(physicalRoot(t, w.Root), "repos", "frontend", ".ground", "src", "app.ts") + "\n"
 	if res.Stdout != want {
 		t.Errorf("stdout = %q, want %q", res.Stdout, want)
 	}
+}
+
+// physicalRoot is the workspace root with symlinks resolved, the way ws rg
+// hands paths to ripgrep (so they show in its output). On macOS a temp
+// workspace is under /var, a symlink to /private/var: searching it by its
+// /var spelling is what used to make every slash glob match nothing.
+func physicalRoot(t *testing.T, root string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
 }
 
 func TestRg_NoMatchPassesExitCodeOne(t *testing.T) {
