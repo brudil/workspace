@@ -159,3 +159,19 @@ func TestPrompt_HandoffAndTail(t *testing.T) {
 		t.Errorf("only %d bytes of output without a handoff", n)
 	}
 }
+
+// The orchestrator is told the stages' progress and which stage the crew
+// was on, and can accept it.
+func TestPrompt_Stages(t *testing.T) {
+	m := &mission.Mission{Slug: "cache", Title: "Cache"}
+	p := Prompt(Input{Mission: m, CrewID: "c2", Trigger: "done", CrewStage: "1 of 2: Write the proposal",
+		Stages: []string{"1. [current] Write the proposal (crew c2)", "2. [to do] Implement it"}})
+	for _, want := range []string{"It was working on stage 1 of 2: Write the proposal", "## Stage progress", "- 1. [current] Write the proposal (crew c2)", `ws mission accept "<why`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+	if strings.Contains(Prompt(Input{Mission: m}), "## Stage progress") {
+		t.Error("stage progress shown with no stages")
+	}
+}

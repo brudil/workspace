@@ -176,6 +176,9 @@ type Mission struct {
 	// a default branch, in a capsule, or private to the mission), PRs and
 	// issues, and links. Capsules' own PRs are found, not recorded.
 	Artifacts []Artifact `toml:"artifacts,omitempty"`
+	// Stages is the progress of the brief's stages (stages.go): the plan
+	// itself is the brief's.
+	Stages []StageRecord `toml:"stages,omitempty"`
 }
 
 // Proposal is something raised for the user: why, who by, when.
@@ -206,6 +209,9 @@ type Dispatch struct {
 	Harness string    `toml:"harness,omitempty"`
 	By      string    `toml:"by,omitempty"`
 	At      time.Time `toml:"at"`
+	// Stage is the stage of the brief's plan it's for (from 1); 0 for
+	// whichever is current when it's launched.
+	Stage int `toml:"stage,omitempty"`
 }
 
 // Artifact points at something a mission produced or relies on. Ref says

@@ -420,8 +420,8 @@ ws mission conclude "Cache shipped and documented" \
 
 **Build order.** Each step works on its own:
 
-1. Parse stages and record progress, shown in `ws mission show -f llm`, the orchestrator's prompt and the deck. Nothing acts on them yet.
-2. `ws mission accept`, the check-in flags, and ws dispatching the next stage.
+1. **Built.** Parse stages and record progress, shown in `ws mission show`, the orchestrator's prompt and the deck's Summary (the rest of phase 8); crew join the current stage (or `dispatch --stage n`) and are told which; `ws mission accept`, for the orchestrator and you, since without it the current stage could never move on. The orchestrator still decides what follows an accept, check-ins included.
+2. ws acting on stages: the check-in flags, ws dispatching the next stage, ws handling check-in answers, and asking you to accept with the orchestrator off.
 3. Acceptance checking on `conclude`.
 
 **Not in this phase:** waiting for a stage's PR to merge before the next starts (a check-in flags when the stage is accepted; you answer *Go on* once it has merged), stages that run side by side, and the orchestrator proposing edits to the brief itself.

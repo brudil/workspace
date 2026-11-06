@@ -25,6 +25,9 @@ func (handoffHarness) Name() string     { return "handoff" }
 func (handoffHarness) Available() error { return nil }
 func (h handoffHarness) Start(b harness.Brief) (harness.Launch, error) {
 	prompt := "dispatch: " + b.Dispatch
+	if b.Stage != "" {
+		prompt += " | stage " + strconv.Itoa(b.StageN) + " of " + strconv.Itoa(b.StageOf) + ": " + b.Stage
+	}
 	if b.LeftOff != "" { // on the one line the crew reads
 		prompt += " | " + strings.ReplaceAll(b.LeftOff, "\n", " / ")
 	}

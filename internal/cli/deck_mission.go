@@ -115,6 +115,9 @@ func (m deckModel) renderMissionSummary(dm deckMission, indent string, inner int
 	if goal := briefGoal(dm.Brief); goal != "" {
 		b.WriteString(summarySection(indent, "Goal", inner, goal+ui.Dim.Render(" · 2 for the brief")))
 	}
+	if lines := m.stageSummary(dm); len(lines) > 0 {
+		b.WriteString(summarySection(indent, "Stages", inner, lines...))
+	}
 	var crewLines []string
 	for _, l := range strings.Split(m.crewSummary(dm), "\n") {
 		crewLines = append(crewLines, strings.TrimLeft(l, " "))
@@ -310,4 +313,38 @@ func (m deckModel) renderMissionLog(dm deckMission, indent string, inner int) st
 		}
 	}
 	return b.String()
+}
+
+// stageSummary is the brief's stages with their progress, a line each:
+// accepted, current (with its crew), still to come. None when the brief
+// lists no stages.
+func (m deckModel) stageSummary(dm deckMission) []string {
+	states, _ := dm.M.StageProgress(dm.Brief)
+	if len(states) == 1 && states[0].Implicit {
+		return nil
+	}
+	var lines []string
+	for _, st := range states {
+		title := fmt.Sprintf("%d %s", st.N, oneLine(strings.ReplaceAll(st.Title(), "`", "")))
+		var facts []string
+		if st.Record != nil && len(st.Record.Crew) > 0 {
+			facts = append(facts, strings.Join(st.Record.Crew, ", "))
+		}
+		if st.CheckIn && !st.Accepted() {
+			facts = append(facts, "check in after")
+		}
+		extra := ""
+		if len(facts) > 0 {
+			extra = ui.Dim.Render(" · " + strings.Join(facts, " · "))
+		}
+		switch {
+		case st.Accepted():
+			lines = append(lines, ui.Green.Render("✓ ")+title+extra)
+		case st.Current:
+			lines = append(lines, ui.Orange.Render("▸ ")+ui.Bold.Render(title)+extra)
+		default:
+			lines = append(lines, ui.Dim.Render("· "+title)+extra)
+		}
+	}
+	return lines
 }

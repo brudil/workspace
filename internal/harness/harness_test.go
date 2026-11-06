@@ -462,3 +462,19 @@ func TestWorkPrompt_HandoffsInAndOut(t *testing.T) {
 		t.Error("left off shown with no handoffs")
 	}
 }
+
+// Crew on a staged brief are told their stage and to do only that.
+func TestWorkPrompt_Stage(t *testing.T) {
+	p := InitialPrompt(Brief{Slug: "m", Title: "M", Stage: "Implement it in `api/cache`.", StageN: 2, StageOf: 3})
+	for _, want := range []string{"plan has 3 stages", "You're on stage 2:", "Implement it in `api/cache`.", "Do that stage only"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt missing %q:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "first stage not yet done") {
+		t.Error("told to find its own stage")
+	}
+	if b := InitialPrompt(Brief{Slug: "b", Role: "briefing", Request: "x"}); !strings.Contains(b, "`repo/name` in backticks") || !strings.Contains(b, "Check in with me.") {
+		t.Errorf("briefing prompt doesn't teach the stage format:\n%s", b)
+	}
+}

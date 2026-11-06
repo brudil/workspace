@@ -164,6 +164,11 @@ func orchestratorInput(ctx *Context, m *mission.Mission, crewID, trigger string)
 	if crewID != "" {
 		in.Output = orchestrator.CrewOutput(ctx.WS.Root, store, m.Slug, crewID)
 	}
+	in.Stages = stageLines(m, brief)
+	states, _ := m.StageProgress(brief)
+	if st, ok := mission.StageFor(states, crewID); ok && crewID != "" && !st.Implicit {
+		in.CrewStage = fmt.Sprintf("%d of %d: %s", st.N, len(states), oneLine(st.Text))
+	}
 	// Crew that reported done left a handoff: it says what they did and
 	// learned better than the end of their output.
 	if c, ok := crewRecord(m, crewID); ok && trigger == "done" && c.HandedOff != nil {

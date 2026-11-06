@@ -24,6 +24,7 @@ func newMissionDispatchCmd() *cobra.Command {
 	var slug, capsule, harnessName string
 	var queue bool
 	var reads []string
+	var stage int
 	cmd := &cobra.Command{
 		Use:   "dispatch <what to do>",
 		Short: "Start new crew on a mission's next piece of work",
@@ -58,6 +59,11 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			if m.State == mission.Briefing {
 				return fmt.Errorf("mission %s is still being briefed", m.Slug)
 			}
+			brief, _ := missionStore(ctx).ReadBrief(m.Slug)
+			stages, _ := m.StageProgress(brief)
+			if _, err := mission.PickStage(stages, stage); err != nil {
+				return err
+			}
 			dispatch := strings.TrimSpace(strings.Join(args, " "))
 			if len(reads) > 0 {
 				list, err := readFirstList(ctx, m, reads)
@@ -85,7 +91,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			store := missionStore(ctx)
 
 			if queued {
-				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: dispatch, Capsule: place.Capsule, Harness: harnessName, By: by}); err != nil {
+				if err := store.QueueDispatch(m.Slug, &mission.Dispatch{Text: dispatch, Capsule: place.Capsule, Harness: harnessName, By: by, Stage: stage}); err != nil {
 					if errors.Is(err, mission.ErrDispatchQueued) {
 						return fmt.Errorf("%w; only one waits at a time, so don't queue another: say what you'd dispatch next in ws mission note, or ws mission flag the user", err)
 					}
@@ -111,15 +117,17 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 			} else {
 				store.UserActed(m.Slug)
 			}
-			brief, _ := store.ReadBrief(m.Slug)
 			b := harness.Brief{Slug: m.Slug, Title: m.Title, Brief: brief, Dir: place.Dir, Dispatch: dispatch,
 				LeftOff: leftOff(ctx.WS, store, m, place.Capsule), Model: crewPick.ModelFor(h.Name())}
+			if err := briefStage(&b, m, brief, stage); err != nil {
+				return err
+			}
 			host := dispatchHost(ctx.WS.Root)
 			defer host.Leave()
 			endHandedBack(ctx.WS.Root, store, host, m, place.Capsule)
 			started, err := crew.Start(crew.Request{
 				Store: store, Host: host, Root: ctx.WS.Root,
-				Slug: m.Slug, Harness: h.Name(), Place: place, Dispatch: dispatch, By: by,
+				Slug: m.Slug, Harness: h.Name(), Place: place, Dispatch: dispatch, By: by, Stage: stage,
 				Width: dispatchWidth, Height: dispatchHeight,
 				Prepare: func() (harness.Launch, error) { return h.Start(b) },
 			})
@@ -145,6 +153,7 @@ mission (launching crew, dismissing a flag) starts the count again.`,
 	cmd.Flags().StringVar(&capsule, "capsule", "", "capsule to work in, as repo/name (default: one no crew is working in)")
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to launch (default: the crew's: $WS_DECK_HARNESS, [crew] harness, or cursor)")
 	cmd.Flags().StringArrayVar(&reads, "read", nil, "an artifact the crew should read first (repeatable): its reference, a file, or a URL; ws tells the crew where to read it")
+	cmd.Flags().IntVar(&stage, "stage", 0, "the stage of the brief's plan it's for (default: the current one, the first not accepted)")
 	cmd.Flags().BoolVar(&queue, "queue", false, "queue it for the user to launch from the deck instead of launching now")
 	return cmd
 }

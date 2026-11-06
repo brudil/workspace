@@ -28,6 +28,9 @@ type Request struct {
 	// Dispatch, when set, is what the crew was dispatched to do, and By who
 	// dispatched it.
 	Dispatch, By string
+	// Stage is the stage of the brief's plan work crew are for (from 1), or
+	// 0 for the current one.
+	Stage int
 
 	Width, Height int
 
@@ -79,6 +82,11 @@ func Start(r Request) (Started, error) {
 	}
 	if r.Dispatch != "" {
 		r.Store.SetCrewDispatch(r.Slug, c.ID, r.By, r.Dispatch)
+	}
+	if r.Resume == "" && r.Role == "" {
+		if _, err := r.Store.JoinStage(r.Slug, c.ID, r.Stage); err != nil {
+			execlog.Note(r.Root, who, "couldn't record its stage: %v", err)
+		}
 	}
 	env := Env(r.Root, r.Slug, c.ID)
 	term, err := r.Host.Launch(Spec{

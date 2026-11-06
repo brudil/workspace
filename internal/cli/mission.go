@@ -51,6 +51,7 @@ With WS_MISSION set, ws lift and ws dock attach new capsules to the mission.`,
 	cmd.AddCommand(newMissionFlagCmd())
 	cmd.AddCommand(newMissionResumeWithCmd())
 	cmd.AddCommand(newMissionConcludeCmd())
+	cmd.AddCommand(newMissionAcceptCmd())
 	cmd.AddCommand(newMissionOrchestrateCmd(), newMissionDispatchCmd())
 	cmd.AddCommand(newMissionAttachCmd())
 	cmd.AddCommand(newMissionDetachCmd())
@@ -406,6 +407,12 @@ func formatMissionLLM(ctx *Context, v missionView, briefPath, brief string, even
 			b.WriteByte('\n')
 		}
 	}
+	if lines := stageLines(v.M, brief); len(lines) > 0 {
+		b.WriteString("Stages (the brief's plan, with ws's record of each; the current one is the first not accepted, and new crew work on it):\n")
+		for _, l := range lines {
+			b.WriteString("  " + l + "\n")
+		}
+	}
 	store := missionStore(ctx)
 	if avs := resolveArtifacts(ctx.WS, store, v); len(avs) > 0 {
 		b.WriteString("Artifacts (kind, where it is now; read the file named, or open the link):\n")
@@ -466,6 +473,13 @@ func printMissionText(ctx *Context, v missionView, briefPath, brief string, even
 			line += "  " + ui.Dim.Render(f)
 		}
 		fmt.Fprintln(w, line)
+	}
+
+	if lines := stageLines(v.M, brief); len(lines) > 0 {
+		fmt.Fprintf(w, "\n  %s\n", ui.Bold.Render("Stages"))
+		for _, l := range lines {
+			fmt.Fprintf(w, "    %s\n", l)
+		}
 	}
 
 	if avs := resolveArtifacts(ctx.WS, missionStore(ctx), v); len(avs) > 0 {

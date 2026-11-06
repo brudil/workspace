@@ -158,7 +158,7 @@ func (m deckModel) placeFor(dm *deckMission, want string) (crew.Place, bool) {
 // startCrew launches crew with the named harness on the selected mission,
 // asking first if every capsule already has crew working in it.
 func (m deckModel) startCrew(harnessName string) (tea.Model, tea.Cmd) {
-	return m.startCrewWith(harnessName, "", "")
+	return m.startCrewWith(harnessName, "", "", 0)
 }
 
 // startDispatch launches the crew the orchestrator queued on the selected
@@ -169,7 +169,7 @@ func (m deckModel) startDispatch() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	d := dm.M.Dispatch
-	return m.startCrewWith(firstNonEmpty(d.Harness, m.roles.ForCrew().Harness), d.Capsule, d.Text)
+	return m.startCrewWith(firstNonEmpty(d.Harness, m.roles.ForCrew().Harness), d.Capsule, d.Text, d.Stage)
 }
 
 // launchHarness is what ⏎ launches on a mission: the briefing harness on a
@@ -182,8 +182,9 @@ func (m deckModel) launchHarness(dm *deckMission) string {
 }
 
 // startCrewWith launches crew, in capsule (repo/name) if given and it
-// exists, else wherever placeFor picks, dispatched with what to do if given.
-func (m deckModel) startCrewWith(harnessName, capsule, dispatch string) (tea.Model, tea.Cmd) {
+// exists, else wherever placeFor picks, dispatched with what to do if given,
+// for stage (from 1) or the current one (0).
+func (m deckModel) startCrewWith(harnessName, capsule, dispatch string, stage int) (tea.Model, tea.Cmd) {
 	dm, ok := m.selectedMission()
 	if !ok {
 		m.flash = "select a mission to launch crew on"
@@ -212,11 +213,17 @@ func (m deckModel) startCrewWith(harnessName, capsule, dispatch string) (tea.Mod
 	b := harness.Brief{Slug: slug, Title: dm.M.Title, Brief: dm.Brief, Dir: place.Dir, Dispatch: dispatch,
 		Model: m.roles.ForCrew().ModelFor(harnessName)}
 	ws, store, mm := m.ws, m.store, dm.M
-	launch := m.launchCmd(crew.Request{Slug: slug, Harness: harnessName, Place: place, Dispatch: dispatch, By: "you",
+	launch := m.launchCmd(crew.Request{Slug: slug, Harness: harnessName, Place: place, Dispatch: dispatch, By: "you", Stage: stage,
 		Prepare: func() (harness.Launch, error) {
 			// Off the deck's goroutine: this reads handoffs and capsules.
 			if fresh, err := store.Load(slug); err == nil {
 				mm = fresh
+			}
+			if brief, err := store.ReadBrief(slug); err == nil {
+				b.Brief = brief
+			}
+			if err := briefStage(&b, mm, b.Brief, stage); err != nil {
+				return harness.Launch{}, err
 			}
 			b.LeftOff = leftOff(ws, store, mm, place.Capsule)
 			return h.Start(b)

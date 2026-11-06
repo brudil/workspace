@@ -44,6 +44,11 @@ type Input struct {
 	Output    string   // the end of CrewID's output
 	// Handoff is the handoff CrewID left when it reported done, if it did.
 	Handoff string
+	// Stages describes the brief's stages and their progress, one line
+	// each (none when the brief lists none), and CrewStage the stage
+	// CrewID was on ("2: Implement it"), if it joined one.
+	Stages    []string
+	CrewStage string
 }
 
 // Capsule is one of the mission's capsules, with what's known about it.
@@ -70,6 +75,11 @@ func Prompt(in Input) string {
 		fmt.Fprintf(&b, "Crew %s has just reported that its part is done.\n", in.CrewID)
 	case "ended":
 		fmt.Fprintf(&b, "Crew %s has just ended without reporting done.\n", in.CrewID)
+	}
+	if in.CrewStage != "" && (in.Trigger == "done" || in.Trigger == "ended") {
+		fmt.Fprintf(&b, "It was working on stage %s.\n", in.CrewStage)
+	}
+	switch in.Trigger {
 	case "answer":
 		if a := m.Answer; a != nil {
 			who := "They answered"
@@ -80,10 +90,11 @@ func Prompt(in Input) string {
 		}
 	}
 	b.WriteString(`
-Read the brief and the history below and decide what should happen next: is what just finished good, what does the brief still need, and who should do it? The brief may describe stages for separate crew (say, a proposal and then its implementation); the log and crew list show which are done. Act only through these commands (WS_MISSION is set for you):
+Read the brief and the history below and decide what should happen next: is what just finished good, what does the brief still need, and who should do it? The brief may list stages for separate crew (say, a proposal and then its implementation); Stage progress below says which are accepted and which is current. When the current stage's work is complete and good enough to build on, accept it, then dispatch the next. Act only through these commands (WS_MISSION is set for you):
 
 - ws mission note "Orchestrator: <what you found and decided, two or three sentences>"   (always, once; the next orchestrator run reads it)
-- ws mission dispatch "<what to do>" [--capsule <repo>/<name>] [--read <artifact>]...   (start new, fresh crew on the next piece of work. Beyond the brief it knows only what you dispatch it with and where earlier crew left off, which ws gives it (the latest handoff from its capsule, or the mission's). Say what to do, where earlier crew's output is (files, commits, PRs) and what to watch for. Name each artifact it should read first with --read and its reference from the Artifacts list, handoffs included (mission:handoffs/<crew>.md), rather than retelling it; ws adds where to read it)
+- ws mission dispatch "<what to do>" [--capsule <repo>/<name>] [--read <artifact>]...   (start new, fresh crew on the next piece of work: it joins the current stage, or the one named with --stage <n>. Beyond the brief it knows only what you dispatch it with and where earlier crew left off, which ws gives it (the latest handoff from its capsule, or the mission's). Say what to do, where earlier crew's output is (files, commits, PRs) and what to watch for. Name each artifact it should read first with --read and its reference from the Artifacts list, handoffs included (mission:handoffs/<crew>.md), rather than retelling it; ws adds where to read it)
+- ws mission accept "<why it's complete and good>"   (the current stage is done: accept it before dispatching the next stage, which then becomes current. Refused while its crew still work or ask the user something. A brief without stages is one stage)
 - ws mission resume-with <crew> "<what's left>"   (that crew should carry on: unfinished, tests missing, CI failing. Better than dispatching when its context matters)
 - ws mission flag "<question for the user>" --option "<answer>" --option "<answer>"   (a decision or problem only the user can resolve, or the brief says to check with them before the next stage. Ask one clear question and give the two or three answers you'd act on, each a short instruction like "Commit both and open PRs": the user answers with one key, or writes their own, and you're run again with their answer. Give what they need to decide in the question itself: paths, what you checked)
 - ws mission new "<follow-up, what and why>"   (separate work worth doing, outside this mission's scope)
@@ -106,6 +117,14 @@ Run one command per shell call rather than chaining them with && or ;. You may o
 		brief = "(empty)"
 	}
 	fmt.Fprintf(&b, "## Brief\n\n%s\n\n", clipHead(brief, promptBriefMax, "\n… (the brief continues: ws mission brief prints it whole)"))
+
+	if len(in.Stages) > 0 {
+		b.WriteString("## Stage progress\n\nThe brief's stages, with ws's record of each (the current one is the first not accepted):\n\n")
+		for _, l := range in.Stages {
+			b.WriteString("- " + l + "\n")
+		}
+		b.WriteString("\n")
+	}
 
 	b.WriteString("## Capsules\n\n")
 	if len(in.Capsules) == 0 {

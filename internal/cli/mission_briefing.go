@@ -81,6 +81,7 @@ Crew can only replace the brief while briefing a mission.`,
 			}
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventNote, Text: "brief written"})
 			fmt.Fprintf(ui.Stderr, "  %s brief for %s written\n", ui.Green.Render("✓"), m.Slug)
+			printWarnings(stageCapsuleWarnings(ctx, m, string(data)))
 			return nil
 		},
 	}
@@ -157,6 +158,12 @@ briefing crew's WS_MISSION pointing nowhere).`,
 			}
 			if live == 0 && !noCapsules {
 				return errors.New("create the capsules the work needs first (ws lift <repo> <branch>, or ws dock <repo> <branch|PR>); pass --no-capsules if it really needs none")
+			}
+			// Warned, not refused: the brief is the user's. Logged too, for
+			// them to see after this session ends.
+			if warnings := stageCapsuleWarnings(ctx, m, brief); len(warnings) > 0 {
+				printWarnings(warnings)
+				store.AppendLog(m.Slug, mission.Event{Kind: mission.EventNote, Text: "at ready: " + strings.Join(warnings, "; ")})
 			}
 
 			// Record this briefing crew's end before it is hung up, so the

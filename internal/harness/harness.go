@@ -39,6 +39,11 @@ type Brief struct {
 	// Dispatch is what this crew was dispatched to do: its part of the
 	// mission.
 	Dispatch string
+	// Stage is the stage of the brief's plan this crew is for (its text),
+	// StageN its number and StageOf how many there are. Stage is "" when
+	// the brief lists no stages.
+	Stage           string
+	StageN, StageOf int
 	// LeftOff is where earlier crew left off: their latest handoff in
 	// full, and where the others are (mission.LeftOff).
 	LeftOff string
@@ -118,11 +123,17 @@ func InitialPrompt(b Brief) string {
 	s.WriteString("Before starting, run `ws mission show -f llm` to see the mission's capsules (worktrees, possibly across repos) and log. ")
 	s.WriteString("Work only in this mission's capsules; create new ones with `ws lift <repo> <name>` and they join the mission automatically. ")
 	s.WriteString("Record significant decisions and progress with `ws mission note \"...\"`. Don't edit the brief.\n\n")
-	if d := strings.TrimSpace(b.Dispatch); d != "" {
+	if st := strings.TrimSpace(b.Stage); st != "" {
+		fmt.Fprintf(&s, "The brief's plan has %d stages, each done by separate crew in turn. You're on stage %d:\n\n%s\n\n", b.StageOf, b.StageN, st)
+	}
+	switch d := strings.TrimSpace(b.Dispatch); {
+	case d != "":
 		s.WriteString("You were dispatched for one part of this mission:\n\n")
 		s.WriteString(d)
 		s.WriteString("\n\nDo that part, then report done; ws's orchestrator decides what follows and dispatches it.\n\n")
-	} else {
+	case b.Stage != "":
+		s.WriteString("Do that stage only, then report done; ws's orchestrator decides what follows and dispatches it.\n\n")
+	default:
 		s.WriteString("If the brief describes the work in stages for separate crew, do only the first stage not yet done, then report done; ws's orchestrator dispatches the next.\n\n")
 	}
 	if l := strings.TrimSpace(b.LeftOff); l != "" {
@@ -187,7 +198,7 @@ func briefingPrompt(b Brief) string {
 	s.WriteString("2. Ask the user about anything ambiguous: which repos, scope, what done looks like.\n")
 	s.WriteString("3. Write the brief, replacing it whole:\n\n")
 	s.WriteString("   ws mission brief --set - <<'EOF'\n   ## Goal\n   ...\n   ## Context\n   (links to issues/PRs, relevant files)\n   ## Constraints\n   ...\n   ## Acceptance\n   ...\n   EOF\n\n")
-	s.WriteString("   If the work falls into stages that separate crew should do one after another (a proposal, then its implementation), list them in order under `## Stages`, saying where each one's output goes and where the user wants to check in before the next. ws's orchestrator reads the brief and dispatches crew stage by stage.\n")
+	s.WriteString("   If the work falls into stages that separate crew should do one after another (a proposal, then its implementation), list them as a numbered list under `## Stages`, one stage per item: what it does and produces, the capsule it works in as `repo/name` in backticks (one you create in step 5), and \"Check in with me.\" on any stage the user wants to review before the next starts (ask them which). ws tracks each stage; the orchestrator accepts each one and dispatches the next. Otherwise leave `## Stages` out.\n")
 	s.WriteString("4. Name it: `ws mission title \"...\"`. A terse, plain-English name of at most 50 characters (it's how the mission reads in the user's deck), not the request or an issue number: \"Cache token lookups\", not \"fe issue 45\".\n")
 	s.WriteString("5. Create the capsules (worktrees) the work needs, one per repo it touches: `ws lift <repo> <branch-name>` for new work, or `ws dock <repo> <branch|PR>` to build on an existing branch or PR. They join this mission automatically. Use a short descriptive branch name. If a stage produces a proposal, ADR or note to share and `ws mission show -f llm` names a records repo, that stage gets a capsule there too.\n")
 	s.WriteString("6. Show the user the brief and capsules (`ws mission show -f llm`) and check they're right.\n")

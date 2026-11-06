@@ -67,7 +67,7 @@ Use this to orient yourself before starting work.
 - Record significant decisions and progress with `ws mission note "<text>"`. Don't edit the brief; it belongs to the user.
 - When you need the user's decision, ask in your reply and also run `ws mission ask "<question>"` so their deck flags it, then wait for their answer: don't report done while a question is open.
 - If you notice something worth doing that's outside your mission, don't do it: run `ws mission new "<what it is and why>"` (plain text) and mention it in one line. It waits for the user to brief it, and records that it came from your mission.
-- If you were dispatched for one part, do that part only. If the brief describes stages for separate crew, do only the first one not yet done. Your instructions may include *Where earlier crew left off*: the last crew's handoff. Start from it rather than rediscovering what it says.
+- If the brief lists stages, your instructions say which one you're on: do only that one. If you were dispatched for one part, do that part only. Your instructions may include *Where earlier crew left off*: the last crew's handoff. Start from it rather than rediscovering what it says.
 - Record what you make that the next crew or the user will need (a proposal, an ADR, notes, a doc) with `ws mission artifact add <file|url> --kind <proposal|adr|note|doc> "<label>"`. A file can be in one of the mission's capsules, a `.ground`, or the mission's private files folder (`ws mission show -f llm` names it, and the records repo for shared proposals and ADRs if there is one). It lists every artifact with where to read it.
 - When your part is finished, report done with a one-line summary and a handoff for whoever comes next, in markdown on stdin. All four sections are required; a section can say "Nothing.". *Learned* matters most: where things live, what you tried that didn't work, surprises. Keep it short. Each *Read first* entry is a file, a reference (`records:adr/0042.md`, `api#88`) or a URL, and ws checks it can find each. ws finds PRs from the mission's capsules itself.
 
@@ -88,7 +88,7 @@ If you were started to **brief** a mission (your instructions say so), follow th
 
 If you were started to **answer the orchestrator's question** for the user (your instructions say so), find out what's needed and answer with `ws mission answer "<what should happen, and why>"`. That hands it to the orchestrator; don't do the work it leads to.
 
-If `WS_ROLE=orchestrator` is set, you are a mission's orchestrator: follow the instructions you were given, act only through `ws mission note/dispatch/resume-with/flag/new/conclude` (and `ws lift` for a capsule the next crew needs), and don't change code.
+If `WS_ROLE=orchestrator` is set, you are a mission's orchestrator: follow the instructions you were given, act only through `ws mission note/accept/dispatch/resume-with/flag/new/conclude` (and `ws lift` for a capsule the next crew needs), and don't change code.
 
 If `WS_MISSION` is not set, ignore missions and follow the rules above as usual.
 

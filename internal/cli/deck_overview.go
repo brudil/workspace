@@ -209,6 +209,11 @@ func eventSentence(e mission.Event) (string, bool) {
 		return "orchestrator: " + text, true
 	case mission.EventState:
 		return text, true
+	case mission.EventStage:
+		if strings.HasPrefix(text, "on stage") {
+			return who + " " + text, true
+		}
+		return text, true
 	}
 	return e.Kind + ": " + text, true
 }

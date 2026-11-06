@@ -101,3 +101,26 @@ func TestDeckMission_Handoffs(t *testing.T) {
 		t.Errorf("log doesn't point at the handoff:\n%s", v)
 	}
 }
+
+// Summary leads with the stages: accepted, current with its crew, to come.
+func TestDeckMission_Stages(t *testing.T) {
+	m, slug := shellCrewDeck(t)
+	m.store.WriteBrief(slug, "## Goal\nCache it.\n\n## Stages\n1. Write the proposal. Check in with me.\n2. Implement it in `frontend/work`.\n3. Update the docs. Check in with me.\n")
+	if _, _, err := m.store.AcceptStage(slug, "you", "written"); err != nil {
+		t.Fatal(err)
+	}
+	m = launch(t, m) // joins stage 2
+	next, _ := m.Update(loadDeckCmd(m.ws, m.prs)())
+	m = next.(deckModel)
+	m.focusTerm = false
+	m = selectMission(t, m, slug)
+	v := missionPane(m)
+	for _, want := range []string{"Stages     ✓ 1 Write the proposal. Check in with me.", "▸ 2 Implement it in frontend/work. · c1", "· 3 Update the docs. Check in with me. · check in after"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("summary missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "1 Write the proposal. Check in with me. · check in after") {
+		t.Error("an accepted stage still says check in")
+	}
+}
