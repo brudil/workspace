@@ -48,6 +48,14 @@ func dispatchFixture(t *testing.T) (*testutil.Workspace, mission.Store, string) 
 	t.Setenv("OUT", out)
 	harness.Register(handoffHarness{})
 	t.Setenv(harness.EnvDefault, "handoff")
+	// Crew run the handoff harness, which can't run the orchestrator: pin it
+	// to the echo one, rather than whatever agent is installed here.
+	f, err := os.OpenFile(filepath.Join(w.Root, "ws.local.toml"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("\n[orchestrator]\nharness = \"echo-orchestrator\"\n")
+	f.Close()
 	t.Cleanup(cli.UseLocalDispatchHost(w.Root))
 	store.EndCrew("cache", "c1", "exit 0")
 	t.Setenv(mission.EnvMission, "cache")
