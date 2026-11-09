@@ -71,6 +71,18 @@ func TestMissionHook_RecordsWhatCrewReport(t *testing.T) {
 		t.Errorf("an idle notice changes only the notice: %+v", c)
 	}
 
+	// pi's, from ws's extension: an extension's dialog waiting is a
+	// permission; the reply comes with the stop.
+	hook(t, w, "prompt", `{}`)
+	hook(t, w, "notify", `{"notification_type":"ui_prompt","message":"Allow rm -rf?"}`)
+	if c := crew(); c.Activity != mission.ActivityPermission || c.Notice != "Allow rm -rf?" {
+		t.Errorf("pi dialog: %+v", c)
+	}
+	hook(t, w, "stop", `{"last_assistant_message":"Removed the build folder."}`)
+	if c := crew(); c.Activity != mission.ActivityWaiting || c.LastReply != "Removed the build folder." {
+		t.Errorf("pi stop: %+v", c)
+	}
+
 	// Not crew ws launched (no WS_CREW): nothing, and no error.
 	t.Setenv(mission.EnvCrew, "")
 	before := crew()

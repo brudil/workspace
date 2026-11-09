@@ -21,7 +21,8 @@ func newMissionHookCmd() *cobra.Command {
 		Use:   "hook <event>",
 		Short: "For agents' hooks: record what crew is doing (ws installs these when it launches crew)",
 		Long: `Run by an agent's own hooks, which ws installs in each crew session it
-launches (Claude Code through --settings, Cursor through a plugin): it records
+launches (Claude Code through --settings, Cursor through a plugin, pi through
+an extension): it records
 what the crew reported, from WS_MISSION and WS_CREW and the event's JSON on
 stdin. Events: start, prompt (it was sent a message: working), reply (its
 turn's final message), stop (it finished its turn: waiting for you), notify.
@@ -51,7 +52,8 @@ It never fails, so a hook can't get in the agent's way.`,
 }
 
 // hookFromEvent reads one of ws's hook events, with its agent's payload:
-// Claude Code's and Cursor's use different field names for the same things.
+// Claude Code's, Cursor's and pi's use different field names for the same
+// things. (pi's are what ws's own extension sends: see harness.Pi.)
 func hookFromEvent(event string, p map[string]any) (mission.Hook, bool) {
 	str := func(keys ...string) string {
 		for _, k := range keys {
@@ -76,7 +78,8 @@ func hookFromEvent(event string, p map[string]any) (mission.Hook, bool) {
 		return mission.Hook{Activity: mission.ActivityWaiting, Reply: reply}, true
 	case harness.HookNotify:
 		h := mission.Hook{Notice: str("message")}
-		if t := str("notification_type"); strings.Contains(t, "permission") || strings.Contains(t, "elicitation") {
+		// pi's ui_prompt is an extension's dialog waiting for an answer.
+		if t := str("notification_type"); strings.Contains(t, "permission") || strings.Contains(t, "elicitation") || t == "ui_prompt" {
 			h.Activity = mission.ActivityPermission
 		}
 		return h, true

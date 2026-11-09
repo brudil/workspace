@@ -46,13 +46,14 @@ type MissionsConfig struct {
 	Records string `toml:"records,omitempty"`
 }
 
-// AgentConfig says which harness (agent CLI: cursor, claude, shell) runs a
+// AgentConfig says which harness (agent CLI: cursor, claude, pi, shell) runs a
 // role, [crew] or [briefing], and on which model. Empty means the default:
 // see harness.Roles. ws.local.toml settings override ws.toml's.
 type AgentConfig struct {
 	Harness string `toml:"harness,omitempty"`
 	// Model is passed to the harness as is, so it's in that agent's own
-	// naming ("opus" for claude, "claude-opus-5-5-high" for cursor).
+	// naming ("opus" for claude, "claude-opus-5-5-high" for cursor,
+	// "anthropic/claude-opus-5-5" or "sonnet:high" for pi).
 	Model string `toml:"model,omitempty"`
 }
 

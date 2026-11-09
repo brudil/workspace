@@ -1,5 +1,5 @@
 // Package harness knows how to launch and resume each kind of agent CLI
-// (Cursor, Claude Code, a plain shell) in the roles agents play on a
+// (Cursor, Claude Code, pi, a plain shell) in the roles agents play on a
 // mission: crew doing the work, briefing a new mission, and the headless
 // orchestrator. Roles says which harness and model each role uses.
 //

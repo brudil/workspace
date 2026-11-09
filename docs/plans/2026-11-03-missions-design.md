@@ -66,7 +66,7 @@ The entry point is **`ws deck`**, a full-screen view of missions and the agents 
 | **Orchestrator** | A headless agent run when crew report done or end by themselves. It decides what's next and acts only through `ws mission` commands. |
 | **Log** | Append-only events: what did what, when. |
 | **Artifact** | A pointer to something the mission produced or relies on: a file (on a default branch, in a capsule, or private to the mission), a PR or issue, or a link. It has a kind, such as proposal, ADR, note or handoff. |
-| **Harness** | An agent CLI ws can launch in a role: `cursor`, `claude`, `shell`. |
+| **Harness** | An agent CLI ws can launch in a role: `cursor`, `claude`, `pi`, `shell`. |
 | **Deck** | The TUI for running missions and their crew. |
 
 ### Mission state
@@ -241,12 +241,12 @@ Add a **conditional** section to `FOR_LLMS.md`. It doesn't change any existing r
    - missions raised by crew
    - the orchestrator with dispatch, resume-with, flag and conclude
    - the Overview, which groups missions by what they need from you
-5. **Harness roles:** Cursor and Claude Code can each play every role (crew, briefing, orchestrator), chosen in `[crew]`, `[briefing]` and `[orchestrator]`. Claude Code's orchestrator is limited to an allowlist of `ws` and read-only commands; Cursor's runs with `--force`.
+5. **Harness roles:** Cursor, Claude Code and pi can each play every role (crew, briefing, orchestrator), chosen in `[crew]`, `[briefing]` and `[orchestrator]`. Claude Code's orchestrator is limited to an allowlist of `ws` and read-only commands; Cursor's runs with `--force`; pi's has no edit or write tool, but its shell is unrestricted.
 6. **Artifacts** (phase 6 below): references to files (default branch, capsule, private), PRs and links, with kinds and a state worked out each time; `ws mission artifact add/rm`, `--read` on dispatch, the orchestrator's prompt, and `[missions] records`.
 
 Since phase 6:
 
-- **Crew report through their agents' hooks.** ws installs hooks in each crew session it launches (Claude Code through `--settings`, Cursor through a plugin), so crew say when they're working, waiting (with their last reply) or asking for permission, instead of the deck judging from the screen. `ws doctor --fix` adds what Cursor needs.
+- **Crew report through their agents' hooks.** ws installs hooks in each crew session it launches (Claude Code through `--settings`, Cursor through a plugin, pi through an extension), so crew say when they're working, waiting (with their last reply) or asking for permission, instead of the deck judging from the screen. `ws doctor --fix` adds what Cursor needs.
 - **Flags are questions you answer.** `ws mission flag` carries the answers the orchestrator would act on; the deck offers them, your own answer, or crew to answer it (the `answer` role), and `ws mission answer` runs the orchestrator with it. Done stays done until you send that crew a message.
 - **The deck.** The mission view in tabs (Summary leading on what needs you, Brief, Work, Log); clicks checked against the drawn frame (zones as Lip Gloss layers, `View.OnMouse`) and every key declared once (bubbles `key`/`help`); the deck's status on the terminal's tab (OSC 7501); the bell and notification only when its window isn't focused; crew clipboard copies (OSC 52) put on yours; `ctrl+]` zooms in and out.
 
@@ -450,5 +450,5 @@ Settled:
 
 - **Terminal emulation fidelity.** Mitigated by the swappable `termpane` and passthrough zoom. One known bug: `charmbracelet/x/ansi` ends an OSC string at a raw `0x9C` byte, which is part of the UTF-8 for `✓ ✗ ✳` and much CJK. Agents' titles containing those characters are cut short (Claude Code's `✳` title shows as `�`), and the rest of the sequence can leak into the pane. It needs an upstream fix.
 - **Automation decided from prose.** The orchestrator's decisions vary by model and prompt. An early Claude orchestrator gave up on the shell after one refused command, until the allowlist and prompt were fixed. Mitigated by acting only through `ws` commands that validate what they're asked, by the dispatch limit and flags, and by phase 9.
-- **Orchestrator permissions differ by harness.** Claude Code's runs with `--permission-mode dontAsk` and an allowlist, with git limited to exact capsule paths. Cursor's print mode can't be limited and runs with `--force`, relying on its instructions.
+- **Orchestrator permissions differ by harness.** Claude Code's runs with `--permission-mode dontAsk` and an allowlist, with git limited to exact capsule paths. Cursor's print mode can't be limited and runs with `--force`, relying on its instructions. pi asks no permission at all: its orchestrator gets no edit or write tool, but its shell is unrestricted, like Cursor's.
 - **Agent CLIs change underneath us.** Every assumption about a CLI lives in its harness file, marked VERIFIED with the version it was checked against.

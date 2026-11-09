@@ -118,7 +118,7 @@ func TestShell(t *testing.T) {
 }
 
 func TestRegistry(t *testing.T) {
-	if got := strings.Join(Names(), ","); got != "claude,cursor,shell" {
+	if got := strings.Join(Names(), ","); got != "claude,cursor,pi,shell" {
 		t.Errorf("names = %s", got)
 	}
 	if _, err := Get("nope"); err == nil {
@@ -476,5 +476,136 @@ func TestWorkPrompt_Stage(t *testing.T) {
 	}
 	if b := InitialPrompt(Brief{Slug: "b", Role: "briefing", Request: "x"}); !strings.Contains(b, "`repo/name` in backticks") || !strings.Contains(b, "Check in with me.") {
 		t.Errorf("briefing prompt doesn't teach the stage format:\n%s", b)
+	}
+}
+
+func fakePi(found map[string]string) *Pi {
+	return &Pi{
+		lookPath: func(name string) (string, error) {
+			if p, ok := found[name]; ok {
+				return p, nil
+			}
+			return "", errors.New("not found")
+		},
+		newID: func() (string, error) { return "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed", nil },
+	}
+}
+
+// pi crew start on a session id ws chose, with the opening prompt as the
+// argument, like Claude Code's.
+func TestPi_Start(t *testing.T) {
+	t.Setenv(EnvPiBin, "")
+	p := fakePi(map[string]string{"pi": "/bin/pi"})
+	l, err := p.Start(Brief{Slug: "auth", Title: "Auth", Brief: "Fix it.", Dir: "/w/fe/auth", Model: "anthropic/claude-sonnet-5-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed"
+	want := []string{"/bin/pi", "--session-id", id, "--name", "ws auth", "--model", "anthropic/claude-sonnet-5-5", "--"}
+	if len(l.Args) != len(want)+1 || strings.Join(l.Args[:len(want)], " ") != strings.Join(want, " ") {
+		t.Fatalf("args = %q", l.Args)
+	}
+	if prompt := l.Args[len(want)]; !strings.Contains(prompt, "ws mission show -f llm") || !strings.Contains(prompt, "Fix it.") || l.Prompt != "" {
+		t.Errorf("prompt arg = %q, typed = %q", prompt, l.Prompt)
+	}
+	if l.Conversation != id || l.Dir != "/w/fe/auth" || len(l.Notes) != 2 {
+		t.Errorf("launch = %+v", l)
+	}
+	// No --approve: trusting a project loads the extensions it ships, so
+	// that's the user's call.
+	if strings.Contains(strings.Join(l.Args, " "), "--approve") {
+		t.Errorf("args = %q", l.Args)
+	}
+
+	l, _ = p.Start(Brief{Slug: "new-thing", Role: "briefing", Request: "fe issue 45"})
+	if strings.Join(l.Args[3:5], " ") != "--name ws new-thing · briefing" || strings.Contains(strings.Join(l.Args, " "), "--model") {
+		t.Errorf("briefing args = %q", l.Args)
+	}
+}
+
+func TestPi_ResumeAndAvailability(t *testing.T) {
+	t.Setenv(EnvPiBin, "")
+	p := fakePi(map[string]string{"pi": "/bin/pi"})
+	// --session, not --session-id: that would quietly start a blank session
+	// if pi had lost this one.
+	l, err := p.Resume("/w", "abc")
+	if err != nil || strings.Join(l.Args, " ") != "/bin/pi --session abc" || l.Dir != "/w" || l.Conversation != "abc" {
+		t.Errorf("resume = %+v, %v", l, err)
+	}
+	if _, err := p.Resume("/w", ""); err == nil {
+		t.Error("resume without a session id should fail")
+	}
+	if err := fakePi(nil).Available(); err == nil || !strings.Contains(err.Error(), EnvPiBin) {
+		t.Errorf("missing pi: %v", err)
+	}
+	t.Setenv(EnvPiBin, "/opt/pi-dev")
+	if b, err := fakePi(map[string]string{"/opt/pi-dev": "/opt/pi-dev"}).bin(); err != nil || b != "/opt/pi-dev" {
+		t.Errorf("override bin = %q, %v", b, err)
+	}
+}
+
+// The orchestrator runs in print mode without a saved session, reading and
+// running commands but not editing; with no model configured, on pi's own
+// default.
+func TestPi_Orchestrate(t *testing.T) {
+	t.Setenv(EnvPiBin, "")
+	p := fakePi(map[string]string{"pi": "/bin/pi"})
+	l, err := p.Orchestrate(OrchestratorRun{Prompt: "Read the prompt file.", Dir: "/root", Model: "haiku"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(l.Args, " "); got != "/bin/pi -p --no-session --tools read,bash,grep,find,ls --model haiku -- Read the prompt file." || l.Dir != "/root" {
+		t.Errorf("args = %q, dir %q", got, l.Dir)
+	}
+	if p.OrchestratorModel() != "" {
+		t.Errorf("orchestrator model = %q", p.OrchestratorModel())
+	}
+	pick, o, err := (Roles{Crew: Pick{Harness: "pi", Model: "sonnet"}}).ForOrchestrator()
+	if err != nil || o.Name() != "pi" || pick != (Pick{Harness: "pi"}) {
+		t.Errorf("pi crew's orchestrator = %+v, %v", pick, err)
+	}
+	l, _ = p.Orchestrate(OrchestratorRun{Prompt: "x", Dir: "/root"})
+	if strings.Contains(strings.Join(l.Args, " "), "--model") {
+		t.Errorf("no model configured: args = %q", l.Args)
+	}
+}
+
+// ws's hooks go into a pi session as an extension ws writes, which runs the
+// hook command with each of ws's events.
+func TestPi_HookArgs(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hooks", "pi")
+	cmd := []string{"/w/.ws/bin/ws", "mission", "hook", "--root", "/w s"}
+	args, err := (&Pi{}).HookArgs(cmd, dir)
+	path := filepath.Join(dir, "ws-crew-hooks.ts")
+	if err != nil || strings.Join(args, " ") != "--extension "+path {
+		t.Fatalf("args = %q, %v", args, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(data)
+	// The command is a JSON array, run without a shell.
+	if !strings.Contains(src, `const command: string[] = ["/w/.ws/bin/ws","mission","hook","--root","/w s"];`) {
+		t.Errorf("command missing:\n%s", src)
+	}
+	for event, ours := range map[string]string{
+		"session_start": HookStart, "before_agent_start": HookPrompt,
+		"agent_settled": HookStop, "ui_prompt_start": HookNotify,
+	} {
+		re := regexp.MustCompile(`pi\.on\("` + event + `",[^}]*?send\("` + ours + `"`)
+		if !re.MatchString(src) {
+			t.Errorf("no %s hook sending %q", event, ours)
+		}
+	}
+	if strings.Contains(src, "$") {
+		t.Errorf("a placeholder wasn't filled in:\n%s", src)
+	}
+	// agent_end isn't the end of a turn: pi may still retry or go on.
+	if strings.Contains(src, `"agent_end"`) {
+		t.Error("stop should come from agent_settled, not agent_end")
+	}
+	if _, err := (&Pi{}).HookArgs(nil, dir); err == nil {
+		t.Error("no command should fail")
 	}
 }

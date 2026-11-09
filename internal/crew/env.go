@@ -13,7 +13,7 @@ import (
 const envOriginPWD = "WS_ORIGIN_PWD"
 
 // agentSessionEnv is the identity of an agent session ws itself may be
-// running in (a deck started from Claude Code's terminal, or ws mission
+// running in (a deck started from Claude Code's or pi's terminal, or ws mission
 // orchestrate run by an agent). Crew and the orchestrator are sessions of
 // their own: inheriting these would make Claude Code treat them as nested
 // in, or talking to, that session. Settings such as CLAUDE_CONFIG_DIR or
@@ -23,6 +23,10 @@ var agentSessionEnv = []string{
 	"CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH",
 	"CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ATTENDED",
 	"CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+	// pi marks its children, and gives its shell commands the session they
+	// run in and its model.
+	"AI_AGENT", "PI_CODING_AGENT",
+	"PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
 }
 
 // Env is the environment for crew: ours, minus anything that would mislead

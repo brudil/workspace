@@ -62,7 +62,7 @@ func (r Roles) ForBriefing() Pick {
 
 // ForOrchestrator picks the harness for the headless orchestrator, which
 // must be able to run one: [orchestrator] harness, else the crew's harness
-// if it can, else the first of cursor and claude installed here. The model
+// if it can, else the first of cursor, claude and pi installed here. The model
 // is [orchestrator] model, else the harness's own orchestrator default.
 func (r Roles) ForOrchestrator() (Pick, Orchestrator, error) {
 	if name := r.Orchestrator.Harness; name != "" {
@@ -75,12 +75,12 @@ func (r Roles) ForOrchestrator() (Pick, Orchestrator, error) {
 	if o, err := orchestratorNamed(r.ForCrew().Harness); err == nil {
 		return r.orchestratorPick(o), o, nil
 	}
-	for _, name := range []string{"cursor", "claude"} {
+	for _, name := range []string{"cursor", "claude", "pi"} {
 		if o, err := orchestratorNamed(name); err == nil && o.Available() == nil {
 			return r.orchestratorPick(o), o, nil
 		}
 	}
-	return Pick{}, nil, errors.New("no harness here can run the headless orchestrator: install the Cursor CLI or Claude Code, or set [orchestrator] harness")
+	return Pick{}, nil, errors.New("no harness here can run the headless orchestrator: install the Cursor CLI, Claude Code or pi, or set [orchestrator] harness")
 }
 
 func (r Roles) orchestratorPick(o Orchestrator) Pick {
