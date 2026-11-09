@@ -350,6 +350,7 @@ section {
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 100; /* over the review's sticky headers and selection bar */
   background: rgb(0 0 0 / 0.35);
   display: grid;
   place-items: start center;

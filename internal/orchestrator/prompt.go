@@ -93,6 +93,8 @@ func Prompt(in Input) string {
 		b.WriteString("- Never edit or answer the review yourself, and don't resolve its comments: crew address them, and the user resolves them.\n")
 		if len(in.ReviewCrew) > 0 {
 			fmt.Fprintf(&b, "Crew who worked in that capsule (latest last): %s.\n", strings.Join(in.ReviewCrew, ", "))
+		} else {
+			fmt.Fprintf(&b, "No crew has worked in that capsule yet (its commits were made outside the mission), so there's nobody to resume: dispatch fresh crew into it with --read %s.\n", in.ReviewRef)
 		}
 		fmt.Fprintf(&b, "\n%s\n", strings.TrimSpace(in.Review))
 	case "answer":

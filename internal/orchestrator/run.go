@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/brudil/workspace/internal/execlog"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,8 +47,11 @@ func Run(l harness.Launch, root, slug string) (string, error) {
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
 	c.WaitDelay = WaitDelay
-	var out bytes.Buffer
-	c.Stdout, c.Stderr = &out, &out
+	// The report is what the agent prints; what it says on stderr (Claude
+	// Code's sign-in warnings, say) goes to orchestrator.log and the
+	// terminal, and into the error if the run fails.
+	var out, errOut bytes.Buffer
+	c.Stdout, c.Stderr = &out, io.MultiWriter(&errOut, os.Stderr)
 	who := "orchestrator " + slug
 	start := time.Now()
 	if err := c.Start(); err != nil {
@@ -65,6 +69,11 @@ func Run(l harness.Launch, root, slug string) (string, error) {
 		result = err.Error()
 	}
 	execlog.End(root, who, c.Process.Pid, time.Since(start), fmt.Sprintf("%s · %d bytes of output", result, out.Len()))
+	if err != nil {
+		if e := strings.TrimSpace(clipTail(strings.TrimSpace(errOut.String()), 500, "…")); e != "" {
+			err = fmt.Errorf("%w: %s", err, e)
+		}
+	}
 	return out.String(), err
 }
 

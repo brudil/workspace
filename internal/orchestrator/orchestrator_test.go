@@ -193,4 +193,9 @@ func TestPrompt_Review(t *testing.T) {
 			t.Errorf("prompt missing %q", want)
 		}
 	}
+	// With nobody to resume, it's told so rather than left to look.
+	p = Prompt(Input{Mission: m, Trigger: "review", Review: "# Review r1", ReviewRef: "mission:reviews/r1.md"})
+	if !strings.Contains(p, "No crew has worked in that capsule yet") || !strings.Contains(p, "dispatch fresh crew into it with --read mission:reviews/r1.md") {
+		t.Error("no crew: not told to dispatch")
+	}
 }
