@@ -34,7 +34,7 @@ export const reviewKeys: [string, string][] = [
   ["g / G", "First / last"],
   ["t", "Jump to a file"],
   ["c", "Comment on the line (or the selected lines)"],
-  ["V", "Select lines: move to extend, then c"],
+  ["⇧↓ / ⇧↑", "Select lines (or V then move, or drag the line numbers)"],
   ["⏎", "Edit a draft comment; show hidden lines or a large file"],
   ["D", "Delete a draft comment"],
   ["s", "Submit the review"],
@@ -57,6 +57,29 @@ function loadSplit(): boolean {
 
 const verdictWords: Record<Verdict, string> = { approve: "approved", changes: "changes requested", comment: "comments" };
 
+// targetOf is the lines a comment on these rows is on: the side picked
+// (side by side, the column dragged), else the first line's (new, or
+// removed if it was removed), and every line of that side among them.
+// Comments on the old side are on removed lines: with none, it's the new.
+function targetOf(rows: Row[], picked?: "old" | "new"): Target | undefined {
+  const lines = rows.filter((r) => r.type === "line");
+  const first = lines[0];
+  if (first?.type !== "line") return undefined;
+  const nums = (side: "old" | "new") =>
+    lines.flatMap((r) => {
+      if (r.type !== "line") return [];
+      const c = side === "new" ? r.right : r.left?.kind === "d" ? r.left : undefined;
+      return c ? [c.num] : [];
+    });
+  let side: "old" | "new" = picked ?? (first.right ? "new" : "old");
+  let ns = nums(side);
+  if (!ns.length && side === "old") [side, ns] = ["new", nums("new")];
+  return ns.length ? { side, line: Math.min(...ns), endLine: Math.max(...ns) } : undefined;
+}
+
+const targetWords = (t: Target) =>
+  `${t.side === "old" ? "Removed l" : "L"}${t.endLine > t.line ? `ines ${t.line}–${t.endLine}` : `ine ${t.line}`}`;
+
 export function Review({ workspace }: { workspace: Workspace }) {
   const { slug = "", repo = "", name = "" } = useParams();
   const navigate = useNavigate();
@@ -73,6 +96,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
   const [split, setSplit] = useState(loadSplit);
   const [cursor, setCursor] = useState("");
   const [selectFrom, setSelectFrom] = useState<string>();
+  const [selectSide, setSelectSide] = useState<"old" | "new">(); // side by side, the column dragged
   const [editing, setEditing] = useState<Editing>();
   const [finder, setFinder] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -222,20 +246,59 @@ export function Review({ workspace }: { workspace: Workspace }) {
     } else setCursor(`${file}`);
   };
 
+  const selectedRows = useMemo(() => (selection ? nav.filter((r) => selection.keys.has(r.key)) : []), [selection, nav]);
+  const selectedTarget = useMemo(() => targetOf(selectedRows, selectSide), [selectedRows, selectSide]);
+
   // comment opens the editor on the selected lines, or the cursor's.
   const comment = () => {
-    if (!row || row.type !== "line" || !diff) return;
-    const lines = (selection ? nav.filter((r) => selection.keys.has(r.key)) : [row]).filter((r) => r.type === "line");
-    const first = lines[0];
-    if (first?.type !== "line") return;
-    const side = first.right ? "new" : "old";
-    const nums = lines.flatMap((r) => {
-      if (r.type !== "line") return [];
-      const c = side === "new" ? r.right : r.left?.kind === "d" ? r.left : undefined;
-      return c ? [c.num] : [];
-    });
-    setEditing({ file: row.file, target: { side, line: Math.min(...nums), endLine: Math.max(...nums) } });
-    setSelectFrom(undefined);
+    if (!diff) return;
+    const target = selection ? selectedTarget : row?.type === "line" ? targetOf([row]) : undefined;
+    const file = selection ? selection.file : row?.file;
+    if (!target || file === undefined) return;
+    setEditing({ file, target });
+    select(undefined);
+  };
+  // select starts (or, with no key, ends) a selection.
+  const select = (key?: string, side?: "old" | "new") => {
+    setSelectFrom(key);
+    setSelectSide(side);
+  };
+
+  // Selecting lines: shift and the arrows from the keyboard (V and j/k too);
+  // with the mouse, dragging the line numbers, or a click on one, and
+  // shift-click to extend. A plain click elsewhere ends it.
+  const sameFile = (a?: string, b?: string) => a !== undefined && b !== undefined && a.split(":")[0] === b.split(":")[0];
+  // extend grows the selection by a line: over comments, but not across a
+  // gap (the lines either side of one aren't together) or out of the file.
+  const extend = (step: number) => {
+    if (row?.type !== "line") return;
+    let i = at + step;
+    while (nav[i]?.type === "comment") i += step;
+    const next = nav[i];
+    if (next?.type !== "line" || next.file !== row.file) return;
+    if (!selectFrom) select(row.key);
+    setCursor(next.key);
+  };
+  const dragging = useRef(false);
+  useEffect(() => {
+    const up = () => (dragging.current = false);
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
+  const rowClick = (key: string, shift: boolean) => {
+    if (shift && sameFile(cursor, key)) {
+      if (!selectFrom) select(cursor);
+    } else select(undefined);
+    setCursor(key);
+  };
+  const gutterDown = (key: string, shift: boolean, side?: "old" | "new") => {
+    dragging.current = true;
+    if (!(shift && sameFile(cursor, key))) select(key, side);
+    else if (!selectFrom) select(cursor, side);
+    setCursor(key);
+  };
+  const dragOver = (key: string) => {
+    if (dragging.current && sameFile(selectFrom, key)) setCursor(key);
   };
   const activate = (r: Row) => {
     if (r.type === "gap") expand(r.file, r.gap, r.count !== undefined && r.count <= 40 ? 0 : 20);
@@ -273,11 +336,15 @@ export function Review({ workspace }: { workspace: Workspace }) {
 
   // Stable callbacks: FileSection only redraws when its own rows, cursor or
   // selection change.
-  const handlers = useRef({ activate, saveNote, cancel: closeEditor });
-  handlers.current = { activate, saveNote, cancel: closeEditor };
+  const handlers = useRef({ activate, saveNote, cancel: closeEditor, comment, rowClick, gutterDown, dragOver });
+  handlers.current = { activate, saveNote, cancel: closeEditor, comment, rowClick, gutterDown, dragOver };
   const onActivate = useCallback((r: Row) => handlers.current.activate(r), []);
   const onSave = useCallback((n: NoteDraft) => handlers.current.saveNote(n), []);
   const onCancel = useCallback(() => handlers.current.cancel(), []);
+  const onComment = useCallback(() => handlers.current.comment(), []);
+  const onRowClick = useCallback((key: string, shift: boolean) => handlers.current.rowClick(key, shift), []);
+  const onGutterDown = useCallback((key: string, shift: boolean, side?: "old" | "new") => handlers.current.gutterDown(key, shift, side), []);
+  const onDragOver = useCallback((key: string) => handlers.current.dragOver(key), []);
 
   useKeys({
     j: () => move(at + 1),
@@ -303,7 +370,9 @@ export function Review({ workspace }: { workspace: Workspace }) {
     x: () => row && toggleViewed(row.file),
     Enter: () => row && activate(row),
     c: comment,
-    V: () => row?.type === "line" && setSelectFrom((s) => (s ? undefined : row.key)),
+    V: () => row?.type === "line" && select(selectFrom ? undefined : row.key),
+    "shift+ArrowDown": () => extend(1),
+    "shift+ArrowUp": () => extend(-1),
     D: () => row && removeNote(row),
     s: () => diff && setSubmitting(true),
     e: () => {
@@ -328,7 +397,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
     },
     t: () => setFinder(true),
     r: load,
-    Escape: () => (selectFrom ? setSelectFrom(undefined) : navigate(`/missions/${slug}`)),
+    Escape: () => (selectFrom ? select(undefined) : navigate(`/missions/${slug}`)),
   });
 
   if (!mission || !current) {
@@ -446,12 +515,18 @@ export function Review({ workspace }: { workspace: Workspace }) {
             split={split}
             cursor={row?.file === i ? cursor : ""}
             selected={selection?.file === i ? selection.keys : undefined}
+            selectionEnd={selection?.file === i ? selectedRows.findLast((r) => r.type === "line")?.key : undefined}
+            selectionLabel={selection?.file === i && selectedTarget ? targetWords(selectedTarget) : undefined}
             editing={editing?.file === i ? editing : undefined}
             highlighting={highlighting}
             onRow={setCursor}
             onActivate={onActivate}
             onSave={onSave}
             onCancel={onCancel}
+            onComment={onComment}
+            onRowClick={onRowClick}
+            onGutterDown={onGutterDown}
+            onDragOver={onDragOver}
           />
         ))}
       </div>
@@ -549,16 +624,23 @@ interface FileSectionProps {
   split: boolean;
   cursor: string; // the cursor's row, if it's in this file
   selected?: Set<string>;
+  selectionEnd?: string; // the selection's last row, where its bar goes
+  selectionLabel?: string;
   editing?: Editing;
   highlighting: boolean;
   onRow: (key: string) => void;
   onActivate: (r: Row) => void;
   onSave: (n: NoteDraft) => void;
   onCancel: () => void;
+  onComment: () => void;
+  onRowClick: (key: string, shift: boolean) => void;
+  onGutterDown: (key: string, shift: boolean, side?: "old" | "new") => void;
+  onDragOver: (key: string) => void;
 }
 
 const FileSection = memo(function FileSection(props: FileSectionProps) {
-  const { index, file, rows, state, split, cursor, selected, editing, highlighting, onRow, onActivate, onSave, onCancel } = props;
+  const { index, file, rows, state, split, cursor, selected, selectionEnd, selectionLabel, editing, highlighting } = props;
+  const { onRow, onActivate, onSave, onCancel, onComment, onRowClick, onGutterDown, onDragOver } = props;
   // highlighting is a dependency: once the highlighter loads, colour.
   const hl = useMemo(() => highlight(file, state.blob), [file, state.blob, highlighting]);
   const html = (c: Cell) =>
@@ -608,8 +690,25 @@ const FileSection = memo(function FileSection(props: FileSectionProps) {
                 cursor={cursor === r.key}
                 selected={!!selected?.has(r.key)}
                 html={html}
-                onRow={onRow}
+                onRowClick={onRowClick}
+                onGutterDown={onGutterDown}
+                onDragOver={onDragOver}
                 onActivate={onActivate}
+                bar={
+                  r.key === selectionEnd && selectionLabel ? (
+                    // It floats over the lines below rather than pushing them
+                    // down: nothing moves under the mouse while dragging.
+                    <div className="select-bar" onClick={(e) => e.stopPropagation()}>
+                      <span>{selectionLabel}</span>
+                      <button className="primary" onMouseDown={(e) => e.preventDefault()} onClick={onComment}>
+                        Comment <kbd>c</kbd>
+                      </button>
+                      <span className="dim">
+                        <kbd>esc</kbd> clears
+                      </span>
+                    </div>
+                  ) : undefined
+                }
               />
             ),
           )}
@@ -625,11 +724,14 @@ interface RowViewProps {
   cursor: boolean;
   selected: boolean;
   html: (c: Cell) => string;
-  onRow: (key: string) => void;
+  onRowClick: (key: string, shift: boolean) => void;
+  onGutterDown: (key: string, shift: boolean, side?: "old" | "new") => void;
+  onDragOver: (key: string) => void;
   onActivate: (r: Row) => void;
+  bar?: React.ReactNode; // the selection's bar, on its last row
 }
 
-function RowView({ row, split, cursor, selected, html, onRow, onActivate }: RowViewProps) {
+function RowView({ row, split, cursor, selected, html, onRowClick, onGutterDown, onDragOver, onActivate, bar }: RowViewProps) {
   const cls = (cursor ? " cursor" : "") + (selected ? " selected" : "");
   if (row.type === "gap") {
     return (
@@ -654,24 +756,51 @@ function RowView({ row, split, cursor, selected, html, onRow, onActivate }: RowV
     ) : (
       <code className="empty" />
     );
+  // The line numbers are where lines are picked: press there and drag to
+  // select, without selecting the text (which stays copyable).
+  const gutter = (side?: "old" | "new") => ({
+    onMouseDown: (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      onGutterDown(row.key, e.shiftKey, side);
+    },
+    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+  });
+  const line = {
+    id: `row-${row.key}`,
+    onClick: (e: React.MouseEvent) => onRowClick(row.key, e.shiftKey),
+    onMouseEnter: () => onDragOver(row.key),
+  };
   if (split) {
     return (
-      <div id={`row-${row.key}`} className={`dl${cls}`} onClick={() => onRow(row.key)}>
-        <span className={`ln ${row.left?.kind ?? "empty"}`}>{row.left?.num}</span>
+      <div {...line} className={`dl${cls}`}>
+        <span className={`ln gutter ${row.left?.kind ?? "empty"}`} {...gutter("old")}>
+          {row.left?.num}
+        </span>
         {code(row.left)}
-        <span className={`ln ${row.right?.kind ?? "empty"}`}>{row.right?.num}</span>
+        <span className={`ln gutter ${row.right?.kind ?? "empty"}`} {...gutter("new")}>
+          {row.right?.num}
+        </span>
         {code(row.right)}
+        {bar}
       </div>
     );
   }
   const c = row.right ?? row.left!;
   const kind = row.left && !row.right ? "d" : row.right && !row.left ? "a" : "c";
   return (
-    <div id={`row-${row.key}`} className={`dl ${kind}${c.shown ? " shown" : ""}${cls}`} onClick={() => onRow(row.key)}>
-      <span className="ln">{row.left?.num}</span>
-      <span className="ln">{row.right?.num}</span>
-      <span className="sign">{kind === "a" ? "+" : kind === "d" ? "−" : ""}</span>
+    <div {...line} className={`dl ${kind}${c.shown ? " shown" : ""}${cls}`}>
+      <span className="ln gutter" {...gutter()}>
+        {row.left?.num}
+      </span>
+      <span className="ln gutter" {...gutter()}>
+        {row.right?.num}
+      </span>
+      <span className="sign gutter" {...gutter()}>
+        {kind === "a" ? "+" : kind === "d" ? "−" : ""}
+      </span>
       {code({ ...c, kind })}
+      {bar}
     </div>
   );
 }

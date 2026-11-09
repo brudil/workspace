@@ -3,10 +3,12 @@ import { useEffect, useRef } from "react";
 export type KeyMap = Record<string, (e: KeyboardEvent) => void>;
 
 // keyName is how a key press is named in a KeyMap: "j", "J", "Enter",
-// "Escape", "mod+d" (⌘ on macOS, ctrl elsewhere).
+// "Escape", "mod+d" (⌘ on macOS, ctrl elsewhere), "shift+ArrowDown". Shift
+// is named only for keys whose name it doesn't change already.
 export function keyName(e: KeyboardEvent): string {
   const mod = e.metaKey || e.ctrlKey ? "mod+" : "";
-  return mod + e.key;
+  const shift = e.shiftKey && e.key.length > 1 ? "shift+" : "";
+  return mod + shift + e.key;
 }
 
 function typing(target: EventTarget | null): boolean {
