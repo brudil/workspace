@@ -21,6 +21,7 @@ type Config struct {
 	Briefing     AgentConfig            `toml:"briefing"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator"`
 	Missions     MissionsConfig         `toml:"missions"`
+	Web          WebConfig              `toml:"web"`
 	Boarded      map[string][]string    `toml:"-"` // from ws.local.toml [boarded] section
 	Git          string                 `toml:"-"` // from ws.local.toml only
 	Silo         map[string]string      `toml:"-"` // from ws.local.toml [silo] section
@@ -36,6 +37,14 @@ type LocalConfig struct {
 	Briefing     AgentConfig            `toml:"briefing,omitempty"`
 	Orchestrator OrchestratorConfig     `toml:"orchestrator,omitempty"`
 	Missions     MissionsConfig         `toml:"missions,omitempty"`
+	Web          WebConfig              `toml:"web,omitempty"`
+}
+
+// WebConfig is the deck server's web UI.
+type WebConfig struct {
+	// Port is where it listens on 127.0.0.1. 0 picks one from the
+	// workspace's path, so each workspace keeps its own.
+	Port int `toml:"port,omitempty"`
 }
 
 // MissionsConfig holds workspace-wide settings for missions.
@@ -197,6 +206,7 @@ func Merge(base, local *Config) *Config {
 		Briefing:     base.Briefing,
 		Orchestrator: base.Orchestrator,
 		Missions:     base.Missions,
+		Web:          base.Web,
 		Repos:        make(map[string]RepoConfig, len(base.Repos)),
 		Groups:       make(map[string]GroupConfig, len(base.Groups)),
 	}
@@ -268,6 +278,9 @@ func Load(startDir string) (*Config, string, error) {
 		cfg.Crew.merge(local.Crew)
 		if local.Missions.Records != "" {
 			cfg.Missions.Records = local.Missions.Records
+		}
+		if local.Web.Port != 0 {
+			cfg.Web.Port = local.Web.Port
 		}
 		cfg.Briefing.merge(local.Briefing)
 		if local.Orchestrator.Harness != "" {

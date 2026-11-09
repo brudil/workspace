@@ -32,6 +32,9 @@ type Server struct {
 	// OnCrewEnded, if set, runs after a crew's end is recorded (see
 	// crew.EndHook).
 	OnCrewEnded crew.EndHook
+	// WebPort is the port of the web UI running alongside, 0 for none. It's
+	// set before Serve, so every hello says it.
+	WebPort int
 
 	store mission.Store
 	ln    net.Listener
@@ -39,6 +42,7 @@ type Server struct {
 	mu      sync.Mutex
 	crews   map[string]*crewProc
 	conns   map[*conn]bool
+	holds   int // Hold: something else keeping the server up (open web UIs)
 	idle    *time.Timer
 	closing bool
 	done    chan struct{}
@@ -178,18 +182,39 @@ func (s *Server) Shutdown(reason string) {
 // Done is closed once the server has shut down and removed its socket.
 func (s *Server) Done() <-chan struct{} { return s.done }
 
-// checkIdleLocked arms the idle timer when nothing is running or attached.
+// Hold keeps the server from idling out until release is called, as an
+// attached deck does. The web UI holds it for each open page.
+func (s *Server) Hold() (release func()) {
+	s.mu.Lock()
+	s.holds++
+	s.checkIdleLocked()
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.holds--
+			s.checkIdleLocked()
+			s.mu.Unlock()
+		})
+	}
+}
+
+func (s *Server) busyLocked() bool { return len(s.crews) > 0 || len(s.conns) > 0 || s.holds > 0 }
+
+// checkIdleLocked arms the idle timer when nothing is running, attached or
+// held.
 func (s *Server) checkIdleLocked() {
 	if s.idle != nil {
 		s.idle.Stop()
 		s.idle = nil
 	}
-	if len(s.crews) > 0 || len(s.conns) > 0 || s.closing {
+	if s.busyLocked() || s.closing {
 		return
 	}
 	s.idle = time.AfterFunc(s.IdleTimeout, func() {
 		s.mu.Lock()
-		busy := len(s.crews) > 0 || len(s.conns) > 0
+		busy := s.busyLocked()
 		s.mu.Unlock()
 		if !busy {
 			go s.Shutdown("idle")
@@ -237,7 +262,7 @@ func (s *Server) do(c *conn, req request) message {
 	fail := func(err error) message { return message{Error: err.Error()} }
 	switch req.Op {
 	case "hello":
-		return message{Ver: ProtocolVersion, Pid: os.Getpid()}
+		return message{Ver: ProtocolVersion, Pid: os.Getpid(), Web: s.WebPort}
 
 	case "list":
 		s.mu.Lock()

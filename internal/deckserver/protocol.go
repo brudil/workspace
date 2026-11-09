@@ -57,6 +57,7 @@ type message struct {
 
 	Ver   int        `json:"ver,omitempty"`
 	Pid   int        `json:"pid,omitempty"`
+	Web   int        `json:"web,omitempty"` // hello: the web UI's port; servers without one don't say
 	Crews []CrewInfo `json:"crews,omitempty"`
 
 	Ev    string `json:"ev,omitempty"`

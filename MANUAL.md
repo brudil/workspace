@@ -459,6 +459,17 @@ records = "records"
 
 Every ws process appends to the same file, so `tail -f .ws/exec.log` follows the whole workspace. It rolls over to `exec.log.1` at 10 MB.
 
+**Web UI.** For what the terminal is poor at, the deck has a web UI: for now, missions with their capsules and crew, kept live as they change. Review is next (see `docs/plans/2026-11-09-web-review-design.md`). `ws web` opens it in your browser, and `o` in the deck opens the selected mission there. It runs in the deck server (started if it isn't running), which stays up while a page is open.
+
+```toml
+[web]
+port = 47100    # default: one of 47000–47999 picked from the workspace's path, or the next free one
+```
+
+- It listens on `127.0.0.1` only. `ws web --print [path]` prints the link instead of opening it, and `ws deck server status` says where it is.
+- The link signs your browser in with the workspace's token (kept in `.ws/web.json`, readable only by you, and the same across restarts), so open it with `ws web` rather than typing the address. Every request needs that sign-in, comes to `127.0.0.1` or `localhost` by name, and, for anything that changes something, comes from the UI's own pages.
+- Working on the UI: `just web-dev [workspace]` serves it with hot reload at `localhost:5173`, talking to that workspace's running web UI. `just build` builds it into `internal/web/dist`, which is committed, so `go install` needs no Node.
+
 ---
 
 ## Configuration

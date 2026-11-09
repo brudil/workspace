@@ -23,6 +23,7 @@
   ⏎ (loose)  Show or hide capsules that belong to no mission
   s          Toggle the sidebar
   r          Refresh (including PRs)
+  o          Open the selected mission in the web UI, in your browser
   ?          Toggle this help
   q          Quit
 

@@ -10,6 +10,7 @@ import (
 	"github.com/brudil/workspace/internal/deckserver"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
+	"github.com/brudil/workspace/internal/web"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,10 @@ func newDeckServerRunCmd() *cobra.Command {
 			if err := s.Listen(); err != nil {
 				return err
 			}
+			if w := startWeb(s); w != nil {
+				s.WebPort = w.Info().Port
+				defer w.Close()
+			}
 			sigs := make(chan os.Signal, 1)
 			signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 			go func() {
@@ -90,6 +95,9 @@ func newDeckServerStatusCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(ui.Stderr, "  %s deck server running, pid %d (%s)\n", ui.Green.Render("●"), c.ServerPid(), deckserver.SocketPath(ctx.WS.Root))
+			if info, err := web.ReadInfo(ctx.WS.Root); err == nil && info.Pid == c.ServerPid() && info.Port != 0 {
+				fmt.Fprintf(ui.Stderr, "    %s web UI on %s (ws web opens it)\n", ui.Dim.Render("·"), info.Origin())
+			}
 			if len(crews) == 0 {
 				fmt.Fprintf(ui.Stderr, "    %s no crew; it exits after a minute idle\n", ui.Dim.Render("·"))
 			}

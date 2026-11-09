@@ -34,11 +34,15 @@ type Client struct {
 	closed  bool
 	lost    chan struct{} // closed when the connection drops
 
-	serverVer, serverPid int
+	serverVer, serverPid, webPort int
 }
 
 // ServerPid is the server's process id.
 func (c *Client) ServerPid() int { return c.serverPid }
+
+// WebPort is the port of the server's web UI, or 0 if it has none: its web
+// UI couldn't start, or it's from a ws built before there was one.
+func (c *Client) WebPort() int { return c.webPort }
 
 // Compatible reports whether the server speaks this ws's protocol.
 func (c *Client) Compatible() bool { return c.serverVer == ProtocolVersion }
@@ -63,7 +67,7 @@ func dial(root string, checkVersion bool) (*Client, error) {
 		c.Close()
 		return nil, err
 	}
-	c.serverVer, c.serverPid = reply.Ver, reply.Pid
+	c.serverVer, c.serverPid, c.webPort = reply.Ver, reply.Pid, reply.Web
 	if checkVersion && reply.Ver != ProtocolVersion {
 		c.Close()
 		return nil, fmt.Errorf("the deck server running for this workspace (pid %d) speaks protocol %d, this ws speaks %d: run `ws deck server stop` and try again", reply.Pid, reply.Ver, ProtocolVersion)

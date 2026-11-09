@@ -215,6 +215,38 @@ func TestServer_IdleShutdown(t *testing.T) {
 	}
 }
 
+// A deck server says where its web UI is when a client connects; one
+// without (an older ws's) says nothing, which reads as 0.
+func TestServer_HelloSaysWebPort(t *testing.T) {
+	s, root := startServer(t, time.Minute)
+	if c := dialT(t, root); c.WebPort() != 0 {
+		t.Errorf("no web UI: port %d", c.WebPort())
+	}
+	s.WebPort = 47123 // set before Serve in real use
+	if c := dialT(t, root); c.WebPort() != 47123 {
+		t.Errorf("web port %d", c.WebPort())
+	}
+}
+
+// An open web UI holds the server up like an attached deck; releasing the
+// hold (twice is harmless) lets it idle out.
+func TestServer_StaysUpWhileHeld(t *testing.T) {
+	s, _ := startServer(t, 200*time.Millisecond)
+	release := s.Hold()
+	select {
+	case <-s.Done():
+		t.Fatal("server shut down while held")
+	case <-time.After(600 * time.Millisecond):
+	}
+	release()
+	release()
+	select {
+	case <-s.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("released server didn't idle out")
+	}
+}
+
 func TestServer_StaysUpWhileCrewRun(t *testing.T) {
 	s, root := startServer(t, 200*time.Millisecond)
 	spec := crewOn(t, root, `sleep 10`)

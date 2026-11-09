@@ -1,6 +1,6 @@
 # Web and review: design
 
-Status: designed, nothing built. Lives on `v2` with missions.
+Status: phase 1 (the web server) built. Lives on `v2` with missions.
 
 ## Why
 
@@ -52,9 +52,10 @@ In the **deck server**: the per-workspace process that already owns crew, outliv
 
 The server can read every repo in the workspace and will start agent work. A page on any website can make your browser send requests to localhost, so:
 
-- **Token.** A random 32-byte token in `.ws/web.json`. `ws web` opens `http://127.0.0.1:<port>/auth?t=<token>`, which sets an `HttpOnly`, `SameSite=Strict` cookie and redirects to the clean URL. Every API request needs the cookie (or `Authorization: Bearer <token>` for scripts).
+- **Token.** A random 32-byte token in `.ws/web.json`, kept across restarts. `ws web` opens `http://127.0.0.1:<port>/auth?t=<token>`, which sets an `HttpOnly` cookie and redirects to the clean URL. Every request needs the cookie (or `Authorization: Bearer <token>` for scripts). The cookie's name is per workspace: browsers keep cookies per host, not per port.
+- **`SameSite=Lax`, not Strict**, so a link to the UI from elsewhere (a notification, a chat) opens signed in. A cross-site request can only read, and can't see the answer; writes are covered by the Origin check. Note that SameSite ignores the port: a page on any other `127.0.0.1` port counts as the same site, which is why the Origin check matters.
 - **Host check.** Requests whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>` are refused (DNS rebinding).
-- **Writes** need `Content-Type: application/json` and a matching `Origin` (CSRF). The cookie being `SameSite=Strict` covers most of it; this covers the rest.
+- **Writes** need `Content-Type: application/json` and a matching `Origin` (CSRF).
 - No CORS. Bound to loopback only; no option to bind wider in v1.
 
 ### API

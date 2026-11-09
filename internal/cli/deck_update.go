@@ -249,6 +249,13 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.input.Focus()
 	case k.Edit.matches(msg):
 		return m.editBrief()
+	case k.Web.matches(msg):
+		path := "/"
+		if dm, ok := m.selectedMission(); ok {
+			path = "/missions/" + dm.M.Slug
+		}
+		m.flash = "opening the web UI…"
+		return m, openWebCmd(m.ws.Root, path)
 	case k.Attach.matches(msg):
 		return m.startAttach()
 	case k.Detach.matches(msg):
