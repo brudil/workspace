@@ -115,12 +115,13 @@ func TestDeckMission_Stages(t *testing.T) {
 	m.focusTerm = false
 	m = selectMission(t, m, slug)
 	v := missionPane(m)
-	for _, want := range []string{"Stages     ✓ 1 Write the proposal. Check in with me.", "▸ 2 Implement it in frontend/work. · c1", "· 3 Update the docs. Check in with me. · check in after"} {
+	// Each stage in a few words (its first sentence), with what matters.
+	for _, want := range []string{"Stages     ✓ 1 Write the proposal\n", "▸ 2 Implement it in frontend/work · c1", "· 3 Update the docs · check in after"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("summary missing %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "1 Write the proposal. Check in with me. · check in after") {
+	if strings.Contains(v, "1 Write the proposal · check in after") {
 		t.Error("an accepted stage still says check in")
 	}
 }

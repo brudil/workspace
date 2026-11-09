@@ -243,7 +243,8 @@ export interface Proposal {
 
 export interface Stage {
   n: number;
-  title: string;
+  title: string; // a few words
+  text: string; // the whole stage
   state: "accepted" | "current" | "todo";
   crew?: string[];
   checkIn?: boolean;

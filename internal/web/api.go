@@ -81,7 +81,8 @@ type Proposal struct {
 // Stage is one of the brief's stages and where it's got to.
 type Stage struct {
 	N       int      `json:"n"`
-	Title   string   `json:"title"`
+	Title   string   `json:"title"` // a few words
+	Text    string   `json:"text"`  // the whole stage, on one line
 	State   string   `json:"state"` // accepted, current, todo
 	Crew    []string `json:"crew,omitempty"`
 	CheckIn bool     `json:"checkIn,omitempty"`

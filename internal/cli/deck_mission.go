@@ -329,7 +329,7 @@ func (m deckModel) stageSummary(dm deckMission) []string {
 	}
 	var lines []string
 	for _, st := range states {
-		title := fmt.Sprintf("%d %s", st.N, oneLine(strings.ReplaceAll(st.Title(), "`", "")))
+		title := fmt.Sprintf("%d %s", st.N, st.Short())
 		var facts []string
 		if st.Record != nil && len(st.Record.Crew) > 0 {
 			facts = append(facts, strings.Join(st.Record.Crew, ", "))

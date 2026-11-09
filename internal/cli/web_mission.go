@@ -93,7 +93,7 @@ func webMission(root string, prs *prCache) func(slug string, withGitHub bool) (*
 		}
 		if states, _ := m.StageProgress(brief); !(len(states) == 1 && states[0].Implicit) {
 			for _, st := range states {
-				s := web.Stage{N: st.N, Title: oneLine(strings.ReplaceAll(st.Title(), "`", "")), State: "todo", CheckIn: st.CheckIn}
+				s := web.Stage{N: st.N, Title: st.Short(), Text: st.Plain(), State: "todo", CheckIn: st.CheckIn}
 				if st.Record != nil {
 					s.Crew, s.Why = st.Record.Crew, st.Record.Why
 				}

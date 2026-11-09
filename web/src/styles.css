@@ -227,9 +227,7 @@ section {
 }
 
 .crew-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: block;
 }
 
 .reply {
@@ -1495,4 +1493,165 @@ button.kind.on {
 .markdown-loading {
   white-space: pre-wrap;
   color: var(--dim);
+}
+
+/* The mission's details sidebar */
+
+.page.mission.with-side {
+  max-width: 1280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 32px;
+}
+
+.mission-main {
+  min-width: 0;
+}
+
+.detail-side {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-x: hidden; /* items' highlights reach past their column */
+  overflow-y: auto;
+  margin-top: -18px;
+  padding: 18px 8px 40px 20px;
+  border-left: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.props {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 6px 10px;
+  margin: 0 0 18px;
+}
+
+.props dt {
+  color: var(--dim);
+}
+
+.props dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.side-section {
+  margin: 0 0 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.side-section h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.side-item {
+  margin: 0 -8px;
+  padding: 4px 8px;
+}
+
+.side-item .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-art {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.dot.good {
+  background: var(--green);
+}
+
+.dot.busy {
+  background: var(--accent);
+}
+
+.dot.bad {
+  background: var(--amber);
+}
+
+.small {
+  font-size: 11px;
+}
+
+.stages.compact .stage {
+  padding: 1px 0;
+}
+
+.detail-side .crew-line {
+  padding: 2px 0;
+}
+
+.detail-side .crew-line .reply {
+  margin-top: 2px;
+  max-height: 4.5em;
+}
+
+.tabs .side-toggle {
+  margin-left: auto;
+}
+
+/* On a narrow window, the details go under the tabs. */
+@media (max-width: 960px) {
+  .page.mission.with-side {
+    display: block;
+  }
+
+  .detail-side {
+    position: static;
+    max-height: none;
+    margin: 24px 0 0;
+    padding: 16px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* Stages in the sidebar: one line each, the whole stage on hover. */
+.stages.compact .stage {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.stages.compact .stage .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stages.compact .stage > .dim {
+  flex: none;
+  white-space: nowrap;
+  margin-left: 0.3em;
+}
+
+.stages.compact .mark {
+  flex: none;
 }

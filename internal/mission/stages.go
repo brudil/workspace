@@ -104,6 +104,55 @@ func (s Stage) Title() string {
 	return first
 }
 
+// ShortMax is the longest a stage's short form gets.
+const ShortMax = 60
+
+var (
+	boldLead    = regexp.MustCompile(`^(?:\*\*|__)(.+?)(?:\*\*|__)`)
+	sentenceEnd = regexp.MustCompile(`[.:;!?](?:\s|$)`)
+	trailParens = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
+	mdLink      = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	mdEmphasis  = regexp.MustCompile("\\*\\*|__|`")
+)
+
+// Short is the stage in a few words, for lists: the bold lead it starts
+// with ("**Proposal (in `records/x`).** Write…" is "Proposal"), else its
+// first sentence, without markdown or a closing aside in brackets, and cut
+// at ShortMax.
+func (s Stage) Short() string {
+	if s.Implicit {
+		return s.Title()
+	}
+	t := strings.TrimSpace(s.Title())
+	if g := boldLead.FindStringSubmatch(t); g != nil {
+		t = g[1]
+	} else if loc := sentenceEnd.FindStringIndex(t); loc != nil {
+		t = t[:loc[0]]
+	}
+	t = mdEmphasis.ReplaceAllString(mdLink.ReplaceAllString(t, "$1"), "")
+	t = strings.TrimRight(strings.TrimSpace(t), ".:;")
+	if short := trailParens.ReplaceAllString(t, ""); short != "" {
+		t = short
+	}
+	if r := []rune(t); len(r) > ShortMax {
+		// At a word, when there's one in the second half.
+		cut := string(r[:ShortMax-1])
+		if i := strings.LastIndex(cut, " "); i > len(cut)/2 {
+			cut = cut[:i]
+		}
+		t = strings.TrimRight(cut, " ,;:") + "…"
+	}
+	return t
+}
+
+// Plain is the stage's text on one line without markdown, for showing whole.
+func (s Stage) Plain() string {
+	if s.Implicit {
+		return s.Title()
+	}
+	return strings.Join(strings.Fields(mdEmphasis.ReplaceAllString(mdLink.ReplaceAllString(s.Text, "$1"), "")), " ")
+}
+
 var capsuleToken = regexp.MustCompile("`([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+)`")
 
 // NamedCapsules is every repo/name the stage names in backticks, the way

@@ -146,3 +146,28 @@ func TestAcceptStage_WholeBriefAndAllDone(t *testing.T) {
 		t.Errorf("accepted twice: %v", err)
 	}
 }
+
+// A stage's short form is for lists: briefs' stages are often a paragraph
+// of markdown with a bold lead.
+func TestStageShort(t *testing.T) {
+	for text, want := range map[string]string{
+		"**Proposal (records capsule `hello-world-proposal`).** Write `proposals/hello-world-python.md` with: a title, the problem.": "Proposal",
+		"**Implementation (demo capsule `hello-world-python`).** Add `hello.py` at the repo root.":                                   "Implementation",
+		"Propose the greeting table in `demo/hello`. Check in with me.":                                                              "Propose the greeting table in demo/hello",
+		"Implement it.": "Implement it",
+		"__Spike__: see [the notes](https://example.com/n) first":                                "Spike",
+		"Write up v1.2 of the [ADR](x) in `records/adr`":                                         "Write up v1.2 of the ADR in records/adr",
+		"Port every handler in the api to the new router, then delete the old one and its tests": "Port every handler in the api to the new router, then…",
+		"Ship it (with flags)": "Ship it",
+	} {
+		if got := (Stage{N: 1, Text: text}).Short(); got != want {
+			t.Errorf("Short(%q) = %q, want %q", text, got, want)
+		}
+	}
+	if got := (Stage{N: 1, Text: "**Proposal.** Write `x.md`:\nthe [plan](u)."}).Plain(); got != "Proposal. Write x.md: the plan." {
+		t.Errorf("Plain = %q", got)
+	}
+	if got := (Stage{N: 1, Implicit: true}).Short(); got != "the whole brief" {
+		t.Errorf("implicit = %q", got)
+	}
+}
