@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { Link, Route, Routes, useLocation, useNavigate } from "react-router";
 import { type Connection, type Crew, type Mission, type MissionState, NotSignedIn, useWorkspace } from "./api";
 import { useKeys } from "./keys";
+import { ArtifactPage, artifactKeys } from "./mission/ArtifactPage";
+import { MissionPage, missionKeys } from "./mission/Mission";
 import { Review, reviewKeys } from "./review/Review";
 
 export function App() {
@@ -39,13 +41,14 @@ export function App() {
         {workspace && (
           <Routes>
             <Route path="/" element={<Missions missions={workspace.missions} />} />
-            <Route path="/missions/:slug" element={<MissionPage missions={workspace.missions} />} />
+            <Route path="/missions/:slug" element={<MissionPage workspace={workspace} />} />
+            <Route path="/missions/:slug/artifact" element={<ArtifactPage workspace={workspace} />} />
             <Route path="/missions/:slug/review/:repo/:name" element={<Review workspace={workspace} />} />
             <Route path="*" element={<Notice title="Nothing here">That page doesn't exist.</Notice>} />
           </Routes>
         )}
       </main>
-      {help && <Help keys={reviewing ? reviewKeys : listKeys} onClose={() => setHelp(false)} />}
+      {help && <Help keys={helpKeys(location.pathname)} onClose={() => setHelp(false)} />}
     </div>
   );
 }
@@ -161,89 +164,6 @@ function Missions({ missions }: { missions: Mission[] }) {
   );
 }
 
-function MissionPage({ missions }: { missions: Mission[] }) {
-  const { slug } = useParams();
-  const navigate = useNavigate();
-  const [sel, setSel] = useState(0);
-  const m = missions.find((m) => m.slug === slug);
-  const capsules = m?.capsules ?? [];
-  const back = () => navigate("/");
-  const review = (i: number) => {
-    const c = capsules[i];
-    if (m && c) navigate(`/missions/${m.slug}/review/${c.repo}/${c.name}`);
-  };
-  useKeys({
-    Escape: back,
-    Backspace: back,
-    h: back,
-    j: () => setSel((s) => Math.min(s + 1, capsules.length - 1)),
-    k: () => setSel((s) => Math.max(s - 1, 0)),
-    v: () => review(sel),
-    Enter: () => review(sel),
-  });
-  if (!m) {
-    return <Notice title="No such mission">{slug} isn't one of this workspace's missions.</Notice>;
-  }
-  return (
-    <div className="page">
-      <header className="page-head">
-        <Link to="/" className="dim">
-          Missions
-        </Link>
-        <span className="dim">/</span>
-        <h1>{m.title}</h1>
-        <StateGlyph state={m.state} label />
-      </header>
-      {m.flag && (
-        <div className="callout">
-          <strong>Needs you.</strong> {m.flag}
-        </div>
-      )}
-      <section>
-        <h2 className="group">Capsules</h2>
-        <ul className="rows">
-          {m.capsules.map((c, i) => (
-            <li key={`${c.repo}/${c.name}`} className={`row ${i === sel ? "selected" : ""}`} onMouseMove={() => setSel(i)}>
-              <Link to={`/missions/${m.slug}/review/${c.repo}/${c.name}`} className="row-link">
-                <span className="mono">
-                  {c.repo}/{c.name}
-                </span>
-                <span className="dim mono">{c.branch}</span>
-                <span className="spacer" />
-                {!c.exists && <span className="tag warn">missing</span>}
-                {c.exists && i === sel && (
-                  <span className="dim">
-                    <kbd>v</kbd> review
-                  </span>
-                )}
-              </Link>
-            </li>
-          ))}
-          {!m.capsules.length && <li className="row static dim">No capsules yet.</li>}
-        </ul>
-      </section>
-      <section>
-        <h2 className="group">Crew</h2>
-        <ul className="rows">
-          {[...m.crew].reverse().map((c) => (
-            <li key={c.id} className="row static crew-row">
-              <div className="crew-line">
-                <CrewChip crew={c} />
-                <span className="dim">{c.role === "briefing" ? "briefing" : c.harness}</span>
-                <span className="dim mono">{c.capsule}</span>
-                <span className="spacer" />
-                <span className="dim age">{age(c.started)}</span>
-              </div>
-              {c.lastReply && <p className="reply">{c.lastReply}</p>}
-            </li>
-          ))}
-          {!m.crew.length && <li className="row static dim">No crew yet.</li>}
-        </ul>
-      </section>
-    </div>
-  );
-}
-
 function StateGlyph({ state, label }: { state: MissionState; label?: boolean }) {
   return (
     <span className={`state state-${state}`} title={state}>
@@ -264,11 +184,18 @@ function CrewChip({ crew }: { crew: Crew }) {
   );
 }
 
+// helpKeys are the keys for the page at path.
+function helpKeys(path: string): [string, string][] {
+  if (path.includes("/review/")) return reviewKeys;
+  if (path.endsWith("/artifact")) return artifactKeys;
+  if (path.startsWith("/missions/")) return missionKeys;
+  return listKeys;
+}
+
 const listKeys: [string, string][] = [
   ["j / k", "Next / previous"],
   ["g / G", "First / last"],
   ["⏎ or o", "Open"],
-  ["v", "Review the capsule (on a mission)"],
   ["esc", "Back"],
   ["A", "Show or hide past missions"],
   ["?", "These keys"],

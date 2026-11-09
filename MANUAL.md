@@ -459,7 +459,11 @@ records = "records"
 
 Every ws process appends to the same file, so `tail -f .ws/exec.log` follows the whole workspace. It rolls over to `exec.log.1` at 10 MB.
 
-**Web UI.** For what the terminal is poor at, the deck has a web UI: missions with their capsules and crew, kept live as they change, and review. `ws web` opens it in your browser, and `o` in the deck opens the selected mission there. It runs in the deck server (started if it isn't running), which stays up while a page is open.
+**Web UI.** For what the terminal is poor at, the deck has a web UI: missions, kept live as they change, and review. `ws web` opens it in your browser, and `o` in the deck opens the selected mission there. It runs in the deck server (started if it isn't running), which stays up while a page is open.
+
+**A mission's page** has the deck's mission view in four tabs (`1`–`4`): *Summary* (what needs you, the goal, stages, crew, capsules, artifacts and what happened lately), *Brief* (rendered), *Work* (capsules with their git state and PRs, and every artifact by kind) and *Log* (the whole log, and each crew: what it was dispatched for, how it ended, its handoff). `j`/`k` move between capsules, artifacts and handoffs; `⏎` opens one (a capsule's review, an artifact), `v` reviews a capsule and `o` opens a PR or an artifact's link. PRs come from GitHub after the page has drawn.
+
+**Artifacts** that are files here (proposals, notes, handoffs, reviews, files in a capsule or on the default branch) open in the web UI: markdown rendered (tables, task lists, highlighted code, and ```` ```mermaid ```` diagrams drawn), anything else as highlighted code. Only the mission's recorded artifacts can be opened this way, and what they say is shown, never run: no HTML, no scripts, no script links, and Mermaid in its strict mode.
 
 **Review.** `v` in the deck reviews a capsule in the web UI: the selected crew's, or the mission's if it has only one (with more, its page opens, where `j`/`k` and `v` pick one). A review shows the capsule's committed changes since it left `origin/<default branch>`, file by file, with syntax highlighting, keyboard first (`?` lists the keys):
 

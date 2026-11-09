@@ -22,7 +22,9 @@ export default defineConfig(() => {
   const target = devTarget();
   return {
     plugins: [react()],
-    build: { outDir: "../internal/web/dist", emptyOutDir: true },
+    // Mermaid's diagram types and layouts are large chunks, loaded only by
+    // a diagram that needs them.
+    build: { outDir: "../internal/web/dist", emptyOutDir: true, chunkSizeWarningLimit: 1600 },
     server: {
       port: 5173,
       strictPort: true,

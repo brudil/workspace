@@ -70,3 +70,9 @@ function splitLines(html: string): string[] {
   out.push(cur);
   return out;
 }
+
+// highlightCode colours a fenced block by its language name, if known.
+export function highlightCode(code: string, lang: string | undefined): string {
+  if (!hljs || !lang || !hljs.getLanguage(lang)) return escapeHTML(code);
+  return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+}

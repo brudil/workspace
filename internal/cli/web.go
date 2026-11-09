@@ -121,6 +121,7 @@ func startWeb(s *deckserver.Server) *web.Server {
 	}
 	w := &web.Server{
 		Root: s.Root, Port: port, Log: s.Log, Workspace: webWorkspace(s.Root), Capsule: webCapsule(s.Root), Hold: s.Hold,
+		Mission: webMission(s.Root, newPRCache()), Artifact: webArtifact(s.Root),
 		// A submitted review is the orchestrator's to act on.
 		OnReview: func(slug string, r *review.Review) { orchestrateSpawner(s.Root, slug, "", "review") },
 	}
@@ -149,7 +150,8 @@ func webWorkspace(root string) func() (web.Workspace, error) {
 			out.Name = filepath.Base(root)
 		}
 		for _, v := range buildMissionViewsFrom(ctx.WS, nil, missions) {
-			m := web.Mission{Slug: v.M.Slug, Title: v.M.Title, State: string(v.State), Created: v.M.Created, Capsules: []web.Capsule{}, Crew: []web.Crew{}}
+			m := web.Mission{Slug: v.M.Slug, Title: v.M.Title, State: string(v.State), Created: v.M.Created, Capsules: []web.Capsule{}, Crew: []web.Crew{},
+				Updated: missionUpdated(mission.Store{Root: root}, v.M.Slug)}
 			if v.M.Flag != nil {
 				m.Flag = v.M.Flag.Text
 			}

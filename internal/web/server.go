@@ -58,6 +58,11 @@ type Server struct {
 	// its changes are compared with. ErrNotFound if the mission has no
 	// such capsule (review is only of mission capsules).
 	Capsule func(slug, repo, name string) (dir, baseRef string, err error)
+	// Mission is what GET /api/missions/{slug} serves (PRs too, with
+	// github), and Artifact a readable artifact's text; both answer
+	// ErrNotFound for what isn't there.
+	Mission  func(slug string, github bool) (*MissionDetail, error)
+	Artifact func(slug, ref string) (*ArtifactContent, error)
 	// OnReview runs once a review is submitted: the orchestrator decides
 	// what follows.
 	OnReview func(slug string, r *review.Review)
@@ -197,6 +202,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /auth", s.auth)
 	mux.HandleFunc("GET /api/workspace", s.workspace)
 	mux.HandleFunc("GET /api/events", s.events)
+	mux.HandleFunc("GET /api/missions/{slug}", s.mission)
+	mux.HandleFunc("GET /api/missions/{slug}/artifact", s.artifact)
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/diff", s.diff)
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/file-diff", s.fileDiff)
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/blob", s.blob)

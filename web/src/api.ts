@@ -13,6 +13,7 @@ export interface Mission {
   title: string;
   state: MissionState;
   created: string;
+  updated: string;
   flag?: string;
   capsules: Capsule[];
   crew: Crew[];
@@ -230,3 +231,84 @@ export const submitReview = (api: string, at: { base: string; head: string }, ve
   send<ReviewState>("POST", `${api}/review/submit`, { ...at, verdict, summary });
 
 export const discardReview = (api: string) => send<ReviewState>("DELETE", `${api}/review`);
+
+// Missions in full: mirrors MissionDetail in internal/web/api.go.
+
+export interface Proposal {
+  text: string;
+  by?: string;
+  capsule?: string;
+  options?: string[];
+}
+
+export interface Stage {
+  n: number;
+  title: string;
+  state: "accepted" | "current" | "todo";
+  crew?: string[];
+  checkIn?: boolean;
+  why?: string;
+}
+
+export interface CapsuleDetail extends Capsule {
+  dirty?: boolean;
+  ahead?: number;
+  behind?: number;
+  pr?: { number: number; title: string; url: string; merged?: boolean; checks?: string };
+}
+
+export interface CrewDetail extends Crew {
+  endedAt?: string;
+  exit?: string;
+  note?: string;
+  dispatch?: string;
+  handoff?: string;
+}
+
+export interface Artifact {
+  ref: string;
+  kind: string;
+  label?: string;
+  state: string;
+  url?: string;
+  path?: string;
+  by?: string;
+  added: string;
+  readable: boolean;
+}
+
+export interface MissionEvent {
+  time: string;
+  kind: string;
+  text: string;
+}
+
+export interface MissionDetail {
+  slug: string;
+  title: string;
+  state: MissionState;
+  created: string;
+  request?: string;
+  from?: string;
+  brief: string;
+  flag?: Proposal;
+  dispatch?: Proposal;
+  conclude?: Proposal;
+  stages: Stage[];
+  capsules: CapsuleDetail[];
+  crew: CrewDetail[];
+  artifacts: Artifact[];
+  events: MissionEvent[];
+  github: boolean;
+}
+
+export interface ArtifactContent extends Artifact {
+  text: string;
+  markdown: boolean;
+}
+
+export const getMission = (slug: string, github: boolean) =>
+  getJSON<MissionDetail>(`/api/missions/${encodeURIComponent(slug)}${github ? "?github=1" : ""}`);
+
+export const getArtifact = (slug: string, ref: string) =>
+  getJSON<ArtifactContent>(`/api/missions/${encodeURIComponent(slug)}/artifact?${new URLSearchParams({ ref })}`);

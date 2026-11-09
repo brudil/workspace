@@ -5,6 +5,7 @@ import (
 
 	"github.com/brudil/workspace/internal/crew"
 	"github.com/brudil/workspace/internal/mission"
+	"github.com/brudil/workspace/internal/web"
 )
 
 // UseLocalDispatchHost runs dispatched crew as children of the test instead
@@ -69,4 +70,8 @@ func CaptureOrchestratorRuns() (*[]string, func()) {
 var (
 	WebCapsule   = webCapsule
 	WebWorkspace = webWorkspace
+	WebMission   = func(root string) func(string, bool) (*web.MissionDetail, error) {
+		return webMission(root, newPRCache())
+	}
+	WebArtifact = webArtifact
 )

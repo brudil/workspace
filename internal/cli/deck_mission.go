@@ -88,7 +88,11 @@ func (m deckModel) renderMissionSummary(dm deckMission, indent string, inner int
 	}
 	if f := dm.M.Flag; f != nil {
 		who := "The orchestrator asks"
-		if f.By != "orchestrator" {
+		switch f.By {
+		case "orchestrator", "":
+		case "you":
+			who = "You flagged"
+		default:
 			who = f.By + " asks"
 		}
 		b.WriteString("\n" + wrapUnder(indent, ui.Orange.Render("! "+who+": "), f.Text, inner))
