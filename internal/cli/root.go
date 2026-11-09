@@ -42,6 +42,7 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.AddCommand(newMissionCmd())
 	cmd.AddCommand(newDeckCmd())
 	cmd.AddCommand(newWebCmd())
+	cmd.AddCommand(newReviewCmd())
 
 	return cmd
 }

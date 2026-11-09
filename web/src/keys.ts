@@ -27,6 +27,9 @@ export function useKeys(keys: KeyMap, opts: { modal?: boolean } = {}) {
   useEffect(() => {
     if (modal) modals++;
     const onKey = (e: KeyboardEvent) => {
+      // Handled already (an editor's own Escape, say, which may have closed
+      // it, and with it the modal that kept this one quiet).
+      if (e.defaultPrevented) return;
       if (e.isComposing || (typing(e.target) && e.key !== "Escape")) return;
       if (!modal && modals > 0) return;
       const fn = current.current[keyName(e)];

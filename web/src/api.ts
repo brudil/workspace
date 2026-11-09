@@ -153,3 +153,80 @@ export const getFileDiff = (api: string, base: string, head: string, path: strin
 
 export const getBlob = (api: string, rev: string, path: string) =>
   getJSON<{ lines: string[] }>(`${api}/blob?${new URLSearchParams({ rev, path })}`).then((b) => b.lines);
+
+// Reviews: mirrors internal/review/review.go.
+
+export const noteKinds = ["blocking", "suggestion", "question", "nit"] as const;
+export type NoteKind = (typeof noteKinds)[number];
+export type Verdict = "approve" | "changes" | "comment";
+
+export interface ReviewNote {
+  id: string;
+  path: string;
+  side: "new" | "old";
+  line: number;
+  endLine: number;
+  commit: string;
+  excerpt: string[];
+  kind: NoteKind;
+  body: string;
+  suggestion?: string | null;
+  status: string;
+  thread: { by: string; at: string; body: string; commit?: string; status?: string }[];
+}
+
+export interface Review {
+  id: string;
+  capsule: string;
+  baseRef: string;
+  base: string;
+  head: string;
+  state: "draft" | "submitted";
+  verdict?: Verdict;
+  summary?: string;
+  created: string;
+  submitted?: string;
+  comments: ReviewNote[];
+}
+
+export interface ReviewState {
+  draft: Review | null;
+  reviews: Review[];
+  viewed: Record<string, string>;
+}
+
+async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (res.status === 401) throw new NotSignedIn();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`);
+  return data as T;
+}
+
+export interface NoteDraft {
+  kind: NoteKind;
+  body: string;
+  suggestion?: string | null;
+}
+
+export const getReview = (api: string) => getJSON<ReviewState>(`${api}/review`);
+
+export const addNote = (api: string, at: { base: string; head: string }, n: NoteDraft & { path: string; side: "new" | "old"; line: number; endLine: number }) =>
+  send<ReviewState>("POST", `${api}/review/comments`, { ...at, ...n });
+
+export const editNote = (api: string, id: string, n: NoteDraft) =>
+  send<ReviewState>("PATCH", `${api}/review/comments/${encodeURIComponent(id)}`, n);
+
+export const deleteNote = (api: string, id: string) => send<ReviewState>("DELETE", `${api}/review/comments/${encodeURIComponent(id)}`);
+
+export const setViewed = (api: string, path: string, blob: string, viewed: boolean) =>
+  send<ReviewState>("PUT", `${api}/review/viewed`, { path, blob, viewed });
+
+export const submitReview = (api: string, at: { base: string; head: string }, verdict: Verdict, summary: string) =>
+  send<ReviewState>("POST", `${api}/review/submit`, { ...at, verdict, summary });
+
+export const discardReview = (api: string) => send<ReviewState>("DELETE", `${api}/review`);

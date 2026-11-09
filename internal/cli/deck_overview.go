@@ -194,6 +194,9 @@ func eventSentence(e mission.Event) (string, bool) {
 		return "asks you: " + text, true
 	case mission.EventFlagAnswered:
 		return "you answered: " + text, true
+	case mission.EventReview:
+		id, verdict, _ := strings.Cut(text, ": ")
+		return "you reviewed " + capsule + ": " + verdict + " (" + id + ")", true
 	case mission.EventConclude:
 		return "suggested concluding: " + text, true
 	case mission.EventResumeWith:

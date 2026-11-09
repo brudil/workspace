@@ -30,6 +30,7 @@ const (
 	EventDispatchQueued = "dispatch_queued"
 	EventState          = "state"
 	EventStage          = "stage" // crew joined a stage, or it was accepted
+	EventReview         = "review"
 )
 
 // Event is one line of a mission's log.

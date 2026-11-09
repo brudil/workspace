@@ -338,7 +338,7 @@ func TestBriefingPrompt(t *testing.T) {
 
 func TestWorkPromptTeachesSignals(t *testing.T) {
 	p := InitialPrompt(Brief{Slug: "m", Title: "M"})
-	for _, want := range []string{"ws mission ask", "ws mission done", "ws mission artifact add"} {
+	for _, want := range []string{"ws mission ask", "ws mission done", "ws mission artifact add", "ws review show -f llm", "commit it"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("work prompt missing %q", want)
 		}

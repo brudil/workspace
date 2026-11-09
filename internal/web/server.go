@@ -29,6 +29,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/brudil/workspace/internal/review"
 )
 
 //go:embed all:dist
@@ -56,6 +58,9 @@ type Server struct {
 	// its changes are compared with. ErrNotFound if the mission has no
 	// such capsule (review is only of mission capsules).
 	Capsule func(slug, repo, name string) (dir, baseRef string, err error)
+	// OnReview runs once a review is submitted: the orchestrator decides
+	// what follows.
+	OnReview func(slug string, r *review.Review)
 	// Hold keeps the deck server up while a page is open (each holds an
 	// event stream); nil for nothing to hold.
 	Hold func() (release func())
@@ -65,7 +70,8 @@ type Server struct {
 	// Assets is the app to serve (default App()).
 	Assets fs.FS
 
-	listener net.Listener // tests set it
+	listener net.Listener     // tests set it
+	clock    func() time.Time // tests set it
 	info     Info
 	srv      *http.Server
 	hub      *hub
@@ -150,6 +156,13 @@ func (s *Server) listen() (net.Listener, error) {
 	return nil, fmt.Errorf("no free port from %d (set [web] port): %w", first, lastErr)
 }
 
+func (s *Server) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
+}
+
 // Info is where the server listens, and its token.
 func (s *Server) Info() Info { return s.info }
 
@@ -187,6 +200,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/diff", s.diff)
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/file-diff", s.fileDiff)
 	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/blob", s.blob)
+	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/review", s.getReview)
+	mux.HandleFunc("DELETE /api/missions/{slug}/capsules/{repo}/{name}/review", s.discardReview)
+	mux.HandleFunc("POST /api/missions/{slug}/capsules/{repo}/{name}/review/comments", s.addNote)
+	mux.HandleFunc("PATCH /api/missions/{slug}/capsules/{repo}/{name}/review/comments/{id}", s.editNote)
+	mux.HandleFunc("DELETE /api/missions/{slug}/capsules/{repo}/{name}/review/comments/{id}", s.deleteNote)
+	mux.HandleFunc("PUT /api/missions/{slug}/capsules/{repo}/{name}/review/viewed", s.setViewed)
+	mux.HandleFunc("POST /api/missions/{slug}/capsules/{repo}/{name}/review/submit", s.submitReview)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "no such API: "+r.Method+" "+r.URL.Path)
 	})

@@ -469,7 +469,11 @@ Every ws process appends to the same file, so `tail -f .ws/exec.log` follows the
 - `u` switches between unified and side by side.
 - Work the crew hasn't committed isn't in the review, and the review says which files have some. When the crew commits while you're looking, it says so, and `r` reloads.
 
-For now a review only reads: comments, and a verdict crew act on, are next (see `docs/plans/2026-11-09-web-review-design.md`).
+- **Comments.** `c` comments on the line you're on, or on the lines you've selected (`V`, then move). Each comment is a kind: **blocking** (must change), **suggestion** (a judgement call), **question** (wants an answer, not a change) or **nit** (only if it's cheap); `tab` switches between them as you write. *Suggest a change* adds a ```` ```suggestion ```` block with the lines as they are, to edit into what they should be. `⌘⏎` saves. Comments are a draft until you submit: `⏎` on one edits it, `D` deletes it. Viewed files are kept with the mission, so they're the same in any browser.
+- **Submitting.** `s` asks for a verdict, `a` approve, `c` request changes or `m` comment, and an optional summary, then `⌘⏎`. Requesting changes needs at least a comment or a summary; approving needs nothing. The review is then the mission's: it's kept as `mission:reviews/r1.md` (an artifact, so crew and the orchestrator find it), logged, and the orchestrator runs with it. It decides what follows (resuming the crew that did the work to address it, dispatching fresh crew with the review to read, or on an approval accepting the stage), but never changes the review: crew address comments, and you resolve them.
+- Crew read reviews with `ws review show` (the latest of the capsule they're in, as markdown: each comment with the lines it's on, as they were) and `ws review list`, and are told to commit before reporting done, since a review is of commits.
+
+Next: crew answering and resolving comments, and re-reviewing only what changed since your last review (see `docs/plans/2026-11-09-web-review-design.md`).
 
 ```toml
 [web]

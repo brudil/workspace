@@ -1,9 +1,30 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { capsuleAPI, type Diff, type DiffFile, getBlob, getDiff, getFileDiff, type Workspace } from "../api";
+import {
+  addNote,
+  capsuleAPI,
+  deleteNote,
+  type Diff,
+  type DiffFile,
+  discardReview,
+  editNote,
+  getBlob,
+  getDiff,
+  getFileDiff,
+  getReview,
+  type NoteDraft,
+  type NoteKind,
+  noteKinds,
+  type Review as ReviewData,
+  type ReviewState,
+  setViewed,
+  submitReview,
+  type Verdict,
+  type Workspace,
+} from "../api";
 import { useKeys } from "../keys";
 import { escapeHTML, highlightLines, languageOf, loadHighlighter } from "./highlight";
-import { type Cell, type FileState, fileRows, isChange, navigable, type Row, sameLine } from "./model";
+import { type Cell, type Editing, type FileState, fileRows, isChange, navigable, type Placed, type Row, sameLine, type Target } from "./model";
 
 export const reviewKeys: [string, string][] = [
   ["j / k", "Next / previous line"],
@@ -12,33 +33,17 @@ export const reviewKeys: [string, string][] = [
   ["⌘D / ⌘U", "Down / up half a page"],
   ["g / G", "First / last"],
   ["t", "Jump to a file"],
+  ["c", "Comment on the line (or the selected lines)"],
+  ["V", "Select lines: move to extend, then c"],
+  ["⏎", "Edit a draft comment; show hidden lines or a large file"],
+  ["D", "Delete a draft comment"],
+  ["s", "Submit the review"],
   ["x", "Mark the file viewed (and go on)"],
-  ["⏎", "Show hidden lines, or a large file"],
   ["e", "Show 20 more lines around this change"],
   ["u", "Unified / side by side"],
   ["r", "Reload"],
-  ["esc", "Back to the mission"],
+  ["esc", "Clear the selection, or back to the mission"],
 ];
-
-// Viewed files are kept per capsule in this browser, by the file's content:
-// a file that changes again is unviewed.
-const viewedKey = (capsule: string) => `ws:viewed:${capsule}`;
-
-function loadViewed(capsule: string): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(viewedKey(capsule)) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveViewed(capsule: string, v: Record<string, string>) {
-  try {
-    localStorage.setItem(viewedKey(capsule), JSON.stringify(v));
-  } catch {
-    // private window: viewed lasts as long as the page
-  }
-}
 
 const fileID = (f: DiffFile) => f.newBlob ?? f.oldBlob ?? f.status;
 
@@ -50,33 +55,37 @@ function loadSplit(): boolean {
   }
 }
 
+const verdictWords: Record<Verdict, string> = { approve: "approved", changes: "changes requested", comment: "comments" };
+
 export function Review({ workspace }: { workspace: Workspace }) {
   const { slug = "", repo = "", name = "" } = useParams();
   const navigate = useNavigate();
-  const capsule = `${slug}/${repo}/${name}`;
   const api = capsuleAPI(slug, repo, name);
   const mission = workspace.missions.find((m) => m.slug === slug);
   const current = mission?.capsules.find((c) => c.repo === repo && c.name === name);
 
   const [diff, setDiff] = useState<Diff>();
+  const [rs, setRS] = useState<ReviewState>({ draft: null, reviews: [], viewed: {} });
   const [error, setError] = useState<string>();
-  const [viewed, setViewed] = useState(() => loadViewed(capsule));
   const [blobs, setBlobs] = useState<Record<string, string[]>>({});
   const [expanded, setExpanded] = useState<Record<string, FileState["expanded"]>>({});
   const [loadedLarge, setLoadedLarge] = useState<Record<string, DiffFile>>({});
   const [split, setSplit] = useState(loadSplit);
   const [cursor, setCursor] = useState("");
+  const [selectFrom, setSelectFrom] = useState<string>();
+  const [editing, setEditing] = useState<Editing>();
   const [finder, setFinder] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<ReviewData>();
   const [highlighting, setHighlighting] = useState(false);
 
+  const fail = (e: Error) => setError(e.message);
   const load = useCallback(() => {
-    getDiff(api).then(
-      (d) => {
-        setDiff(d);
-        setError(undefined);
-      },
-      (e: Error) => setError(e.message),
-    );
+    getDiff(api).then((d) => {
+      setDiff(d);
+      setError(undefined);
+    }, fail);
+    getReview(api).then(setRS, fail);
   }, [api]);
   useEffect(load, [load]);
   useEffect(() => {
@@ -85,13 +94,29 @@ export function Review({ workspace }: { workspace: Workspace }) {
 
   const files = useMemo(() => diff?.files.map((f) => loadedLarge[f.path] ?? f) ?? [], [diff, loadedLarge]);
   const states = useMemo(
-    () =>
-      files.map(
-        (f): FileState => ({ viewed: viewed[f.path] === fileID(f), blob: blobs[f.path], expanded: expanded[f.path] ?? {} }),
-      ),
-    [files, viewed, blobs, expanded],
+    () => files.map((f): FileState => ({ viewed: rs.viewed[f.path] === fileID(f), blob: blobs[f.path], expanded: expanded[f.path] ?? {} })),
+    [files, rs.viewed, blobs, expanded],
   );
-  const rows = useMemo(() => files.map((f, i) => fileRows(i, f, states[i], split)), [files, states, split]);
+  // Comments to show: the draft's, and submitted ones made on these very
+  // lines (comments on earlier commits are listed with their reviews).
+  const notes = useMemo(() => {
+    const byPath: Record<string, Placed[]> = {};
+    if (!diff) return byPath;
+    const add = (r: ReviewData, draft: boolean) => {
+      for (const n of r.comments) {
+        const commit = n.side === "new" ? diff.head : diff.base;
+        if (!draft && n.commit !== commit) continue;
+        (byPath[n.path] ??= []).push({ note: n, review: r.id, draft, stale: n.commit !== commit });
+      }
+    };
+    [...rs.reviews].reverse().forEach((r) => add(r, false));
+    if (rs.draft) add(rs.draft, true);
+    return byPath;
+  }, [rs, diff]);
+  const rows = useMemo(
+    () => files.map((f, i) => fileRows(i, f, states[i], split, notes[f.path], editing?.file === i ? editing : undefined)),
+    [files, states, split, notes, editing],
+  );
   const nav = useMemo(() => rows.flat().filter(navigable), [rows]);
   const at = Math.max(0, nav.findIndex((r) => r.key === cursor));
   const row = nav[at];
@@ -123,12 +148,32 @@ export function Review({ workspace }: { workspace: Workspace }) {
     el?.scrollIntoView({ block: row.type === "file" ? "start" : "nearest" });
   }, [row?.key]);
 
+  // The selection runs from where V was pressed to the cursor, within a
+  // file.
+  const selection = useMemo(() => {
+    if (!selectFrom) return undefined;
+    const a = nav.findIndex((r) => r.key === selectFrom);
+    if (a < 0 || !row || nav[a].file !== row.file) return undefined;
+    const [lo, hi] = a <= at ? [a, at] : [at, a];
+    return { file: row.file, keys: new Set(nav.slice(lo, hi + 1).map((r) => r.key)) };
+  }, [selectFrom, nav, at, row]);
+
   const move = (to: number) => {
     const r = nav[Math.min(Math.max(to, 0), nav.length - 1)];
     if (r) setCursor(r.key);
   };
   const findFrom = (from: number, step: number, test: (r: Row, i: number) => boolean) => {
     for (let i = from + step; i >= 0 && i < nav.length; i += step) if (test(nav[i], i)) return move(i);
+  };
+  // A change starts at a changed line whose line before (comments aside)
+  // isn't one of the same file's changes.
+  const lineBefore = (i: number) => {
+    for (let j = i - 1; j >= 0; j--) if (nav[j].type !== "comment") return nav[j];
+    return undefined;
+  };
+  const startsChange = (i: number) => {
+    const before = lineBefore(i);
+    return isChange(nav[i]) && !(before && isChange(before) && before.file === nav[i].file);
   };
 
   const loadBlob = async (f: DiffFile) => {
@@ -144,7 +189,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
     try {
       await loadBlob(f);
     } catch (e) {
-      setError((e as Error).message);
+      fail(e as Error);
       return;
     }
     setExpanded((x) => {
@@ -159,35 +204,80 @@ export function Review({ workspace }: { workspace: Workspace }) {
   };
   const showLarge = (f: DiffFile) => {
     if (!diff) return;
-    getFileDiff(api, diff.base, diff.head, f.path).then(
-      (full) => setLoadedLarge((l) => ({ ...l, [f.path]: full })),
-      (e: Error) => setError(e.message),
-    );
+    getFileDiff(api, diff.base, diff.head, f.path).then((full) => setLoadedLarge((l) => ({ ...l, [f.path]: full })), fail);
   };
   const toggleViewed = (file: number) => {
     const f = files[file];
-    const next = { ...viewed };
-    const marking = viewed[f.path] !== fileID(f);
-    if (marking) next[f.path] = fileID(f);
-    else delete next[f.path];
-    setViewed(next);
-    saveViewed(capsule, next);
+    const marking = rs.viewed[f.path] !== fileID(f);
+    setRS((s) => {
+      const viewed = { ...s.viewed };
+      if (marking) viewed[f.path] = fileID(f);
+      else delete viewed[f.path];
+      return { ...s, viewed };
+    });
+    setViewed(api, f.path, fileID(f), marking).then(setRS, fail);
     if (marking) {
-      const after = nav.findIndex((r) => r.type === "file" && r.file > file && viewed[files[r.file].path] !== fileID(files[r.file]));
+      const after = nav.findIndex((r) => r.type === "file" && r.file > file && rs.viewed[files[r.file].path] !== fileID(files[r.file]));
       setCursor(after >= 0 ? nav[after].key : `${file}`);
     } else setCursor(`${file}`);
+  };
+
+  // comment opens the editor on the selected lines, or the cursor's.
+  const comment = () => {
+    if (!row || row.type !== "line" || !diff) return;
+    const lines = (selection ? nav.filter((r) => selection.keys.has(r.key)) : [row]).filter((r) => r.type === "line");
+    const first = lines[0];
+    if (first?.type !== "line") return;
+    const side = first.right ? "new" : "old";
+    const nums = lines.flatMap((r) => {
+      if (r.type !== "line") return [];
+      const c = side === "new" ? r.right : r.left?.kind === "d" ? r.left : undefined;
+      return c ? [c.num] : [];
+    });
+    setEditing({ file: row.file, target: { side, line: Math.min(...nums), endLine: Math.max(...nums) } });
+    setSelectFrom(undefined);
   };
   const activate = (r: Row) => {
     if (r.type === "gap") expand(r.file, r.gap, r.count !== undefined && r.count <= 40 ? 0 : 20);
     else if (r.type === "note" && r.large) showLarge(files[r.file]);
     else if (r.type === "file") toggleViewed(r.file);
+    else if (r.type === "comment" && r.placed.draft) {
+      const n = r.placed.note;
+      setEditing({ file: r.file, target: n, noteID: n.id, note: n });
+    }
+  };
+  const saveNote = async (n: NoteDraft) => {
+    if (!editing || !diff) return;
+    const f = files[editing.file];
+    try {
+      const next = editing.noteID
+        ? await editNote(api, editing.noteID, n)
+        : await addNote(api, { base: diff.base, head: diff.head }, { ...n, path: f.path, ...editing.target });
+      setRS(next);
+      closeEditor();
+      setError(undefined);
+    } catch (e) {
+      fail(e as Error);
+    }
+  };
+  // closeEditor puts the cursor back on the comment it was rewriting (the
+  // editor stood in for it, so the cursor had to go elsewhere meanwhile).
+  const closeEditor = () => {
+    if (editing?.noteID) setCursor(`${editing.file}:c:${editing.noteID}`);
+    setEditing(undefined);
+  };
+  const removeNote = (r: Row) => {
+    if (r.type !== "comment" || !r.placed.draft) return;
+    deleteNote(api, r.placed.note.id).then(setRS, fail);
   };
 
-  // FileSection only redraws when its own rows or cursor change, so it gets
-  // callbacks that stay the same.
-  const activateRef = useRef(activate);
-  activateRef.current = activate;
-  const onActivate = useCallback((r: Row) => activateRef.current(r), []);
+  // Stable callbacks: FileSection only redraws when its own rows, cursor or
+  // selection change.
+  const handlers = useRef({ activate, saveNote, cancel: closeEditor });
+  handlers.current = { activate, saveNote, cancel: closeEditor };
+  const onActivate = useCallback((r: Row) => handlers.current.activate(r), []);
+  const onSave = useCallback((n: NoteDraft) => handlers.current.saveNote(n), []);
+  const onCancel = useCallback(() => handlers.current.cancel(), []);
 
   useKeys({
     j: () => move(at + 1),
@@ -198,12 +288,12 @@ export function Review({ workspace }: { workspace: Workspace }) {
     "mod+u": () => move(at - 20),
     g: () => move(0),
     G: () => move(nav.length - 1),
-    n: () => findFrom(at, 1, (r, i) => isChange(r) && !(i > 0 && isChange(nav[i - 1]) && nav[i - 1].file === r.file)),
+    n: () => findFrom(at, 1, (_, i) => startsChange(i)),
     p: () => {
       // To the start of the change before the one the cursor is in.
       let i = at;
-      while (i > 0 && isChange(nav[i]) && isChange(nav[i - 1]) && nav[i - 1].file === nav[i].file) i--;
-      findFrom(i, -1, (r, j) => isChange(r) && !(j > 0 && isChange(nav[j - 1]) && nav[j - 1].file === r.file));
+      while (i > 0 && (nav[i].type === "comment" || (isChange(nav[i]) && !startsChange(i)))) i--;
+      findFrom(i, -1, (_, j) => startsChange(j));
     },
     J: () => findFrom(at, 1, (r) => r.type === "file"),
     K: () => {
@@ -212,6 +302,10 @@ export function Review({ workspace }: { workspace: Workspace }) {
     },
     x: () => row && toggleViewed(row.file),
     Enter: () => row && activate(row),
+    c: comment,
+    V: () => row?.type === "line" && setSelectFrom((s) => (s ? undefined : row.key)),
+    D: () => row && removeNote(row),
+    s: () => diff && setSubmitting(true),
     e: () => {
       if (!row || row.type !== "line") return;
       // The gaps either side of the hunk the cursor is in.
@@ -234,7 +328,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
     },
     t: () => setFinder(true),
     r: load,
-    Escape: () => navigate(`/missions/${slug}`),
+    Escape: () => (selectFrom ? setSelectFrom(undefined) : navigate(`/missions/${slug}`)),
   });
 
   if (!mission || !current) {
@@ -250,6 +344,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
   const totals = files.reduce((t, f) => ({ a: t.a + f.additions, d: t.d + f.deletions }), { a: 0, d: 0 });
   const viewedCount = states.filter((s) => s.viewed).length;
   const moved = diff && current.head && current.head !== diff.head;
+  const draft = rs.draft;
 
   return (
     <div className="review">
@@ -277,6 +372,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
                 <span className="dim">{dirOf(f.path)}</span>
                 {baseOf(f.path)}
               </span>
+              {(notes[f.path]?.length ?? 0) > 0 && <span className="note-count">{notes[f.path].length}</span>}
               <span className="counts">
                 {f.additions > 0 && <span className="plus">+{f.additions}</span>}
                 {f.deletions > 0 && <span className="minus">−{f.deletions}</span>}
@@ -304,7 +400,15 @@ export function Review({ workspace }: { workspace: Workspace }) {
           <span className="dim spacer-left">
             <kbd>u</kbd> {split ? "side by side" : "unified"}
           </span>
+          <button className="submit-button" onClick={() => diff && setSubmitting(true)}>
+            {draft ? `Submit review · ${draft.comments.length}` : "Review"} <kbd>s</kbd>
+          </button>
         </header>
+        {submitted && (
+          <div className="callout ok">
+            Submitted {submitted.id}: {verdictWords[submitted.verdict!]}. It's the mission's now: the orchestrator is deciding what happens next.
+          </div>
+        )}
         {moved && (
           <div className="callout">
             The capsule has new commits since this loaded. <kbd>r</kbd> reloads.
@@ -330,6 +434,7 @@ export function Review({ workspace }: { workspace: Workspace }) {
             </ul>
           </details>
         )}
+        {rs.reviews.length > 0 && <EarlierReviews reviews={rs.reviews} />}
         {diff && !files.length && <p className="dim">No committed changes yet.</p>}
         {files.map((f, i) => (
           <FileSection
@@ -340,9 +445,13 @@ export function Review({ workspace }: { workspace: Workspace }) {
             state={states[i]}
             split={split}
             cursor={row?.file === i ? cursor : ""}
+            selected={selection?.file === i ? selection.keys : undefined}
+            editing={editing?.file === i ? editing : undefined}
             highlighting={highlighting}
             onRow={setCursor}
             onActivate={onActivate}
+            onSave={onSave}
+            onCancel={onCancel}
           />
         ))}
       </div>
@@ -356,12 +465,60 @@ export function Review({ workspace }: { workspace: Workspace }) {
           onClose={() => setFinder(false)}
         />
       )}
+      {submitting && diff && (
+        <SubmitDialog
+          draft={draft}
+          onClose={() => setSubmitting(false)}
+          onDiscard={() =>
+            discardReview(api).then((next) => {
+              setRS(next);
+              setSubmitting(false);
+            }, fail)
+          }
+          onSubmit={async (verdict, summary) => {
+            const next = await submitReview(api, { base: diff.base, head: diff.head }, verdict, summary);
+            setRS(next);
+            setSubmitted(next.reviews[0]);
+            setSubmitting(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/") + 1) : "");
 const baseOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+
+function EarlierReviews({ reviews }: { reviews: ReviewData[] }) {
+  return (
+    <details className="commits">
+      <summary className="dim">Reviews: {reviews.map((r) => `${r.id} ${verdictWords[r.verdict!]}`).join(" · ")}</summary>
+      {reviews.map((r) => (
+        <div key={r.id} className="earlier">
+          <div>
+            <strong>{r.id}</strong>{" "}
+            <span className="dim">
+              {verdictWords[r.verdict!]} · {r.submitted && new Date(r.submitted).toLocaleString()}
+            </span>
+          </div>
+          {r.summary && <p className="summary">{r.summary}</p>}
+          <ul>
+            {r.comments.map((n) => (
+              <li key={n.id}>
+                <span className={`kind k-${n.kind}`}>{n.kind}</span>{" "}
+                <span className="mono dim">
+                  {n.path}:{n.line}
+                </span>{" "}
+                {n.body}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </details>
+  );
+}
 
 interface Highlighted {
   old: Map<number, string>;
@@ -391,23 +548,37 @@ interface FileSectionProps {
   state: FileState;
   split: boolean;
   cursor: string; // the cursor's row, if it's in this file
+  selected?: Set<string>;
+  editing?: Editing;
   highlighting: boolean;
   onRow: (key: string) => void;
   onActivate: (r: Row) => void;
+  onSave: (n: NoteDraft) => void;
+  onCancel: () => void;
 }
 
-const FileSection = memo(function FileSection({ index, file, rows, state, split, cursor, highlighting, onRow, onActivate }: FileSectionProps) {
+const FileSection = memo(function FileSection(props: FileSectionProps) {
+  const { index, file, rows, state, split, cursor, selected, editing, highlighting, onRow, onActivate, onSave, onCancel } = props;
   // highlighting is a dependency: once the highlighter loads, colour.
   const hl = useMemo(() => highlight(file, state.blob), [file, state.blob, highlighting]);
   const html = (c: Cell) =>
     (c.shown ? hl.shown[(c.at ?? c.num) - 1] : c.kind === "d" ? hl.old.get(c.num) : hl.new.get(c.num)) ?? escapeHTML(c.text);
+  // The lines the editor is on, for a suggestion to start from.
+  const editorLines = () => {
+    if (!editing) return [];
+    if (editing.note) return editing.note.excerpt;
+    const t = editing.target;
+    const out: string[] = [];
+    for (const r of rows) {
+      if (r.type !== "line") continue;
+      const c = t.side === "new" ? r.right : r.left?.kind === "d" ? r.left : undefined;
+      if (c && c.num >= t.line && c.num <= t.endLine) out.push(c.text);
+    }
+    return out;
+  };
   return (
     <section id={`file-${index}`} className={`file ${state.viewed ? "viewed" : ""}`}>
-      <div
-        id={`row-${index}`}
-        className={`file-head ${cursor === `${index}` ? "cursor" : ""}`}
-        onClick={() => onRow(`${index}`)}
-      >
+      <div id={`row-${index}`} className={`file-head ${cursor === `${index}` ? "cursor" : ""}`} onClick={() => onRow(`${index}`)}>
         <span className={`status s-${file.status}`}>{file.status}</span>
         <span className="mono">
           {file.oldPath && <span className="dim">{file.oldPath} → </span>}
@@ -424,9 +595,24 @@ const FileSection = memo(function FileSection({ index, file, rows, state, split,
       </div>
       {!state.viewed && (
         <div className={`lines ${split ? "split" : "unified"}`}>
-          {rows.slice(1).map((r) => (
-            <RowView key={r.key} row={r} split={split} cursor={cursor === r.key} html={html} onRow={onRow} onActivate={onActivate} />
-          ))}
+          {rows.slice(1).map((r) =>
+            r.type === "editor" && editing ? (
+              <NoteEditor key={r.key} editing={editing} lines={editorLines()} onSave={onSave} onCancel={onCancel} />
+            ) : r.type === "comment" ? (
+              <NoteCard key={r.key} row={r} cursor={cursor === r.key} onRow={onRow} />
+            ) : (
+              <RowView
+                key={r.key}
+                row={r}
+                split={split}
+                cursor={cursor === r.key}
+                selected={!!selected?.has(r.key)}
+                html={html}
+                onRow={onRow}
+                onActivate={onActivate}
+              />
+            ),
+          )}
         </div>
       )}
     </section>
@@ -437,13 +623,14 @@ interface RowViewProps {
   row: Row;
   split: boolean;
   cursor: boolean;
+  selected: boolean;
   html: (c: Cell) => string;
   onRow: (key: string) => void;
   onActivate: (r: Row) => void;
 }
 
-function RowView({ row, split, cursor, html, onRow, onActivate }: RowViewProps) {
-  const cls = cursor ? " cursor" : "";
+function RowView({ row, split, cursor, selected, html, onRow, onActivate }: RowViewProps) {
+  const cls = (cursor ? " cursor" : "") + (selected ? " selected" : "");
   if (row.type === "gap") {
     return (
       <div id={`row-${row.key}`} className={`gap${cls}`} onClick={() => onActivate(row)}>
@@ -485,6 +672,221 @@ function RowView({ row, split, cursor, html, onRow, onActivate }: RowViewProps) 
       <span className="ln">{row.right?.num}</span>
       <span className="sign">{kind === "a" ? "+" : kind === "d" ? "−" : ""}</span>
       {code({ ...c, kind })}
+    </div>
+  );
+}
+
+const linesWord = (t: Target) => (t.endLine > t.line ? `lines ${t.line}–${t.endLine}` : `line ${t.line}`);
+
+function NoteCard({ row, cursor, onRow }: { row: Extract<Row, { type: "comment" }>; cursor: boolean; onRow: (key: string) => void }) {
+  const { note, review, draft, stale } = row.placed;
+  return (
+    <div id={`row-${row.key}`} className={`note-card${cursor ? " cursor" : ""}${draft ? " draft" : ""}`} onClick={() => onRow(row.key)}>
+      <div className="note-head">
+        <span className={`kind k-${note.kind}`}>{note.kind}</span>
+        <span className="dim">
+          {draft ? "draft" : review} · {note.side === "old" ? "removed " : ""}
+          {linesWord(note)}
+          {(row.unplaced || stale) && " · its lines aren't showing here"}
+        </span>
+        {draft && cursor && (
+          <span className="dim spacer-left">
+            <kbd>⏎</kbd> edit <kbd>D</kbd> delete
+          </span>
+        )}
+      </div>
+      {note.body && <div className="note-body">{note.body}</div>}
+      {note.suggestion != null && <Suggestion from={note.excerpt} to={note.suggestion} />}
+    </div>
+  );
+}
+
+function Suggestion({ from, to }: { from: string[]; to: string }) {
+  return (
+    <div className="suggestion">
+      <div className="dim">Suggested change</div>
+      {from.map((l, i) => (
+        <div key={`d${i}`} className="sl d">
+          − {l}
+        </div>
+      ))}
+      {to === "" ? (
+        <div className="sl dim">(delete these lines)</div>
+      ) : (
+        to.split("\n").map((l, i) => (
+          <div key={`a${i}`} className="sl a">
+            + {l}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// A suggestion is written as a ```suggestion block in the comment, as on
+// GitHub; it's kept apart from the words.
+const suggestionBlock = /```suggestion\n([\s\S]*?)\n?```\n?/;
+
+function splitSuggestion(text: string): { body: string; suggestion: string | null } {
+  const m = text.match(suggestionBlock);
+  if (!m) return { body: text.trim(), suggestion: null };
+  return { body: text.replace(suggestionBlock, "").trim(), suggestion: m[1] };
+}
+
+function joinSuggestion(body: string, suggestion?: string | null) {
+  return suggestion == null ? body : `${body}${body ? "\n\n" : ""}\`\`\`suggestion\n${suggestion}\n\`\`\``;
+}
+
+function NoteEditor({ editing, lines, onSave, onCancel }: { editing: Editing; lines: string[]; onSave: (n: NoteDraft) => void; onCancel: () => void }) {
+  const note = editing.note;
+  const [kind, setKind] = useState<NoteKind>(note?.kind ?? "suggestion");
+  const [text, setText] = useState(() => (note ? joinSuggestion(note.body, note.suggestion) : ""));
+  const area = useRef<HTMLTextAreaElement>(null);
+  // While writing, the page's keys are off: these are the editor's.
+  useKeys({}, { modal: true });
+  useEffect(() => {
+    area.current?.focus();
+    area.current?.scrollIntoView({ block: "nearest" });
+  }, []);
+  const save = () => {
+    const { body, suggestion } = splitSuggestion(text);
+    if (!body && suggestion == null) return;
+    onSave({ kind, body, suggestion });
+  };
+  const suggest = () => {
+    if (suggestionBlock.test(text)) return;
+    setText((t) => joinSuggestion(t.trim(), lines.join("\n")));
+    area.current?.focus();
+  };
+  return (
+    <div className="note-editor">
+      <div className="note-head">
+        {noteKinds.map((k) => (
+          <button key={k} className={`kind k-${k}${k === kind ? " on" : ""}`} onClick={() => setKind(k)}>
+            {k}
+          </button>
+        ))}
+        <span className="dim">
+          {editing.target.side === "old" ? "removed " : ""}
+          {linesWord(editing.target)} · <kbd>tab</kbd> kind
+        </span>
+      </div>
+      <textarea
+        ref={area}
+        value={text}
+        rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
+        placeholder="What should change, or what do you want to know?"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Tab") {
+            e.preventDefault();
+            const i = noteKinds.indexOf(kind);
+            setKind(noteKinds[(i + (e.shiftKey ? noteKinds.length - 1 : 1)) % noteKinds.length]);
+          }
+        }}
+      />
+      <div className="note-actions">
+        <button onClick={suggest} disabled={suggestionBlock.test(text)}>
+          Suggest a change
+        </button>
+        <span className="spacer-left" />
+        <button onClick={onCancel}>
+          Cancel <kbd>esc</kbd>
+        </button>
+        <button className="primary" onClick={save}>
+          {note ? "Save" : "Comment"} <kbd>⌘⏎</kbd>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// SubmitDialog ends the review with a verdict: a, c or m picks it, then
+// the summary, then ⌘⏎.
+function SubmitDialog({
+  draft,
+  onClose,
+  onDiscard,
+  onSubmit,
+}: {
+  draft: ReviewData | null;
+  onClose: () => void;
+  onDiscard: () => void;
+  onSubmit: (v: Verdict, summary: string) => Promise<void>;
+}) {
+  const [verdict, setVerdict] = useState<Verdict>();
+  const [summary, setSummary] = useState("");
+  const [error, setError] = useState<string>();
+  const area = useRef<HTMLTextAreaElement>(null);
+  const pick = (v: Verdict) => {
+    setVerdict(v);
+    setTimeout(() => area.current?.focus());
+  };
+  const submit = () => {
+    if (!verdict) return setError("Pick a verdict first.");
+    onSubmit(verdict, summary).catch((e: Error) => setError(e.message));
+  };
+  useKeys({ Escape: onClose, a: () => pick("approve"), c: () => pick("changes"), m: () => pick("comment") }, { modal: true });
+  const counts = noteKinds.flatMap((k) => {
+    const n = draft?.comments.filter((c) => c.kind === k).length ?? 0;
+    return n ? [`${n} ${k}`] : [];
+  });
+  const choices: [Verdict, string, string][] = [
+    ["approve", "a", "Approve"],
+    ["changes", "c", "Request changes"],
+    ["comment", "m", "Comment"],
+  ];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog submit" onClick={(e) => e.stopPropagation()}>
+        <h2>Submit the review</h2>
+        <p className="dim">
+          {draft
+            ? `${draft.comments.length} ${draft.comments.length === 1 ? "comment" : "comments"}${counts.length ? ` (${counts.join(", ")})` : ""}.`
+            : "No comments."}{" "}
+          Once submitted, crew read it and the orchestrator decides what follows.
+        </p>
+        <div className="verdicts">
+          {choices.map(([v, key, label]) => (
+            <button key={v} className={`verdict v-${v}${verdict === v ? " on" : ""}`} onClick={() => pick(v)}>
+              <kbd>{key}</kbd> {label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          ref={area}
+          value={summary}
+          rows={4}
+          placeholder="A summary, if it helps (optional)"
+          onChange={(e) => setSummary(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              submit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+        />
+        {error && <div className="banner">{error}</div>}
+        <div className="note-actions">
+          {draft && <button onClick={onDiscard}>Discard the draft</button>}
+          <span className="spacer-left" />
+          <button onClick={onClose}>
+            Cancel <kbd>esc</kbd>
+          </button>
+          <button className="primary" onClick={submit} disabled={!verdict}>
+            Submit <kbd>⌘⏎</kbd>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

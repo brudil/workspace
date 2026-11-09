@@ -827,3 +827,236 @@ section {
 .hljs-strong {
   font-weight: 600;
 }
+
+/* Review comments */
+
+:root {
+  --k-blocking: #d44c47;
+  --k-suggestion: #5e6ad2;
+  --k-question: #c27c0e;
+  --k-nit: #8a8a94;
+  --select-bg: rgb(194 124 14 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --k-suggestion: #7c85e6;
+    --select-bg: rgb(242 184 128 / 0.12);
+  }
+}
+
+button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+button.primary kbd {
+  background: transparent;
+  color: inherit;
+  border-color: rgb(255 255 255 / 0.4);
+}
+
+.submit-button {
+  white-space: nowrap;
+}
+
+.callout.ok {
+  border-left-color: var(--green);
+}
+
+.note-count {
+  font: 11px var(--mono);
+  color: var(--accent);
+}
+
+.dl.selected,
+.gap.selected {
+  background-image: linear-gradient(var(--select-bg), var(--select-bg));
+}
+
+.kind {
+  font: 600 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+
+.kind.k-blocking {
+  color: var(--k-blocking);
+}
+
+.kind.k-suggestion {
+  color: var(--k-suggestion);
+}
+
+.kind.k-question {
+  color: var(--k-question);
+}
+
+.kind.k-nit {
+  color: var(--k-nit);
+}
+
+button.kind {
+  opacity: 0.45;
+}
+
+button.kind.on {
+  opacity: 1;
+  background: var(--bg);
+}
+
+.note-card,
+.note-editor {
+  margin: 4px 10px 8px 60px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  scroll-margin: 40px 0 80px;
+}
+
+.note-card.draft {
+  border-style: dashed;
+}
+
+.note-card.cursor {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.note-body {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.suggestion {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 0;
+  font: 12px/18px var(--mono);
+  overflow-x: auto;
+}
+
+.suggestion > .dim {
+  padding: 0 8px 2px;
+  font-family: inherit;
+}
+
+.sl {
+  padding: 0 8px;
+  white-space: pre;
+}
+
+.sl.d {
+  background: var(--del-bg);
+}
+
+.sl.a {
+  background: var(--add-bg);
+}
+
+.note-editor textarea,
+.dialog.submit textarea {
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: 13px/1.5 var(--mono);
+  resize: vertical;
+  outline: none;
+}
+
+.note-editor textarea:focus,
+.dialog.submit textarea:focus {
+  border-color: var(--accent);
+}
+
+.note-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog.submit {
+  width: min(560px, 92vw);
+}
+
+.dialog.submit p {
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.verdicts {
+  display: flex;
+  gap: 8px;
+}
+
+.verdict.on.v-approve {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.verdict.on.v-changes {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.verdict.on.v-comment {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.earlier {
+  margin: 8px 0 12px 16px;
+}
+
+.earlier .summary {
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+
+.earlier ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+}
+
+.earlier li {
+  margin: 2px 0;
+}

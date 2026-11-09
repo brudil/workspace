@@ -10,6 +10,7 @@ import (
 	"github.com/brudil/workspace/internal/harness"
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/orchestrator"
+	"github.com/brudil/workspace/internal/review"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +54,7 @@ dispatched crew for you instead of launching them, and max_dispatches
 				return err
 			}
 			if auto && !ctx.Config.OrchestratorEnabled() {
-				execlog.Note(ctx.WS.Root, "orchestrator "+slug, "not run for %s (%s): [orchestrator] enabled = false", crewID, trigger)
+				execlog.Note(ctx.WS.Root, "orchestrator "+slug, "not run for %s: [orchestrator] enabled = false", strings.TrimSpace(crewID+" ("+trigger+")"))
 				return nil
 			}
 			m, err := resolveMission(ctx, slug)
@@ -108,6 +109,8 @@ dispatched crew for you instead of launching them, and max_dispatches
 				what = crewID + " (" + trigger + ")"
 			case trigger == "answer":
 				what = "the answer to its question"
+			case trigger == "review":
+				what = "your review"
 			}
 			with := rv.Name() + " " + model
 			store.AppendLog(m.Slug, mission.Event{Kind: mission.EventOrchestrate, Crew: "orchestrator", Text: "looking at " + what + " with " + with})
@@ -130,7 +133,7 @@ dispatched crew for you instead of launching them, and max_dispatches
 	}
 	addMissionFlag(cmd, &slug)
 	cmd.Flags().StringVar(&crewID, "crew", "", "the crew whose event prompted this")
-	cmd.Flags().StringVar(&trigger, "trigger", "manual", "what prompted the run: done, ended, answer (the user answered a flag) or manual")
+	cmd.Flags().StringVar(&trigger, "trigger", "manual", "what prompted the run: done, ended, answer (the user answered a flag), review (the user submitted one) or manual")
 	cmd.Flags().StringVar(&model, "model", "", "model to use (default: [orchestrator] model, or the harness's own)")
 	cmd.Flags().BoolVar(&auto, "auto", false, "run as the deck's automatic run: honour [orchestrator] enabled, handle each crew event once")
 	cmd.Flags().BoolVar(&printPrompt, "print-prompt", false, "print the orchestrator's prompt and command instead of running it")
@@ -168,6 +171,16 @@ func orchestratorInput(ctx *Context, m *mission.Mission, crewID, trigger string)
 	states, _ := m.StageProgress(brief)
 	if st, ok := mission.StageFor(states, crewID); ok && crewID != "" && !st.Implicit {
 		in.CrewStage = fmt.Sprintf("%d of %d: %s", st.N, len(states), oneLine(st.Text))
+	}
+	if trigger == "review" {
+		if r, err := review.For(ctx.WS.Root, m.Slug).Latest(""); err == nil && r != nil {
+			in.Review, in.ReviewRef = review.Render(r), review.RenderedRef(r.ID)
+			for _, c := range m.Crew {
+				if c.Capsule == r.Capsule && c.Role == "" {
+					in.ReviewCrew = append(in.ReviewCrew, c.ID)
+				}
+			}
+		}
 	}
 	// Crew that reported done left a handoff: it says what they did and
 	// learned better than the end of their output.

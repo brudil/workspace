@@ -1,7 +1,9 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -9,7 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/review"
 	"github.com/brudil/workspace/internal/testgit"
 )
@@ -103,5 +107,83 @@ func TestReviewAPI(t *testing.T) {
 	gitT(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
 	if res := do(t, s, "GET", "/api/missions/m/capsules/api/fix/diff", true, nil); res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(res), "origin/main") {
 		t.Errorf("no base: %d", res.StatusCode)
+	}
+}
+
+// write sends a JSON write as the web UI's own page does.
+func write(t *testing.T, s *Server, method, path string, v any) (*http.Response, ReviewState) {
+	t.Helper()
+	data, _ := json.Marshal(v)
+	res := do(t, s, method, path, true, func(r *http.Request) {
+		r.Body = io.NopCloser(bytes.NewReader(data))
+		r.ContentLength = int64(len(data))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", s.Info().Origin())
+	})
+	var st ReviewState
+	json.NewDecoder(res.Body).Decode(&st)
+	return res, st
+}
+
+func TestReviewWrites(t *testing.T) {
+	s, _ := reviewServer(t)
+	if _, err := (mission.Store{Root: s.Root}).Create("M"); err != nil {
+		t.Fatal(err)
+	}
+	var submitted []string
+	s.OnReview = func(slug string, r *review.Review) { submitted = append(submitted, slug+"/"+r.ID+"/"+r.Verdict) }
+	s.clock = func() time.Time { return time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC) }
+	api := "/api/missions/m/capsules/api/fix"
+
+	var d review.Diff
+	json.NewDecoder(do(t, s, "GET", api+"/diff", true, nil).Body).Decode(&d)
+	res, st := write(t, s, "GET", api+"/review", nil)
+	if res.StatusCode != 200 || st.Draft != nil || len(st.Reviews) != 0 || st.Viewed == nil {
+		t.Fatalf("empty state: %d %+v", res.StatusCode, st)
+	}
+
+	note := map[string]any{"base": d.Base, "head": d.Head, "path": "a.go", "side": "new", "line": 3, "kind": "blocking", "body": "Two? Why two."}
+	res, st = write(t, s, "POST", api+"/review/comments", note)
+	if res.StatusCode != 200 || st.Draft == nil || len(st.Draft.Comments) != 1 || st.Draft.Comments[0].Excerpt[0] != "var x = 2" {
+		t.Fatalf("add: %d %+v", res.StatusCode, st.Draft)
+	}
+	res, st = write(t, s, "PATCH", api+"/review/comments/r1.c1", map[string]any{"kind": "question", "body": "Why two?"})
+	if res.StatusCode != 200 || st.Draft.Comments[0].Kind != "question" {
+		t.Errorf("edit: %d %+v", res.StatusCode, st.Draft)
+	}
+	if res, _ := write(t, s, "PATCH", api+"/review/comments/r1.c9", map[string]any{"kind": "nit", "body": "x"}); res.StatusCode != http.StatusNotFound {
+		t.Errorf("edit a missing comment: %d", res.StatusCode)
+	}
+	if res, _ := write(t, s, "POST", api+"/review/comments", map[string]any{"base": d.Base, "head": d.Head, "path": "a.go", "side": "new", "line": 99, "kind": "nit", "body": "x"}); res.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("a line past the end: %d", res.StatusCode)
+	}
+	if res, _ := write(t, s, "POST", api+"/review/comments", map[string]any{"head": "HEAD", "path": "a.go"}); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("no commit ids: %d", res.StatusCode)
+	}
+	if res, _ := write(t, s, "POST", api+"/review/comments", map[string]any{"base": d.Base, "head": d.Head, "path": "a.go", "surprise": 1}); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("unknown field: %d", res.StatusCode)
+	}
+
+	res, st = write(t, s, "PUT", api+"/review/viewed", map[string]any{"path": "a.go", "blob": d.Files[0].NewBlob, "viewed": true})
+	if res.StatusCode != 200 || st.Viewed["a.go"] != d.Files[0].NewBlob {
+		t.Errorf("viewed: %d %+v", res.StatusCode, st.Viewed)
+	}
+
+	res, st = write(t, s, "POST", api+"/review/submit", map[string]any{"base": d.Base, "head": d.Head, "verdict": "changes", "summary": "One question."})
+	if res.StatusCode != 200 || st.Draft != nil || len(st.Reviews) != 1 || st.Reviews[0].Verdict != "changes" {
+		t.Fatalf("submit: %d %+v", res.StatusCode, st)
+	}
+	if strings.Join(submitted, ",") != "m/r1/changes" {
+		t.Errorf("OnReview = %q", submitted)
+	}
+	if res, _ := write(t, s, "POST", api+"/review/submit", map[string]any{"base": d.Base, "head": d.Head, "verdict": "changes"}); res.StatusCode != http.StatusUnprocessableEntity || len(submitted) != 1 {
+		t.Errorf("changes requested with nothing said: %d", res.StatusCode)
+	}
+
+	// Discarding a draft.
+	write(t, s, "POST", api+"/review/comments", note)
+	res, st = write(t, s, "DELETE", api+"/review", nil)
+	if res.StatusCode != 200 || st.Draft != nil {
+		t.Errorf("discard: %d %+v", res.StatusCode, st.Draft)
 	}
 }

@@ -175,3 +175,22 @@ func TestPrompt_Stages(t *testing.T) {
 		t.Error("stage progress shown with no stages")
 	}
 }
+
+// A submitted review comes to the orchestrator whole, with who worked in
+// the capsule, and it's told to have it addressed, not to touch it.
+func TestPrompt_Review(t *testing.T) {
+	m := &mission.Mission{Slug: "cache", Title: "Cache"}
+	p := Prompt(Input{Mission: m, Trigger: "review", Review: "# Review r2 of api/fix: changes requested\n\n### r2.c1 · blocking · a.go:3 at abc1234\n",
+		ReviewRef: "mission:reviews/r2.md", ReviewCrew: []string{"c1", "c3"}})
+	for _, want := range []string{
+		"submitted the review below (mission:reviews/r2.md)",
+		`ws mission resume-with <crew> "Address the review in mission:reviews/r2.md: …"`,
+		"--read mission:reviews/r2.md", "accept it (with the review as the reason)",
+		"Never edit or answer the review yourself", "latest last): c1, c3.",
+		"### r2.c1 · blocking · a.go:3",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+}

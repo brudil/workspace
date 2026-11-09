@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/brudil/workspace/internal/deckserver"
 	"github.com/brudil/workspace/internal/mission"
+	"github.com/brudil/workspace/internal/review"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/web"
 	"github.com/brudil/workspace/internal/workspace"
@@ -118,7 +119,11 @@ func startWeb(s *deckserver.Server) *web.Server {
 	if err == nil {
 		port = ctx.Config.Web.Port
 	}
-	w := &web.Server{Root: s.Root, Port: port, Log: s.Log, Workspace: webWorkspace(s.Root), Capsule: webCapsule(s.Root), Hold: s.Hold}
+	w := &web.Server{
+		Root: s.Root, Port: port, Log: s.Log, Workspace: webWorkspace(s.Root), Capsule: webCapsule(s.Root), Hold: s.Hold,
+		// A submitted review is the orchestrator's to act on.
+		OnReview: func(slug string, r *review.Review) { orchestrateSpawner(s.Root, slug, "", "review") },
+	}
 	if err := w.Start(); err != nil {
 		s.Log.Printf("no web UI: %v", err)
 		return nil

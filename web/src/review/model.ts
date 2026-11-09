@@ -1,4 +1,4 @@
-import type { DiffFile, DiffLine, Hunk } from "../api";
+import type { DiffFile, DiffLine, Hunk, ReviewNote } from "../api";
 
 // How a diff is laid out as rows: one header per file, its lines (unified,
 // or old and new side by side), and gaps between hunks that open up to show
@@ -21,10 +21,43 @@ export type Row =
   | { type: "file"; key: string; file: number }
   | { type: "gap"; key: string; file: number; gap: number; count?: number; section?: string }
   | { type: "line"; key: string; file: number; left?: Cell; right?: Cell }
-  | { type: "note"; key: string; file: number; text: string; large?: boolean };
+  | { type: "note"; key: string; file: number; text: string; large?: boolean }
+  | { type: "comment"; key: string; file: number; placed: Placed; unplaced?: boolean }
+  | { type: "editor"; key: string; file: number };
 
-// The cursor stops on these.
-export const navigable = (r: Row) => r.type !== "note" || !!r.large;
+// The cursor stops on these (the editor has the keyboard to itself).
+export const navigable = (r: Row) => (r.type !== "note" || !!r.large) && r.type !== "editor";
+
+// Placed is a comment to show in the diff: one of the draft's, or of a
+// submitted review (read only). Stale ones were made on another commit,
+// so their lines may have moved.
+export interface Placed {
+  note: ReviewNote;
+  review: string;
+  draft: boolean;
+  stale: boolean;
+}
+
+// Target is the lines a comment is on.
+export interface Target {
+  side: "new" | "old";
+  line: number;
+  endLine: number;
+}
+
+// Editing is where the comment editor is open: on new lines, or on a
+// draft comment it's rewriting.
+export interface Editing {
+  file: number;
+  target: Target;
+  noteID?: string;
+  note?: ReviewNote; // the draft comment being rewritten
+}
+
+// anchors: a comment goes after the last line it's on. Old-side comments
+// are on removed lines.
+export const anchors = (r: Row, t: Target) =>
+  r.type === "line" && (t.side === "new" ? r.right?.num === t.endLine : r.left?.kind === "d" && r.left.num === t.endLine);
 
 export const isChange = (r: Row) =>
   r.type === "line" && (r.left?.kind === "d" || r.left?.kind === "a" || r.right?.kind === "a" || r.right?.kind === "d");
@@ -134,8 +167,34 @@ function gapRows(file: number, gi: number, g: Gap, s: FileState, section?: strin
   return rows;
 }
 
-// fileRows lays out one file.
-export function fileRows(file: number, f: DiffFile, s: FileState, split: boolean): Row[] {
+// fileRows lays out one file, with its comments and the editor where
+// they're anchored.
+export function fileRows(file: number, f: DiffFile, s: FileState, split: boolean, notes: Placed[] = [], editing?: Editing): Row[] {
+  const rows = diffRows(file, f, s, split);
+  if (s.viewed || (!notes.length && !editing)) return rows;
+  const out: Row[] = [];
+  const placed = new Set<string>();
+  const editorRow: Row = { type: "editor", key: `${file}:editor`, file };
+  for (const r of rows) {
+    out.push(r);
+    if (r.type !== "line") continue;
+    for (const p of notes) {
+      if (placed.has(p.note.id) || !anchors(r, p.note)) continue;
+      placed.add(p.note.id);
+      out.push(editing?.noteID === p.note.id ? editorRow : { type: "comment", key: `${file}:c:${p.note.id}`, file, placed: p });
+    }
+    if (editing && !editing.noteID && anchors(r, editing.target)) out.push(editorRow);
+  }
+  // Comments whose lines aren't showing (in a closed gap, or moved since)
+  // go at the end of the file.
+  for (const p of notes) {
+    if (placed.has(p.note.id)) continue;
+    out.push(editing?.noteID === p.note.id ? editorRow : { type: "comment", key: `${file}:c:${p.note.id}`, file, placed: p, unplaced: true });
+  }
+  return out;
+}
+
+function diffRows(file: number, f: DiffFile, s: FileState, split: boolean): Row[] {
   const rows: Row[] = [{ type: "file", key: `${file}`, file }];
   if (s.viewed) return rows;
   const note = (text: string, large?: boolean) => rows.push({ type: "note", key: `${file}:note`, file, text, large });

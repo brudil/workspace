@@ -1,6 +1,6 @@
 # Web and review: design
 
-Status: phases 1 (the web server) and 2 (read-only review) built. Lives on `v2` with missions.
+Status: phases 1 (the web server), 2 (read-only review) and 3 (comments and submitting) built. Lives on `v2` with missions.
 
 ## Why
 
@@ -218,7 +218,7 @@ internal/review/         # Go: reviews, comments, storage, anchoring, the agent'
 
 1. **Web server.** In the deck server: listener, port, `.ws/web.json`, token auth, host and origin checks, SSE keeping the server alive, `ws web`, the deck's `o`. A first page that lists missions and capsules, to prove the stack end to end (embed, build, CI check).
 2. **Read-only review.** The capsule diff API, the diff viewer, file list, viewed state, the keyboard model, unified and split, expanding context. `v` in the deck. **Built.** Viewed state is kept in the browser for now (by file content, so a changed file comes back); phase 3 moves it into the review draft. `v` reviews the selected crew's capsule, or the mission's only one, else opens the mission to pick.
-3. **Comments and submitting.** Drafts, comments with kinds and suggestions, submit with a verdict, storage, the rendered markdown and artifact, `ws review show -f llm`, the `review_submitted` event and the orchestrator's `review` trigger. Crew are told to commit before reporting done.
+3. **Comments and submitting.** Drafts, comments with kinds and suggestions, submit with a verdict, storage, the rendered markdown and artifact, `ws review show -f llm`, the `review_submitted` event and the orchestrator's `review` trigger. Crew are told to commit before reporting done. **Built.** As built: the log event is `review` (`r1: changes requested (1 blocking)`); the artifact is recorded without a log line of its own; viewed files moved from the browser to `reviews/viewed.json`, per capsule, so they're the same everywhere; `ws review list` lists a mission's reviews; submitted comments made on the lines being shown appear in the diff, read only, and earlier reviews are listed above it. A capsule can be approved without a draft.
 4. **The loop.** `ws review reply / resolve / wontfix`, threads in the UI live over SSE, re-review by interdiff with earlier comments carried along, open comments in `ws mission show -f llm` and in handoffs.
 5. **Later.** GitHub PRs as a source. Comments mapped forward through commits. Other services. Tasks, once the workspace orchestrator exists.
 

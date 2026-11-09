@@ -49,6 +49,12 @@ type Input struct {
 	// CrewID was on ("2: Implement it"), if it joined one.
 	Stages    []string
 	CrewStage string
+	// Review is the review the user just submitted (Trigger "review"), as
+	// crew read it, ReviewRef where it's kept, and ReviewCrew the crew that
+	// worked in its capsule, latest last.
+	Review     string
+	ReviewRef  string
+	ReviewCrew []string
 }
 
 // Capsule is one of the mission's capsules, with what's known about it.
@@ -80,6 +86,15 @@ func Prompt(in Input) string {
 		fmt.Fprintf(&b, "It was working on stage %s.\n", in.CrewStage)
 	}
 	switch in.Trigger {
+	case "review":
+		fmt.Fprintf(&b, "The user has just reviewed a capsule's work and submitted the review below (%s). Act on it now: it's their judgement of what the crew did.\n\n", in.ReviewRef)
+		b.WriteString("- Changes requested, or comments to act on: have them addressed. Prefer resuming the crew that did the work, with what to address (ws mission resume-with <crew> \"Address the review in " + in.ReviewRef + ": …\"), when its context matters; otherwise dispatch fresh crew into that capsule with --read " + in.ReviewRef + ".\n")
+		b.WriteString("- Approved: if the current stage's work is complete, accept it (with the review as the reason) and move on as the brief says; comments on an approval are optional polish.\n")
+		b.WriteString("- Never edit or answer the review yourself, and don't resolve its comments: crew address them, and the user resolves them.\n")
+		if len(in.ReviewCrew) > 0 {
+			fmt.Fprintf(&b, "Crew who worked in that capsule (latest last): %s.\n", strings.Join(in.ReviewCrew, ", "))
+		}
+		fmt.Fprintf(&b, "\n%s\n", strings.TrimSpace(in.Review))
 	case "answer":
 		if a := m.Answer; a != nil {
 			who := "They answered"
