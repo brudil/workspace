@@ -73,7 +73,7 @@ type deckKeyMap struct {
 	Attach, Detach        deckKey
 	Park, Archive, Past   deckKey
 	Sidebar, Refresh      deckKey
-	Web                   deckKey
+	Web, Review           deckKey
 	Help, CloseHelp, Quit deckKey
 	PrefixHelp            deckKey // the prefix, explained on the help screen
 	ZoomToggle            deckKey // zoom in, and (watched for in zoom) out
@@ -137,6 +137,7 @@ func (m deckModel) keys() deckKeyMap {
 		Sidebar:   newKey("s", "sidebar", "Toggle the sidebar", "s"),
 		Refresh:   newKey("r", "refresh", "Refresh (including PRs)", "r"),
 		Web:       newKey("o", "web", "Open the selected mission in the web UI, in your browser", "o"),
+		Review:    newKey("v", "review", "Review the selected crew's capsule (or the mission's, if it has one) in the web UI", "v"),
 		Help:      newKey("?", "help", "Toggle this help", "?"),
 		CloseHelp: newKey("?", "close", "", "?", "esc", "q"),
 		Quit:      newKey("q", "quit", "Quit", "q"),
@@ -193,7 +194,7 @@ func (k deckKeyMap) helpScreen() []deckKey {
 	return []deckKey{
 		k.Move, k.Open, k.Launch, k.Resume, k.Focus, k.PrefixHelp, k.ZoomToggle, k.Stop, k.Dismiss, k.Mouse,
 		k.Tabs, k.Scroll, k.New, k.NewNamed, k.Edit, k.Attach, k.Detach, k.Park, k.Archive,
-		k.Past, k.OpenPast, k.Sidebar, k.Refresh, k.Web, k.Help, k.Quit,
+		k.Past, k.OpenPast, k.Sidebar, k.Refresh, k.Web, k.Review, k.Help, k.Quit,
 	}
 }
 

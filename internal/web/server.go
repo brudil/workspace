@@ -52,6 +52,10 @@ type Server struct {
 	Log  *log.Logger
 	// Workspace is what GET /api/workspace serves.
 	Workspace func() (Workspace, error)
+	// Capsule finds a mission's capsule to review: its folder, and the ref
+	// its changes are compared with. ErrNotFound if the mission has no
+	// such capsule (review is only of mission capsules).
+	Capsule func(slug, repo, name string) (dir, baseRef string, err error)
 	// Hold keeps the deck server up while a page is open (each holds an
 	// event stream); nil for nothing to hold.
 	Hold func() (release func())
@@ -180,6 +184,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /auth", s.auth)
 	mux.HandleFunc("GET /api/workspace", s.workspace)
 	mux.HandleFunc("GET /api/events", s.events)
+	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/diff", s.diff)
+	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/file-diff", s.fileDiff)
+	mux.HandleFunc("GET /api/missions/{slug}/capsules/{repo}/{name}/blob", s.blob)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "no such API: "+r.Method+" "+r.URL.Path)
 	})

@@ -64,3 +64,9 @@ func CaptureOrchestratorRuns() (*[]string, func()) {
 	}
 	return &runs, func() { orchestrateSpawner = old }
 }
+
+// The web UI's view of the workspace, for tests.
+var (
+	WebCapsule   = webCapsule
+	WebWorkspace = webWorkspace
+)

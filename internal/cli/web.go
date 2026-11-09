@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 	"github.com/brudil/workspace/internal/mission"
 	"github.com/brudil/workspace/internal/ui"
 	"github.com/brudil/workspace/internal/web"
+	"github.com/brudil/workspace/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -116,7 +118,7 @@ func startWeb(s *deckserver.Server) *web.Server {
 	if err == nil {
 		port = ctx.Config.Web.Port
 	}
-	w := &web.Server{Root: s.Root, Port: port, Log: s.Log, Workspace: webWorkspace(s.Root), Hold: s.Hold}
+	w := &web.Server{Root: s.Root, Port: port, Log: s.Log, Workspace: webWorkspace(s.Root), Capsule: webCapsule(s.Root), Hold: s.Hold}
 	if err := w.Start(); err != nil {
 		s.Log.Printf("no web UI: %v", err)
 		return nil
@@ -147,7 +149,11 @@ func webWorkspace(root string) func() (web.Workspace, error) {
 				m.Flag = v.M.Flag.Text
 			}
 			for _, c := range v.Capsules {
-				m.Capsules = append(m.Capsules, web.Capsule{Repo: c.Repo, Name: c.Name, Branch: c.Branch, Path: c.Path, Exists: c.Exists})
+				wc := web.Capsule{Repo: c.Repo, Name: c.Name, Branch: c.Branch, Path: c.Path, Exists: c.Exists}
+				if c.Exists {
+					wc.Head = workspace.GitRevParse(c.Path, "HEAD")
+				}
+				m.Capsules = append(m.Capsules, wc)
 			}
 			for _, c := range v.M.Crew {
 				m.Crew = append(m.Crew, web.Crew{
@@ -159,6 +165,67 @@ func webWorkspace(root string) func() (web.Workspace, error) {
 		}
 		return out, nil
 	}
+}
+
+// webCapsule finds a mission's capsule for review, and what it's compared
+// with: origin's default branch, as the orchestrator's diffs are.
+func webCapsule(root string) func(slug, repo, name string) (string, string, error) {
+	return func(slug, repo, name string) (string, string, error) {
+		ctx, err := LoadContextFromDir(root)
+		if err != nil {
+			return "", "", err
+		}
+		m, err := (mission.Store{Root: root}).Load(slug)
+		if err != nil || !m.HasCapsule(repo, name) {
+			return "", "", web.ErrNotFound
+		}
+		dir := filepath.Join(ctx.WS.RepoDir(repo), name)
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return "", "", fmt.Errorf("capsule %s/%s is missing from %s", repo, name, dir)
+		}
+		branch := ctx.WS.DefaultBranch
+		if branch == "" {
+			branch = "main"
+		}
+		return dir, "origin/" + branch, nil
+	}
+}
+
+// reviewPath is where the web UI reviews a mission's capsule.
+func reviewPath(slug, capsule string) string {
+	return "/missions/" + slug + "/review/" + capsule
+}
+
+// review opens a capsule's review in the web UI: the selected crew's, or
+// the selected mission's if it has only one; with more, its page, to pick.
+func (m deckModel) review() (tea.Model, tea.Cmd) {
+	dm, ok := m.selectedMission()
+	if !ok {
+		m.flash = "select a mission to review"
+		return m, nil
+	}
+	capsule := ""
+	if r, ok := m.selectedRun(); ok && r.capsule != "" && dm.M.HasCapsule(splitCapsule(r.capsule)) {
+		capsule = r.capsule
+	} else if len(dm.M.Capsules) == 1 {
+		capsule = dm.M.Capsules[0].Repo + "/" + dm.M.Capsules[0].Name
+	}
+	switch {
+	case capsule != "":
+		m.flash = "opening the review of " + capsule + "…"
+		return m, openWebCmd(m.ws.Root, reviewPath(dm.M.Slug, capsule))
+	case len(dm.M.Capsules) == 0:
+		m.flash = "nothing to review: the mission has no capsules"
+		return m, nil
+	default:
+		m.flash = "opening the mission: pick a capsule to review"
+		return m, openWebCmd(m.ws.Root, "/missions/"+dm.M.Slug)
+	}
+}
+
+func splitCapsule(c string) (repo, name string) {
+	repo, name, _ = strings.Cut(c, "/")
+	return repo, name
 }
 
 // openWebCmd opens path in the web UI from the deck, and says how it went.

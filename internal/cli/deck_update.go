@@ -256,6 +256,8 @@ func (m deckModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.flash = "opening the web UI…"
 		return m, openWebCmd(m.ws.Root, path)
+	case k.Review.matches(msg):
+		return m.review()
 	case k.Attach.matches(msg):
 		return m.startAttach()
 	case k.Detach.matches(msg):

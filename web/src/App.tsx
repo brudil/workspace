@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
-import { Link, Route, Routes, useNavigate, useParams } from "react-router";
+import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { type Connection, type Crew, type Mission, type MissionState, NotSignedIn, useWorkspace } from "./api";
 import { useKeys } from "./keys";
+import { Review, reviewKeys } from "./review/Review";
 
 export function App() {
   const { workspace, error, connection } = useWorkspace();
   const [help, setHelp] = useState(false);
-  useKeys({ "?": () => setHelp((h) => !h), Escape: () => setHelp(false) });
+  const location = useLocation();
+  useKeys({ "?": () => setHelp(true) });
+  const reviewing = location.pathname.includes("/review/");
 
   if (error instanceof NotSignedIn) {
     return (
@@ -16,7 +19,7 @@ export function App() {
     );
   }
   return (
-    <div className="shell">
+    <div className={`shell${reviewing ? " reviewing" : ""}`}>
       <aside className="sidebar">
         <Link to="/" className="workspace-name">
           {workspace?.name ?? "ws"}
@@ -37,11 +40,12 @@ export function App() {
           <Routes>
             <Route path="/" element={<Missions missions={workspace.missions} />} />
             <Route path="/missions/:slug" element={<MissionPage missions={workspace.missions} />} />
+            <Route path="/missions/:slug/review/:repo/:name" element={<Review workspace={workspace} />} />
             <Route path="*" element={<Notice title="Nothing here">That page doesn't exist.</Notice>} />
           </Routes>
         )}
       </main>
-      {help && <Help onClose={() => setHelp(false)} />}
+      {help && <Help keys={reviewing ? reviewKeys : listKeys} onClose={() => setHelp(false)} />}
     </div>
   );
 }
@@ -160,9 +164,23 @@ function Missions({ missions }: { missions: Mission[] }) {
 function MissionPage({ missions }: { missions: Mission[] }) {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const back = () => navigate("/");
-  useKeys({ Escape: back, Backspace: back, h: back });
+  const [sel, setSel] = useState(0);
   const m = missions.find((m) => m.slug === slug);
+  const capsules = m?.capsules ?? [];
+  const back = () => navigate("/");
+  const review = (i: number) => {
+    const c = capsules[i];
+    if (m && c) navigate(`/missions/${m.slug}/review/${c.repo}/${c.name}`);
+  };
+  useKeys({
+    Escape: back,
+    Backspace: back,
+    h: back,
+    j: () => setSel((s) => Math.min(s + 1, capsules.length - 1)),
+    k: () => setSel((s) => Math.max(s - 1, 0)),
+    v: () => review(sel),
+    Enter: () => review(sel),
+  });
   if (!m) {
     return <Notice title="No such mission">{slug} isn't one of this workspace's missions.</Notice>;
   }
@@ -184,14 +202,21 @@ function MissionPage({ missions }: { missions: Mission[] }) {
       <section>
         <h2 className="group">Capsules</h2>
         <ul className="rows">
-          {m.capsules.map((c) => (
-            <li key={`${c.repo}/${c.name}`} className="row static">
-              <span className="mono">
-                {c.repo}/{c.name}
-              </span>
-              <span className="dim mono">{c.branch}</span>
-              <span className="spacer" />
-              {!c.exists && <span className="tag warn">missing</span>}
+          {m.capsules.map((c, i) => (
+            <li key={`${c.repo}/${c.name}`} className={`row ${i === sel ? "selected" : ""}`} onMouseMove={() => setSel(i)}>
+              <Link to={`/missions/${m.slug}/review/${c.repo}/${c.name}`} className="row-link">
+                <span className="mono">
+                  {c.repo}/{c.name}
+                </span>
+                <span className="dim mono">{c.branch}</span>
+                <span className="spacer" />
+                {!c.exists && <span className="tag warn">missing</span>}
+                {c.exists && i === sel && (
+                  <span className="dim">
+                    <kbd>v</kbd> review
+                  </span>
+                )}
+              </Link>
             </li>
           ))}
           {!m.capsules.length && <li className="row static dim">No capsules yet.</li>}
@@ -239,15 +264,18 @@ function CrewChip({ crew }: { crew: Crew }) {
   );
 }
 
-function Help({ onClose }: { onClose: () => void }) {
-  const keys: [string, string][] = [
-    ["j / k", "Next / previous"],
-    ["g / G", "First / last"],
-    ["⏎ or o", "Open"],
-    ["esc", "Back"],
-    ["A", "Show or hide past missions"],
-    ["?", "These keys"],
-  ];
+const listKeys: [string, string][] = [
+  ["j / k", "Next / previous"],
+  ["g / G", "First / last"],
+  ["⏎ or o", "Open"],
+  ["v", "Review the capsule (on a mission)"],
+  ["esc", "Back"],
+  ["A", "Show or hide past missions"],
+  ["?", "These keys"],
+];
+
+function Help({ keys, onClose }: { keys: [string, string][]; onClose: () => void }) {
+  useKeys({ "?": onClose, Escape: onClose }, { modal: true });
   return (
     <div className="overlay" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>

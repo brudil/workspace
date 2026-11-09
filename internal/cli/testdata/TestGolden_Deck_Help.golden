@@ -24,6 +24,7 @@
   s          Toggle the sidebar
   r          Refresh (including PRs)
   o          Open the selected mission in the web UI, in your browser
+  v          Review the selected crew's capsule (or the mission's, if it has one) in the web UI
   ?          Toggle this help
   q          Quit
 

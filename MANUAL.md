@@ -459,7 +459,17 @@ records = "records"
 
 Every ws process appends to the same file, so `tail -f .ws/exec.log` follows the whole workspace. It rolls over to `exec.log.1` at 10 MB.
 
-**Web UI.** For what the terminal is poor at, the deck has a web UI: for now, missions with their capsules and crew, kept live as they change. Review is next (see `docs/plans/2026-11-09-web-review-design.md`). `ws web` opens it in your browser, and `o` in the deck opens the selected mission there. It runs in the deck server (started if it isn't running), which stays up while a page is open.
+**Web UI.** For what the terminal is poor at, the deck has a web UI: missions with their capsules and crew, kept live as they change, and review. `ws web` opens it in your browser, and `o` in the deck opens the selected mission there. It runs in the deck server (started if it isn't running), which stays up while a page is open.
+
+**Review.** `v` in the deck reviews a capsule in the web UI: the selected crew's, or the mission's if it has only one (with more, its page opens, where `j`/`k` and `v` pick one). A review shows the capsule's committed changes since it left `origin/<default branch>`, file by file, with syntax highlighting, keyboard first (`?` lists the keys):
+
+- `j`/`k` move line by line, `n`/`p` change by change, `J`/`K` file by file, and `t` jumps to a file by a few letters of its path.
+- `x` marks a file viewed, folds it away and moves on. Viewed files are remembered in this browser, by content: a file that changes again comes back.
+- `⏎` on a gap shows the unchanged lines it hides (and `e`, 20 more lines around the change you're on); a large file (over 3,000 changed lines, a lockfile say) waits for `⏎` too.
+- `u` switches between unified and side by side.
+- Work the crew hasn't committed isn't in the review, and the review says which files have some. When the crew commits while you're looking, it says so, and `r` reloads.
+
+For now a review only reads: comments, and a verdict crew act on, are next (see `docs/plans/2026-11-09-web-review-design.md`).
 
 ```toml
 [web]
@@ -468,7 +478,7 @@ port = 47100    # default: one of 47000–47999 picked from the workspace's path
 
 - It listens on `127.0.0.1` only. `ws web --print [path]` prints the link instead of opening it, and `ws deck server status` says where it is.
 - The link signs your browser in with the workspace's token (kept in `.ws/web.json`, readable only by you, and the same across restarts), so open it with `ws web` rather than typing the address. Every request needs that sign-in, comes to `127.0.0.1` or `localhost` by name, and, for anything that changes something, comes from the UI's own pages.
-- Working on the UI: `just web-dev [workspace]` serves it with hot reload at `localhost:5173`, talking to that workspace's running web UI. `just build` builds it into `internal/web/dist`, which is committed, so `go install` needs no Node.
+- Working on the UI: `just web-dev [workspace]` serves it with hot reload at `localhost:5173`, talking to that workspace's running web UI. `just build` builds it into `internal/web/dist`, which is committed, so `go install` needs no Node. A running deck server keeps serving the UI it was built with: `ws deck server stop` (and `ws web` again) to see a new build.
 
 ---
 

@@ -29,6 +29,9 @@ type Capsule struct {
 	Branch string `json:"branch,omitempty"`
 	Path   string `json:"path"`
 	Exists bool   `json:"exists"`
+	// Head is the capsule's commit: when it moves, a review open on it has
+	// new commits to show.
+	Head string `json:"head,omitempty"`
 }
 
 // Crew is one agent session run on a mission.

@@ -26,6 +26,7 @@ export interface Capsule {
   branch?: string;
   path: string;
   exists: boolean;
+  head?: string;
 }
 
 export interface Crew {
@@ -42,7 +43,7 @@ export interface Crew {
 
 export class NotSignedIn extends Error {}
 
-async function getJSON<T>(path: string): Promise<T> {
+export async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { accept: "application/json" } });
   if (res.status === 401) throw new NotSignedIn();
   if (!res.ok) {
@@ -92,3 +93,63 @@ export function useWorkspace(): WorkspaceState {
 
   return state;
 }
+
+// Review: mirrors internal/review/diff.go.
+
+export interface Diff {
+  baseRef: string;
+  base: string;
+  head: string;
+  commits: Commit[];
+  uncommitted: string[];
+  files: DiffFile[];
+}
+
+export interface Commit {
+  sha: string;
+  subject: string;
+  author: string;
+  time: string;
+}
+
+export interface DiffFile {
+  path: string;
+  oldPath?: string;
+  status: "added" | "deleted" | "modified" | "renamed" | "copied" | "type";
+  oldBlob?: string;
+  newBlob?: string;
+  binary?: boolean;
+  additions: number;
+  deletions: number;
+  large?: boolean;
+  hunks: Hunk[];
+}
+
+export interface Hunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  section?: string;
+  lines: DiffLine[];
+}
+
+export interface DiffLine {
+  k: "c" | "a" | "d";
+  o?: number;
+  n?: number;
+  t: string;
+  noeol?: boolean;
+}
+
+export function capsuleAPI(slug: string, repo: string, name: string): string {
+  return `/api/missions/${encodeURIComponent(slug)}/capsules/${encodeURIComponent(repo)}/${encodeURIComponent(name)}`;
+}
+
+export const getDiff = (api: string) => getJSON<Diff>(`${api}/diff`);
+
+export const getFileDiff = (api: string, base: string, head: string, path: string) =>
+  getJSON<DiffFile>(`${api}/file-diff?${new URLSearchParams({ base, head, path })}`);
+
+export const getBlob = (api: string, rev: string, path: string) =>
+  getJSON<{ lines: string[] }>(`${api}/blob?${new URLSearchParams({ rev, path })}`).then((b) => b.lines);
